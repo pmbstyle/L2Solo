@@ -1,6 +1,7 @@
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const TownGatekeeperCatalog = invoke('GameServer/Bot/AI/TownGatekeeperCatalog');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
+const TownNpcBodies = invoke('GameServer/Bot/AI/TownNpcBodies');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 
@@ -84,11 +85,7 @@ function tick(session, bot, leader, options = {}) {
         return { handled: true, status: 'waiting', transit };
     }
 
-    const approach = TownNpcApproach.planOpen(session, bot, transit.gatekeeper, 'intertown_gatekeeper');
-    if (approach?.waiting) {
-        TownTransitPolicy.interact(transit, bot, false);
-        return { handled: true, status: 'waiting', transit };
-    }
+    const approach = TownNpcApproach.planOpen(session, bot, transit.gatekeeper, 'intertown_gatekeeper', { bodiesNear: TownNpcBodies.seenBy(bot) });
     const interacted = TownTransitPolicy.interact(transit, bot, approach?.ready === true);
     if (approach?.ready && !interacted) return { handled: true, status: 'interacting', transit };
     if (interacted) {
@@ -111,12 +108,8 @@ function tick(session, bot, leader, options = {}) {
         }
     );
     if (navigation.status === 'exhausted') {
-        if (approach?.phase === 'staging') {
-            TownNpcApproach.skipStaging(session);
-        } else {
-            TownNpcApproach.reset(session);
-            transit.retryAt = Date.now() + RETRY_DELAY_MS;
-        }
+        TownNpcApproach.reset(session);
+        transit.retryAt = Date.now() + RETRY_DELAY_MS;
         CompanionNavigationRecovery.clear(session);
     }
 

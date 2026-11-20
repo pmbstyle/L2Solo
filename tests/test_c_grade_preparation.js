@@ -231,6 +231,10 @@ const exchangePath = ctx.projection.nodes.find(row => row.key === 'item:162')?.p
 assert(exchangePath, 'native C choices include the authored Luxury route');
 assert.deepEqual(exchangePath.grossRequirements, [{ key: 'item:1458', amount: 5375 }]);
 assert(!ctx.projection.nodes.some(row => row.key === 'item:1459'), 'the bot Luxury path never acquires C crystals');
+// The Luxury cases run with the city reserve store off: with it a funded bot
+// buys the C weapon there and that purchase takes the action instead.
+const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+PopulationConfig.staticShotsDisabled = true;
 const stocked = { ...source, level: 40, inventory: { ...source.inventory, 1463: { selfId: 1463, amount: 100000 } } };
 const dStock = { ...stocked, inventory: { ...stocked.inventory, 1458: { selfId: 1458, amount: 10000 } } };
 const readyExchange = review(dStock);

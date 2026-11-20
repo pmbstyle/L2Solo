@@ -1,6 +1,7 @@
 process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // The shared capture helper reads the optional main cold-build counter.
 const assert = require('assert');
 const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
+const Target = require('../src/GameServer/Bot/Economy/ConsumableTarget');
 const fs = require('node:fs');
 require('./helpers/databaseIsolation');
 const isolated = require('./helpers/isolatedSocialDatabase')('economy-thresholds');
@@ -18,9 +19,10 @@ const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const { captureAndRead } = require('./helpers/nativeEconomyPolicyAssertions');
 const NOW = 1791343645000;
 
-// No level or percentage floor: the reserve holds one outing's refill of each
-// kind (whole units, never under one hour of use), whatever the bag holds; the
-// escape scroll is no part. No wish network is built here.
+// No level or percentage floor: the reserve holds one refill of each kind, a
+// full bag's use plus the stock reserve (ConsumableTarget: whole units, never
+// under one hour of use), whatever the bag holds; the escape scroll is no part.
+// No wish network is built here.
 function reserveInputs(state) {
     const base = Economy.basics(state, { timestamp: NOW });
     const stocks = ['shots', 'potions'].map(kind => {
@@ -31,7 +33,8 @@ function reserveInputs(state) {
     // The kit at the merchant's price, the one the counter's tranche pays. A fractional hourly use
     // is bought as whole units (24512a44).
     for (const row of stocks) if (!row.held) assert.strictEqual(row.refill, row.perHour > 0
-        ? Math.max(Math.ceil(row.perHour), Math.ceil(row.perHour * row.hours)) : 0, 'the refill is an outing of use, at least an hour');
+        ? Math.max(Math.ceil(row.perHour), Target.target(row.perHour, row.hours)) : 0,
+        'the refill is a full bag\'s use plus the reserve, at least an hour');
     const expected = stocks.reduce((sum, row) => sum + row.refill * row.unitPrice, 0);
     assert.strictEqual(base.refillReserve, expected, 'native E1 reserve is the outing refill');
     assert.strictEqual(Gear.operationalAdenaReserve(state), expected, 'gear reads the same E1 reserve');

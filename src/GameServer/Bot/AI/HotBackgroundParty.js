@@ -482,6 +482,24 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         && holdForRaidPreparation(session, groupOwner, group, Generics, now)) {
         return true;
     }
+    // Orfen can spawn at three field points, retreat to her lair, and return
+    // to another field point after healing. Follow the authoritative position.
+    if (raidObjective && !incoming && require('../../RaidBoss/GrandBossRules').templateId(party.stats.objective) === 12169) {
+        const boss = invoke('GameServer/World/RaidEntityIndex').bossByTemplateId(World, 12169);
+        if (Threats.alive(boss) && legal(boss)) {
+            owner.backgroundHuntTarget = boss;
+            if (Threats.distance(bot, boss) > 1000) {
+                if ((session === owner || Threats.distance(owner.actor, boss) <= 1000)
+                    && !session.pendingPathRequest && !bot.state.fetchTowards?.()
+                    && Restrictions.canMove(bot)) {
+                    Tactics.stop(session, bot);
+                    bot.moveTo({ from: loc(bot), to: loc(boss) });
+                }
+                session.lastDecision = { action: 'raid_follow_orfen', partyId: party.partyId, at: now };
+                return true;
+            }
+        }
+    }
     let target = incoming || owner.backgroundHuntTarget;
     const allowedHunt = npc => legal(npc) && (RaidSafety.canEngageBotClanRaid(session, npc)
         || !invoke('GameServer/Bot/AI/HotResourceCompetition').blockedTarget(owner, npc, now));
@@ -617,7 +635,8 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     const autonomousRaid = RaidSafety.canEngageBotClanRaid(session, target);
     const raidPlan = autonomousRaid ? RaidSafety.botClanRaidCombatPlan(owner, target) : null;
     if (raidPlan) return RaidCombat.tick(session, bot, Generics, AI, {
-        owner, members, near, raidPlan, raidTank: RaidCombat.mainRaidTank(members, party),
+        owner, supportOwner: groupOwner, members, near, supportMembers: nearGroup,
+        raidPlan, raidTank: RaidCombat.mainRaidTank(members, party),
         partyId: party.partyId, party,
         combatBuffs: (member, _owner, _near, generics, at) => combatRaidBuffs(member, groupOwner, group, generics, at)
     }, now);

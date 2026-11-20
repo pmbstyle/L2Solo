@@ -58,7 +58,7 @@ async function buyWithOrderFor(orderItemId) {
         ? [{ id: 21, kind: 'buy_ad', storeType: AfkTrade.BUY, ownerAccount: 'bot_hot_buyer', revision: 1,
             lines: [{ selfId: orderItemId, count: 1, price: 750 }] }] : [];
     AfkTrade.closeBotRecord = async (ownerId) => { stopped.push(Number(ownerId)); return { closed: true }; };
-    const session = { actor: bot, companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
+    const session = { actor: bot, plan: 'shopping', companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
     await ShoppingState.sellAndRestock(session, bot, null, { getClosestTown: () => null, say() {} });
     assert.strictEqual(session.coldLifeState.stats.lastMarketPurchase.selfId, SHORT_SWORD, 'the purchase must complete');
     return stopped;
@@ -79,7 +79,7 @@ async function buyWithStepBids(bids) {
         order.push(['withdraw', ...withdrawals.map(row => row.lineId)]); return { changed: 1 }; };
     NpcRestock.purchaseForActor = async () => { order.push(['buy']);
         return { ok: true, receipts: [{ lines: [{ selfId: SHORT_SWORD, amount: 1, unitPrice: 883 }] }] }; };
-    const session = { actor: bot, companionShopping: { ...errand(), ...(bids ? { bids } : {}) }, coldLifeState: { characterId: BOT_ID, stats: {} } };
+    const session = { actor: bot, plan: 'shopping', companionShopping: { ...errand(), ...(bids ? { bids } : {}) }, coldLifeState: { characterId: BOT_ID, stats: {} } };
     await ShoppingState.sellAndRestock(session, bot, null, { getClosestTown: () => null, say() {} });
     assert.strictEqual(session.coldLifeState.stats.lastMarketPurchase?.selfId, SHORT_SWORD, 'the purchase completes');
     return order;
@@ -100,7 +100,7 @@ async function refusedForMoney() {
         AfkTrade.ownerRecords = () => [];
         NpcRestock.purchaseForActor = async () => ({ ok: true, receipts: [{ lines: [] }] });
         const before = Number(MarketTelemetry.current().fundingShort || 0);
-        const session = { actor: bot, companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
+        const session = { actor: bot, plan: 'shopping', companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
         await ShoppingState.sellAndRestock(session, bot, null, { getClosestTown: () => null, say() {} });
         assert.strictEqual(MarketTelemetry.current().fundingShort, before + 1, 'a hot refusal for money is counted');
         assert(Situations.woken(session.coldLifeState.stats, 'build'), 'the step failed: the bot decides anew');
@@ -108,7 +108,7 @@ async function refusedForMoney() {
         assert.deepStrictEqual(Marks.quotes(session.coldLifeState.stats).map(row => row[0]), [SHORT_SWORD],
             'the quote refused for money is marked, as a cold buyer\'s funding_short');
         MarketOpportunity.npcOffers = () => [];
-        const gone = { actor: bot, companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
+        const gone = { actor: bot, plan: 'shopping', companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
         await ShoppingState.sellAndRestock(gone, bot, null, { getClosestTown: () => null, say() {} });
         assert.strictEqual(MarketTelemetry.current().fundingShort, before + 1, 'no seller is no refusal for money');
         assert(Situations.woken(gone.coldLifeState.stats, 'build'), 'no seller: the step failed, the bot decides anew');

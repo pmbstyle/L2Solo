@@ -170,20 +170,12 @@ function companionTownErrand(session, bot, player, BotAI) {
     if (!townContext) return null;
     const { town, inTown } = townContext;
 
-    // In town, every companion may settle its own short task.  In the field,
-    // leaving the leader is reserved for an immediately useful resupply;
-    // shopping and selling can wait until the party actually reaches town.
-    if (!inTown) {
-        if (errandOnCooldown) return null;
-        if (!ShotStock.needsActorRestock(bot, 0)) return null;
-        const shotPlan = ShotStock.planForActor(bot);
-        const target = townNpcTarget(town, bot, shotPlan.selfId);
-        if (!target) return null;
-        return {
-            kind: 'restock_shots',
-            target
-        };
-    }
+    // A player-led companion leaves its leader on its own only while the
+    // leader is in town; in the field it fights without what it lacks until
+    // the party goes to town.
+    // A recalled companion (Regroup) does not restart its errand while the
+    // formation holds.
+    if (!inTown || PartyCompanionService.regroupActive(session.followPlayerSession)) return null;
 
     if (timestamp - Number(session.lastCompanionEquipmentCheckAt || 0) >= COMPANION_EQUIPMENT_CHECK_COOLDOWN_MS) {
         session.lastCompanionEquipmentCheckAt = timestamp;
@@ -568,7 +560,7 @@ function pendingSupportShouldYield(session, bot, leaderSession, pullerActor, par
 }
 
 function partyActorIds(leaderSession) {
-    return new Set(PartyAwareness.partyActors(leaderSession)
+    return new Set(PartyAwareness.combatActors(leaderSession)
         .map((actor) => actor.fetchId())
         .filter((id) => id !== null && id !== undefined));
 }
@@ -579,7 +571,7 @@ function partyAggroMonsters(leaderSession) {
         if (ids.size === 0) return [];
 
         const seen = new Set();
-        return PartyAwareness.partyActors(leaderSession).flatMap((actor) => (
+        return PartyAwareness.combatActors(leaderSession).flatMap((actor) => (
             // Match PartyAwareness' full NPC combat envelope. A ranged mob can
             // continue attacking from beyond the old 900-unit support check.
             World.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 1500)
@@ -757,14 +749,6 @@ function markPartyRecharge(leaderSession, bot, target, skill) {
     };
 }
 
-function partyHasBuffer(leaderSession, exceptActor = null) {
-    return PartyAwareness.partySessions(leaderSession)
-        .some((memberSession) => (
-            memberSession.actor !== exceptActor &&
-            BotRoles.inferRole(memberSession.actor) === 'buffer'
-        ));
-}
-
 function returnToPartyAfterSupport(session, bot, player, target) {
     // A remote heal/buff may have made the support bot walk far away from the
     // formation.  The native cast owns that movement until the hit lands; the
@@ -916,6 +900,7 @@ const FollowingState = {
         if (FollowingState.tickRest(ctx)) return;
         if (FollowingState.tickBuffsAndErrands(ctx)) return;
         if (FollowingState.tickSupportAndHealing(ctx)) return;
+        if (invoke('GameServer/Bot/AI/ClanCommandParty').handleMovement(session, bot)) return;
         if (FollowingState.tickDefenseAndPull(ctx)) return;
         FollowingState.tickCombat(ctx);
         FollowingState.tickLootAndLeaderTarget(ctx);
@@ -926,6 +911,11 @@ const FollowingState = {
     tickLeaderPresence(ctx) {
         const { session, BotAI } = ctx;
         const playerSession = session.followPlayerSession;
+        const commandGroup = invoke('GameServer/Bot/AI/ClanCommandParty').groupFor(session);
+        if (commandGroup && !invoke('GameServer/Bot/AI/ClanCommandParty').current(commandGroup)) {
+            invoke('GameServer/Bot/AI/ClanCommandParty').dismiss(commandGroup);
+            return true;
+        }
         if (session.partyCompanion !== true) {
             session.plan = 'hunting';
             session.followPlayerSession = null;
@@ -1131,7 +1121,11 @@ const FollowingState = {
 
     // Stuck sampling, standing up, rooted hold, karma town wait, gatekeeper transit, catch-up teleport.
     tickTravel(ctx) {
-        const { session, bot, player, role, distance, leaderSeated, restFormationDistance, pulling, partyThreat, leaderTargetId, impairments } = ctx;
+        const { session, bot, role, leaderSeated, restFormationDistance, pulling, partyThreat, leaderTargetId, impairments } = ctx;
+        const group = invoke('GameServer/Bot/AI/ClanCommandParty').groupFor(session);
+        const player = group ? group.commander.actor : ctx.player;
+        const distance = point(bot).distance(point(player));
+        if (group && session.botStay) return false;
         const currentLoc = { x: bot.fetchLocX(), y: bot.fetchLocY() };
         if (!session.lastTickLoc) {
             session.lastTickLoc = currentLoc;
@@ -1361,21 +1355,15 @@ const FollowingState = {
         const buffsNeedRefresh = BotBuffs.needsNewbieRefresh(bot);
         if (buffsNeedRefresh) {
             const unsafeToRefresh = unsafeSupportMoment(bot, currentPartyAggroMonsters().length);
-            const inTown = TownPathfinder.isInsideTown({
-                locX: player.fetchLocX(),
-                locY: player.fetchLocY(),
-                locZ: player.fetchLocZ()
-            });
-            const expired = BotBuffs.needsNewbieRefresh(bot, 0);
+            const leaderInTown = townForCompanionErrand(player, BotAI)?.inTown === true;
             const nearbyGuide = !!HotTownRebuff.nearGuide(player, BotAI);
-            const canMakeFieldBuffTrip = !inTown && expired && nearbyGuide && !partyHasBuffer(playerSession, bot);
 
             if (unsafeToRefresh) {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_safe_moment', {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
                 keepRoleDecision = true;
-            } else if (!nearbyGuide || (!inTown && !canMakeFieldBuffTrip)) {
+            } else if (!nearbyGuide || !leaderInTown) {
                 recordRoleDecision(session, bot, 'refresh_buffs', 'wait_for_newbie_guide_town', {
                     missingBuffs: BotBuffs.missingNewbieBuffs(bot, BotBuffs.REFRESH_THRESHOLD_MS)
                 });
@@ -1781,7 +1769,9 @@ const FollowingState = {
         }
 
         if (!acted && role === 'tank' && activePartyThreats.length >= 2 && !isBusy(bot)) {
-            const massAggro = PartyClassTactics.tankMassAggroAction(bot, activePartyThreats);
+            const Commands = invoke('GameServer/Bot/AI/ClanCommandParty');
+            const massAggro = activePartyThreats.every(target => Commands.canTaunt(session, target))
+                ? PartyClassTactics.tankMassAggroAction(bot, activePartyThreats) : null;
             if (massAggro) {
                 acted = true;
                 recordRoleDecision(session, bot, 'protect_party', massAggro.reason, {
@@ -1802,7 +1792,8 @@ const FollowingState = {
             // from another party member. Once it is already attacking this
             // tank (including after a normal pull hit), continue normal combat
             // below instead of repeatedly taunting the same target.
-            if (monsterToAggro && Number(monsterToAggro.fetchDestId?.()) !== Number(bot.fetchId())) {
+            if (monsterToAggro && Number(monsterToAggro.fetchDestId?.()) !== Number(bot.fetchId())
+                && invoke('GameServer/Bot/AI/ClanCommandParty').canTaunt(session, monsterToAggro)) {
                 const skill = BotSkillCapabilities.aggressionSkill(bot);
                 if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && !isBusy(bot) && canAttemptAggression(session, monsterToAggro)) {
                     acted = true;
@@ -1958,10 +1949,7 @@ const FollowingState = {
                 World.fetchUser(playerTargetId).then((user) => {
                     if (PartyAwareness.leaderCombatTargetId(playerSession, { allowPlayerRaid: true }) !== playerTargetId) return;
                     if (session.currentTargetId && session.currentTargetId !== playerTargetId) return;
-                    const targetIsTeammate = user.session && (
-                        user.session === playerSession ||
-                        (user.session.followPlayerSession === playerSession && user.session.partyCompanion === true)
-                    );
+                    const targetIsTeammate = PartyAwareness.isCombatAlly(playerSession, user);
 
                     const isAttackablePvPTarget = user.fetchKarma() > 0 || user.fetchPvpFlag() > 0;
 
@@ -2043,6 +2031,7 @@ const FollowingState = {
 
     // Stay order, keeping formation range, ready stance.
     tickIdleFollow(ctx) {
+        if (invoke('GameServer/Bot/AI/ClanCommandParty').followLeader(ctx.session, ctx.bot)) return true;
         const { session, bot, playerSession, player, role, distance, impairments, acted, keepRoleDecision } = ctx;
         if (!session.currentTargetId && !acted) {
             if (session.botStay && session.stayLocation) {

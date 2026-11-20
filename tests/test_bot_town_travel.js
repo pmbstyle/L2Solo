@@ -12,6 +12,8 @@ const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const DataCache = invoke('GameServer/DataCache');
 const Response = invoke('GameServer/Network/Response');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+const Safety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const originalSyncRaid = Safety.syncPlayerPartyRaid;
 
 // A trip to town reads a Scroll of Escape from the backpack (N2, user
 // 2026-10-04); every test bot carries a few unless a case says otherwise.
@@ -399,8 +401,26 @@ try {
     assert.strictEqual(localBot.state.fetchCasts(), false);
     BotSpotTravel.cancel(localSession, localBot);
 
+    // The commander can pull while a quiet companion is reading its SoE.
+    // The native timer must cancel that trip without turning it into a solo hunter.
+    let raid = null;
+    Safety.syncPlayerPartyRaid = () => raid;
+    const raidBot = botAt({ locX: 0, locY: 0, locZ: 0 });
+    const raidSession = session(raidBot);
+    Object.assign(raidSession, { partyCompanion: true, followPlayerSession: {} });
+    assert.strictEqual(BotTownTravel.request(raidSession, raidBot, farAi, 'Restocking.', { allowCompanion: true }), 'escape');
+    const queuedEscape = timers.at(-1), timerCount = timers.length;
+    raid = { phase: 'combat' };
+    queuedEscape.fn();
+    assert.strictEqual(timers.length, timerCount, 'the escape cannot submit a delayed teleport during the shared raid');
+    assert.strictEqual(raidSession.townEscape, undefined);
+    assert.strictEqual(raidBot.state.fetchCasts(), false);
+    assert.strictEqual(raidSession.plan, 'following', 'the interrupted companion remains under party combat control');
+    assert.strictEqual(raidSession.partyCompanion, true);
+
     console.log('Bot town travel checks passed');
 } finally {
+    Safety.syncPlayerPartyRaid = originalSyncRaid;
     Date.now = originalNow;
     global.setTimeout = originalSetTimeout;
     Response.charInfo = originalCharInfo;

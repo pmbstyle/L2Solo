@@ -370,8 +370,12 @@ let planningContextRevision = 0;
 
 function offerRow(offer) {
     // Live sessions, actors and mutable store entries never cross the boundary.
-    const { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority } = offer;
-    return { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority };
+    // A configured row keeps the fields its buyer gate reads (ProductionPolicy.allowsFixed:
+    // reserve, buyerClasses, valve), so the worker admits the buyers main admits.
+    const { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority,
+        reserve, buyerClasses, valve } = offer;
+    return { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority,
+        ...(reserve ? { reserve } : {}), ...(buyerClasses ? { buyerClasses } : {}), ...(valve ? { valve } : {}) };
 }
 
 async function buildStaticMarket(recipes) {
@@ -417,7 +421,7 @@ async function context() {
     // (FixedShotOffers.offers): the same array until one of them changes.
     const fixed = MarketOpportunity.fixedStoreOffers();
     const general = {};
-    for (const key of ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate', 'maxLevel']) {
+    for (const key of ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'epicDropChanceRate', 'spoilRate', 'maxLevel']) {
         general[key] = global.options.default.General?.[key];
     }
     const progression = { contentCap: global.options.default.Progression?.contentCap };

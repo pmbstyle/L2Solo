@@ -54,10 +54,16 @@ const Demand = require('../src/GameServer/Bot/Economy/ShotTradeDemand');
             const investing = { ...state, level: 52, stats: { ...state.stats,
                 shotRecipeDemand: { itemId: recipe.recipeItemId, at: Date.now(), amount: 1, maxSpend: 1000 } } };
             // Its healing potions at the stock's own target, whatever use the table gives them.
-            const potions = invoke('GameServer/Bot/Economy/EconomyContext').basics(investing).stock('potions');
+            const basics = invoke('GameServer/Bot/Economy/EconomyContext').basics(investing);
+            const potions = basics.stock('potions');
             investing.inventory = { ...investing.inventory, [potions.itemId]: { selfId: potions.itemId, amount: potions.target } };
+            // The buyer pays one batch an hour of the investor's hunt, so the
+            // resale is worth the craft's time whatever hour the table gives it.
+            const bid = Math.ceil(basics.hourAdena / Number(recipe.productCount || 1));
+            const paying = records.map(row => row.id !== 910810 ? row
+                : { ...row, lines: row.lines.map(line => ({ ...line, price: bid })) });
             const wishes = await probe(investing, { nativeRoutes: true, recipes: { recipeBook: Codec.pack([]) },
-                boardRows: [...records, ...competitors].map(row => [row.id, rowOf(row)]) });
+                boardRows: [...paying, ...competitors].map(row => [row.id, rowOf(row)]) });
             assert(wishes.queue.some(row => row.key === `resale:${recipe.productId}`), 'recipe investment has a native earning root');
             assert(wishes.tradeIntents.some(row => row.itemId === recipe.recipeItemId && row.worth >= 1), 'a meeting can certify the recipe purchase through the shared wish graph');
         }
@@ -134,8 +140,13 @@ const Demand = require('../src/GameServer/Bot/Economy/ShotTradeDemand');
             assert(refreshed.selected?.craft?.ownReserve > 0, 'the step\'s own economy keeps the real personal shot reserve');
             const checked = atDecision(() => Shots.recheck(producer, refreshed.selected.craft));
             assert(checked && checked.expectedSold > 0, 'the native batch produces a commercial surplus after its personal reserve');
-            assert(checked.expectedSold <= checked.batches * recipe.productCount + held - refreshed.selected.craft.ownReserve,
-                'native recheck cannot count personal shots as sold');
+            // The personal reserve stays out of the sale while the exit pays no more
+            // than the store sells the shot back for; above it the crafter sells
+            // it all and restocks at the store.
+            const replace = invoke('GameServer/Bot/Economy/StaticMerchantPricing').botBuyPrice(recipe.productId);
+            const kept = Number(checked.exit.price) > replace ? 0 : refreshed.selected.craft.ownReserve;
+            assert(checked.expectedSold <= checked.batches * recipe.productCount + held - kept,
+                'native recheck counts personal shots as sold only where the exit pays above their store price');
         }
         const withOutput = structuredClone(state);
         withOutput.inventory[recipe.productId] = { selfId: recipe.productId, amount: 1000000 };

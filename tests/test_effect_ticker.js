@@ -28,6 +28,16 @@ const effect = EffectStore.apply(target, {
 
 assert.strictEqual(EffectTicker.applyDot(null, null, target, effect), true, 'Poison DoT should start a ticker');
 
+// A tick with no caster left (a cubic's late lookup) on a monster at 5 HP:
+// it stops at 1 HP, never 0 HP with the monster alive.
+const lowMonster = {
+    hp: 5, dead: false, effectTimers: {}, fetchId: () => 990001, fetchKind: () => 'Monster',
+    fetchHp() { return this.hp; }, setHp(value) { this.hp = value; }, broadcastVitals() {},
+    state: { fetchDead() { return lowMonster.dead; } }
+};
+EffectTicker.applyDot(null, null, lowMonster, EffectStore.apply(lowMonster, {
+    key: 'poison', id: 129, level: 1, type: 'debuff', dot: { damage: 3, count: 3, intervalMs: 5 }, durationMs: 100 }));
+
 const manaTarget = {
     mp: 25,
     effectTimers: {},
@@ -155,6 +165,7 @@ setTimeout(() => {
     assert.deepEqual(Object.keys(releasedActor.effectExpiryTimers || {}), [], 'a released character keeps no effect timer');
     assert.strictEqual(released.packets.length + released.observers.length, 0, 'and sends nothing when its debuff would end');
     assert.strictEqual(target.fetchHp(), 44, 'Poison DoT should apply datapack damage on each tick');
+    assert.strictEqual(lowMonster.fetchHp(), 1, 'a tick with no caster stops a monster at 1 HP, never 0 HP alive');
     assert.strictEqual(target.effectTimers.poison, undefined, 'DoT ticker should clear itself after its count');
     assert.strictEqual(manaTarget.fetchMp(), 1, 'Mana damage-over-time should reduce MP on each tick and clamp above zero');
     assert.strictEqual(manaTarget.effectTimers.seal_of_gloom, undefined, 'Mana damage-over-time ticker should clear itself after its count');

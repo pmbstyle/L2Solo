@@ -21,8 +21,11 @@ function refreshLoadedSkillState(session, actor, Generics, response = ServerResp
 
 async function enterWorld(session, actor) {
     const Generics = invoke(path.actor);
+    const current = () => session.actor === actor && !session.characterLeaving && !session.socket?.destroyed;
     await invoke('GameServer/Progression/DeathExperience').load(actor);
+    if (!current()) return;
     await invoke('GameServer/Recommendations/Runtime').refresh(actor);
+    if (!current()) return;
 
     // Set character as online
     actor.setIsOnline(true);
@@ -56,6 +59,7 @@ async function enterWorld(session, actor) {
     const flagRemaining = Number(session.coldLifeState?.stats?.coldPvp?.flagUntil || 0) - Date.now();
     if (flagRemaining > 0) invoke('GameServer/Actor/PvpFlag').restore(session, actor, session.coldLifeState.stats.coldPvp.flagUntil);
     const skillReady = actor.skillset.populateForActor(actor, () => {
+        if (!current()) return;
         // Skill loading is asynchronous.  The first calculation above runs
         // before Expertise is available and can temporarily apply the C4
         // grade penalty to correctly equipped characters.  Recalculate and

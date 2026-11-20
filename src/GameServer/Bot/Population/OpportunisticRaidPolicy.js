@@ -13,10 +13,13 @@ const Priority = require('./RaidRosterPriority');
 const BASE_CLASSES = new Set([0, 10, 18, 25, 31, 38, 44, 53]);
 const id = s => Number(s?.characterId);
 const isObjective = o => o?.opportunisticRaid === true && o.sourceKind === 'raid';
-const levelAllowed = (s, bossLevel) => Number(s.level) >= Math.max(20, bossLevel - 2) && Number(s.level) <= bossLevel + 8;
+const GrandBosses = require('../../RaidBoss/GrandBossRules');
+const levelAllowed = (s, bossLevel, source = null) => Number(s.level) >= Math.max(20, bossLevel - 2)
+    && Number(s.level) <= GrandBosses.maxLevel(source, bossLevel + 8);
 // Nearby ordinary mobs can grant a level during travel or preparation.
 // Keep one level before the native +8 curse boundary when recruiting.
-const recruitLevelAllowed = (s, bossLevel) => levelAllowed(s, bossLevel) && Number(s.level) <= bossLevel + 7;
+const recruitLevelAllowed = (s, bossLevel, source = null) => levelAllowed(s, bossLevel, source)
+    && Number(s.level) <= GrandBosses.maxLevel(source, bossLevel + 7);
 const criminal = s => !!s?.stats?.pkProfile || !!s?.pkProfile || ['pk', 'pk_hunting'].includes(s?.stats?.strategy)
     || Number(s?.stats?.karma ?? s?.karma) > 0 || Number(s?.stats?.pk ?? s?.pk) > 0;
 const role = s => Roles.isPartyMusicFighter(s) ? 'damage'
@@ -358,14 +361,14 @@ const Forecast = require('./RaidCombatAssessment');
 const { prepared, tankArmor, equipmentFailures, damageEstimate } = Forecast;
 function assessment(members, spot, options = {}) {
     return Forecast.assessment(members, spot, { ...options, roleFor: role,
-        compositionReady: composition(members).ready, levelAllowed });
+        compositionReady: composition(members).ready, levelAllowed: (member, level) => levelAllowed(member, level, spot) });
 }
 
 // Re-read after the worker fences, before publishing any native actors. A new
 // weapon needs a fresh forecast; a changed stock never inherits old readiness.
 function pullAdmission(members, objective) {
     if (!composition(members).ready || members.some(criminal)) return 'raid_composition_or_pk';
-    if (members.some(s => !levelAllowed(s, objective.sourceLevel))) return 'raid_level';
+    if (members.some(s => !levelAllowed(s, objective.sourceLevel, objective))) return 'raid_level';
     if (members.some(s => objective.assessment?.kits?.find(([key]) => key === id(s))?.[1]
         !== Combat.kitEvents(s).join(':'))) return 'raid_equipment_changed';
     for (const s of members.filter(s => role(s) !== 'healer')) {

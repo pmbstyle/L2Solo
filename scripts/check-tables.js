@@ -4,16 +4,20 @@
 // simulated by (TableFingerprint). Fails on a table whose inputs moved
 // since its build, naming the table and the files, and on an input list that
 // names a missing path. A table built before fingerprints
-// only warns: unknown until its next rebuild.
+// only warns: unknown until its next rebuild. A table the server reads and no
+// tree may lack (the town ways) fails when missing, as a stale one does.
 //
 // Usage: node scripts/check-tables.js [--root=<dir>]  (a tree other than this checkout: tests)
 const fs = require('fs');
 const path = require('path');
 const TableFingerprint = require('../src/GameServer/Bot/AI/TableFingerprint');
 
+// Without it every walk between a spot and its town takes the straight leg.
+const REQUIRED = ['data/Bots/town-ways.json'];
+
 function tableFiles(root) {
     const hunt = path.join(root, 'data', 'Bots', 'hunt');
-    const files = ['data/Bots/spot-table.json'];
+    const files = ['data/Bots/spot-table.json', ...REQUIRED];
     if (fs.existsSync(hunt)) files.push(...fs.readdirSync(hunt).filter(name => name.endsWith('.json')).sort()
         .map(name => `data/Bots/hunt/${name}`));
     return files.filter(file => fs.existsSync(path.join(root, file)));
@@ -37,6 +41,10 @@ function checkTables(root = TableFingerprint.ROOT, strict = true) {
         if (missing.length) errors.push(`TableFingerprint (src/GameServer/Bot/AI/TableFingerprint.js) lists inputs of the ${kind} `
             + `table that do not exist: ${missing.join(', ')}. Point it at the files the generator now exercises.`);
     }
+    for (const table of REQUIRED.filter(file => !fs.existsSync(path.join(root, file)))) {
+        (strict ? errors : warnings).push(`Bot table ${table} is missing. Build it on the fork: `
+            + `tables/${TableFingerprint.GENERATORS['scripts/generate-town-ways.js']}/$sha, or \`all\`.`);
+    }
     // One hash of each input set, however many tables share it.
     const current = new Map();
     const results = [];
@@ -56,7 +64,7 @@ function checkTables(root = TableFingerprint.ROOT, strict = true) {
             (strict ? errors : warnings).push(`Stale bot table${group.tables.length > 1 ? 's' : ''} ${tables} (built at ${group.revision}): `
                 + `${group.changed.length} input file${group.changed.length > 1 ? 's' : ''} changed since: `
                 + `${TableFingerprint.list(group.changed)}. Rebuild on the fork: tables/${group.kind}/$sha`
-                + ', or `all` when both families are stale.');
+                + ', or `all` when several families are stale.');
         } else if (group.state === 'unknown') {
             warnings.push(`Bot table${group.tables.length > 1 ? 's' : ''} ${tables} (built at ${group.revision}): `
                 + `${group.kind ? 'no fingerprint (an older build)' : 'no known generator in the header'}, `

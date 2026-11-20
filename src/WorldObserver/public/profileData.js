@@ -11,6 +11,8 @@
     const source = value => ({ liquidate: 'Sell surplus items', money: 'Hunt for income', drop: 'Monster drops', spoil: 'Spoil monsters',
         market: 'Player market', npc: 'NPC shop', craft: 'Craft item', warehouse: 'Withdraw from warehouse' })[value] || label(value);
     const item = row => row ? `<a class="inspector-link" href="/observer/database/items/${Number(row.selfId)}" data-app-route>${escape(row.name)}</a>` : 'Unknown';
+    const tableItem = row => `<span class="observer-table-item">${row.iconUrl?.startsWith('/observer/item-icons/')
+        ? `<img src="${escape(row.iconUrl)}" width="24" height="24" alt="" loading="lazy" decoding="async">` : ''}${item(row)}</span>`;
     const wish = row => {
         if (row?.kind === 'enchant') {
             const level = row.qualifier == null || row.qualifier === '' ? NaN : Number(row.qualifier);
@@ -142,9 +144,9 @@
             const columns = section === 'skills' ? ['Skill', 'Level', 'Type'] : section === 'board' ? ['Item', 'Offer', 'Town', 'Units', 'Price', 'Execution'] : ['Item', 'Amount', 'Enchant', 'Equipped'];
             html += `<p>${number(data.total)} ${section === 'skills' ? 'learned skills' : 'entries'}</p><div class="profile-table-scroll"><table class="profile-data-table"><thead><tr>${columns.map(name => `<th>${name}</th>`).join('')}</tr></thead><tbody>`;
             html += data.rows.map(row => `<tr>${(section === 'skills' ? [escape(row.name || `#${row.selfId}`), number(row.level), row.passive ? 'Passive' : 'Active']
-                : section === 'board' ? [item(row), `${escape(row.side)} · ${escape(label(row.kind))}`, escape(row.town), number(row.amount), `${number(row.price)} A`,
+                : section === 'board' ? [tableItem(row), `${escape(row.side)} · ${escape(label(row.kind))}`, escape(row.town), number(row.amount), `${number(row.price)} A`,
                     row.conditional ? 'Conditional · check at meeting' : row.custodyPolicy === 0 ? 'Reserved' : 'Check when trading']
-                : [item(row), number(row.amount), row.enchant ? `+${number(row.enchant)}` : '—', row.equipped ? 'Yes' : '—']).map(value => `<td>${value}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${columns.length}">No entries.</td></tr>`;
+                : [tableItem(row), number(row.amount), row.enchant ? `+${number(row.enchant)}` : '—', row.equipped ? 'Yes' : '—']).map(value => `<td>${value}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${columns.length}">No entries.</td></tr>`;
             html += '</tbody></table></div>';
             if (data.offset || data.hasMore) html += `<div class="profile-data-paging"><button type="button" data-profile-page="${Math.max(0, data.offset - data.limit)}" ${data.offset ? '' : 'disabled'}>Previous</button><span>${number(data.offset + 1)}–${number(data.offset + data.rows.length)} / ${number(data.total)}</span><button type="button" data-profile-page="${data.offset + data.limit}" ${data.hasMore ? '' : 'disabled'}>Next</button></div>`;
             if (section === 'board' && data.meetings?.length) html += `<h3>Trade meetings</h3><ul>${data.meetings.map(row => `<li>#${Number(row.id)} · ${escape(row.state)} · ${escape(row.town)}${row.reason ? ` · ${escape(label(row.reason))}` : ''}</li>`).join('')}</ul>`;

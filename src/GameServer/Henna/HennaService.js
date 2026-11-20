@@ -46,8 +46,10 @@ function refreshHennaStats(session) {
 
 // Restore persists on the character table, so a missing session row simply means
 // the character never drew a tattoo.
-function restore(session) {
-    return Database.fetchCharacterHennas(session.actor.fetchId()).then((rows) => {
+function restore(session, { recalculateStats = true } = {}) {
+    const actor = session.actor;
+    return Database.fetchCharacterHennas(actor.fetchId()).then((rows) => {
+        if (session.actor !== actor || session.characterLeaving || session.socket?.destroyed) return;
         const slots = [null, null, null];
         rows.forEach((row) => {
             const slot = Number(row.slot);
@@ -55,7 +57,11 @@ function restore(session) {
             if (symbol && slot >= 1 && slot <= SLOT_COUNT) slots[slot - 1] = symbol.id;
         });
         session.hennas = slots;
-        refreshHennaStats(session);
+        // World entry restores effects before calculating the final caps and
+        // clamping saved vitals. A henna-only calculation would lose HP/MP
+        // supplied by those effects, or replace saved CP with a full bar.
+        if (recalculateStats) refreshHennaStats(session);
+        else actor.hennaStats = totals(slots);
         session.dataSendToMe(ServerResponse.hennaInfo(session));
         return slots;
     });

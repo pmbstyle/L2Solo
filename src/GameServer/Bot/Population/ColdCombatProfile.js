@@ -993,8 +993,10 @@ function armorKindsKey(list) {
 // The kit effects of a worn list: its armour sets (a state without inventory
 // keeps its captured ones) and its items' effects.
 function kitEffects(state, equipped) {
+    const itemEffects = new Map(equipped.map(item => copyEquipmentEffect(item.equipmentEffect))
+        .filter(Boolean).map(effect => [effect.key, effect]));
     return [...C4ArmorSets.effectsForEquippedIds(wornIds(equipped)), ...savedSetEffects(state),
-        ...equipped.map(item => copyEquipmentEffect(item.equipmentEffect)).filter(Boolean)];
+        ...itemEffects.values()];
 }
 
 function activeMusicEffects(profile = {}, timestamp = Date.now()) {

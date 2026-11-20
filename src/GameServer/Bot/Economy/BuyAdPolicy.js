@@ -206,6 +206,7 @@ function linesFor(state, goal, { money = Infinity, watchList, ...options } = {})
     }
     const townFor = options.townFor || (items => invoke('GameServer/Bot/Economy/MarketTownPolicy').targetTownForItems(state, items));
     let town = townFor(candidates.map(group => ({ selfId: Number(group[0].target.itemId) })));
+    const materialBids = invoke('GameServer/Bot/Economy/CrafterStock').materialBids(state);
     // Rejected lines can change the grade/town of a mixed order. Price the
     // final town too, before publication; this loop only removes candidates.
     for (let pass = 0; pass <= limit; pass++) {
@@ -223,6 +224,14 @@ function linesFor(state, goal, { money = Infinity, watchList, ...options } = {})
                 // Conditional alternatives hold no cash until a native agreement.
                 break;
             }
+        }
+        // A crafter's standing material bids fill the lines its wishes leave.
+        for (const bid of materialBids) {
+            if (lines.length >= limit) break;
+            if (lines.some(line => line.selfId === bid.selfId)) continue;
+            const item = ItemTemplateIndex.find(DataCache.items, bid.selfId);
+            lines.push({ selfId: bid.selfId, name: item?.template?.name || `Item ${bid.selfId}`, count: bid.count, price: bid.price,
+                enchant: 0, slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true });
         }
         const retained = retainedLines(state, lines, owned, town);
         if (!retained.length || townFor(retained) === town) return retained;

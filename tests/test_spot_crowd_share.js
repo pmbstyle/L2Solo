@@ -100,16 +100,30 @@ try {
         const [, rows, min, max] = offline.rows.find(row => row[0] === held);
         Table.useSpots([{ id: held, npcEntries: rows.map(([selfId, count]) => ({ selfId, count, production: count * 60 })),
             rewards: { adenaMin: min, adenaMax: max } }]);
-        const other = Route.spotList(state).ids(true, 30, -15).find(id => id !== held);
-        const catalog = [held, other].map((id, at) => ({ id, avgLevel: 30, minLevel: 30, maxLevel: 30, density: 60,
+        const catalogOf = ids => ids.map((id, at) => ({ id, avgLevel: 30, minLevel: 30, maxLevel: 30, density: 60,
             tagsAuthoritative: true, tags: [], npcEntries: [], center: { locX: -80000 + at * 500, locY: 150000, locZ: 0 } }));
         const crowd = new Occupancy.SpotOccupancyIndex();
         SpotProfiles.useOccupancy(() => crowd);
-        let bot = { ...state, characterId: 990777, spotId: held, loc: catalog[0].center, stats: { ...state.stats, huntEfficiency: [] } };
-        const own = Economics.create(bot, { timestamp: now })(catalog[0], true);
-        for (let n = 0; n < 3; n++) bot = { ...bot, stats: { ...bot.stats, huntEfficiency: Hunt.record(bot, { spotId: other, timestamp: now,
-            cycleMs: 3600000, exp: 0.6 * own.exp, adena: 0.6 * own.income, loot: 0, costs: 0, kills: 0.6 * own.kills }) } };
-        const options = { spots: catalog, timestamp: now, required: true };
+        // The bot of this fixture holds `held` and knows `other` by three samples at 0.6 of what it earns on
+        // `held`. A solo bot may also take a spot within SpotSearch's habit band by its own roll (spot_habit), so
+        // the bot is one whose roll does not favour `other`. `other` is the first second spot with which the
+        // search alone keeps `held` (its order is not the table's: the walk and the samples move it), so the
+        // premise of the crowd check below holds by construction.
+        const Roll = invoke('GameServer/Bot/AI/TendencyRoll');
+        const fixture = other => {
+            const catalog = catalogOf([held, other]);
+            let characterId = 990777;
+            while (Roll.roll('spot_habit', characterId, other) > Roll.roll('spot_habit', characterId, held)) characterId++;
+            let bot = { ...state, characterId, spotId: held, loc: catalog[0].center, stats: { ...state.stats, huntEfficiency: [] } };
+            const own = Economics.create(bot, { timestamp: now })(catalog[0], true);
+            for (let n = 0; n < 3; n++) bot = { ...bot, stats: { ...bot.stats, huntEfficiency: Hunt.record(bot, { spotId: other, timestamp: now,
+                cycleMs: 3600000, exp: 0.6 * own.exp, adena: 0.6 * own.income, loot: 0, costs: 0, kills: 0.6 * own.kills }) } };
+            return { bot, options: { spots: catalog, timestamp: now, required: true } };
+        };
+        const other = Route.spotList(state).ids(true, 30, -15).find(id => id !== held
+            && Route.search(fixture(id).bot, fixture(id).options).route?.spot.id === held);
+        assert(other, 'fixture: a second spot below the held one');
+        const { bot, options } = fixture(other);
         assert.equal(Route.search(bot, options).route?.spot.id, held, 'fixture: alone the bot keeps its spot');
         for (let n = 0; n < 200; n++) crowd.update({ characterId: 992000 + n, activity: 'hunting', spotId: held });
         assert.equal(Route.search(bot, options).route?.spot.id, held, 'two hundred bots on its spot: the search keeps it');

@@ -39,7 +39,10 @@ const sortSkills = (rows) => [...rows].sort((first, second) =>
 
 DataCache.init();
 
-for (const template of templates) {
+// Grand-boss encounters now override their old generic monster rows and are
+// validated with their source skills and shared raid scale in their own test.
+const grandBossIds = new Set(invoke('GameServer/RaidBoss/GrandBossRules').data.npcs.map(npc => npc.selfId));
+for (const template of templates.filter(template => !grandBossIds.has(template.selfId))) {
     const matches = DataCache.npcs.filter((candidate) => Number(candidate.selfId) === Number(template.selfId));
     assert.strictEqual(matches.length, 1, `legacy C4 NPC ${template.selfId} must have one active template`);
 

@@ -90,6 +90,15 @@ function normalizeDistribution(distribution) {
 }
 
 function settingsForLeader(leaderSession) {
+    const group = leaderSession?.clanCommandParty;
+    if (group?.active) {
+        group.settings ||= { ...DEFAULT_PARTY_SETTINGS, pullMode: 'off' };
+        const main = settingsForLeader(group.commander);
+        group.settings.distribution = main.distribution;
+        group.settings.lootPickupEnabled = main.lootPickupEnabled;
+        group.settings.combatMode = main.combatMode;
+        return group.settings;
+    }
     if (!leaderSession) return { ...DEFAULT_PARTY_SETTINGS };
     if (!leaderSession.partyCompanionSettings) {
         leaderSession.partyCompanionSettings = { ...DEFAULT_PARTY_SETTINGS };
@@ -128,7 +137,10 @@ function updateSettings(leaderSession, patch = {}) {
             meta: { patch, settings: next }
         });
     });
-    if (hasOwn(patch, 'lootPickupEnabled')) leaderSession.lastGroundLootScanAt = 0;
+    if (hasOwn(patch, 'lootPickupEnabled')) {
+        leaderSession.lastGroundLootScanAt = 0;
+        invoke('GameServer/Bot/AI/ClanCommandParty').syncLoot(leaderSession);
+    }
     return next;
 }
 
@@ -143,6 +155,9 @@ function setDistribution(leaderSession, distribution) {
         settings.distribution = next;
         // Turn order is meaningful only for the currently selected rule.
         settings.itemLastLootIndex = -1;
+        for (const group of leaderSession.commandParties?.values() || []) {
+            if (group.settings) group.settings.itemLastLootIndex = -1;
+        }
         membersForLeader(leaderSession).forEach((companionSession) => {
             BotEventJournal.record({
                 playerId: leaderSession?.actor?.fetchId?.(),
@@ -201,6 +216,8 @@ function partyLeaderSession(session) {
 
 function membersForLeader(leaderSession) {
     if (!leaderSession) return [];
+    const group = leaderSession.clanCommandParty;
+    if (group?.active) return invoke('GameServer/Bot/AI/ClanCommandParty').roster(group).filter(s => s !== group.owner);
     if (leaderSession.hotBackgroundPartyId) {
         return invoke('GameServer/Bot/AI/HotBackgroundParty').partyRoster(leaderSession).filter(s => s !== leaderSession);
     }
@@ -221,6 +238,8 @@ function hasCapacity(leaderSession, companionSession = null, reservation = compa
     if (isActiveCompanion(companionSession, leaderSession)) return true;
     const reservations = reservationsForLeader(leaderSession);
     if (reservation && reservations?.has(reservation)) return true;
+    const group = leaderSession?.clanCommandParty;
+    if (group?.active) return group.members.size + Number(reservations?.size || 0) < MAX_PARTY_MEMBERS;
     return membersForLeader(leaderSession).length + Number(reservations?.size || 0) < MAX_COMPANIONS;
 }
 
@@ -352,22 +371,33 @@ function autonomousLootBot(session) {
 }
 
 function groundLootPickers(leaderSession) {
+    const group = leaderSession?.clanCommandParty;
+    if (group?.active) return invoke('GameServer/Bot/AI/ClanCommandParty').roster(group);
     return [...(autonomousLootBot(leaderSession) ? [leaderSession] : []), ...membersForLeader(leaderSession)];
 }
 
 function isOwnedPartyGroundLoot(leaderSession, item) {
-    const leaderId = Number(leaderSession?.actor?.fetchId?.() || 0);
-    return leaderId > 0 && GroundItems.leaderOf(item) === leaderId;
+    const owner = groundLootOwnerKey(leaderSession);
+    return !!owner && GroundItems.ownerOf(item) === owner;
 }
 
 // The drops on the ground made for this leader's party (GroundItems).
+function groundLootOwnerId(session) {
+    const owner = partyLeaderSession(session);
+    return owner?.clanCommandParty?.lootLeaderId || Number(owner?.actor?.fetchId?.() || 0);
+}
+
+function groundLootOwnerKey(session) {
+    return partyLeaderSession(session)?.clanCommandParty?.lootKey || groundLootOwnerId(session);
+}
+
 function ownedGroundLoot(leaderSession) {
-    return GroundItems.ownedBy(world().items, Number(leaderSession?.actor?.fetchId?.() || 0));
+    return GroundItems.ownedBy(world().items, groundLootOwnerKey(leaderSession));
 }
 
 function isInsidePartyGroundLootLeash(leaderSession, item) {
-    return !!leaderSession?.actor &&
-        distance2d(leaderSession.actor, item) <= PARTY_GROUND_LOOT_LEASH_RADIUS;
+    const anchor = leaderSession?.clanCommandParty?.active ? leaderSession.clanCommandParty.commander.actor : leaderSession?.actor;
+    return !!anchor && distance2d(anchor, item) <= PARTY_GROUND_LOOT_LEASH_RADIUS;
 }
 
 function partyCombatInProgress(leaderSession) {
@@ -646,6 +676,8 @@ function formationSlotFor(companionSession) {
 }
 
 function formationTargetFor(companionSession) {
+    const commandTarget = invoke('GameServer/Bot/AI/ClanCommandParty').formationTarget(companionSession);
+    if (commandTarget) return commandTarget;
     const leader = companionSession?.followPlayerSession?.actor;
     if (!leader) return null;
 
@@ -710,14 +742,42 @@ function regroupActive(leaderSession, now = Date.now()) {
     return true;
 }
 
+// A guide visit that is the return from a death respawn walks back by its own
+// safe-teleport gate; a recall does not cut it.
+function returnsByItself(member) {
+    return member.plan === 'getting_buffed' && member.resumeAfterBuff?.waitForSafePartyReturn === true;
+}
+
+// A town errand or guide visit of a companion ends where it stands; the
+// leader's recall (Regroup, summon) is answered by following again.
+function endTownErrand(member) {
+    if (returnsByItself(member)) return;
+    const kind = member.companionShopping?.kind || (member.plan === 'getting_buffed' ? 'newbie_guide' : undefined);
+    const ended = member.plan === 'shopping' || member.plan === 'getting_buffed';
+    if (member.plan === 'shopping') invoke('GameServer/Bot/AI/States/ShoppingState').endCompanionErrand(member, member.actor);
+    else if (member.plan === 'getting_buffed') invoke('GameServer/Bot/AI/States/GettingBuffedState').endCompanionVisit(member, member.actor);
+    if (ended) {
+        member.roleDecision = {
+            role: BotRoles.inferRole(member.actor),
+            action: 'recall',
+            reason: 'recalled_by_leader',
+            errand: kind,
+            at: Date.now()
+        };
+    }
+}
+
 function beginRegroup(leaderSession, options = {}) {
     const leader = leaderSession?.actor;
     if (!leader) return { ok: false, reason: 'missing_party_leader' };
     // A companion on a hidden supply errand is left alone (its escape cast
     // would break on the action cancel); the regroup does not wait for it.
     const SupplyErrand = invoke('GameServer/Bot/AI/BotSupplyErrand');
+    // The leader's Regroup is answered by every companion except one on a
+    // player-requested supply errand or keeping a store; a town errand or
+    // guide visit ends and the companion comes back.
     const allMembers = membersForLeader(leaderSession).filter((member) => !SupplyErrand.ownsCompanion(member));
-    const members = allMembers.filter((member) => !['shopping', 'getting_buffed', 'merchant'].includes(member.plan));
+    const members = allMembers.filter((member) => member.plan !== 'merchant' && !returnsByItself(member));
     if (members.length === 0) return { ok: false, reason: 'no_party_companions' };
     const requestedRadius = Number(options.radius);
     const radius = Math.max(MIN_REGROUP_RADIUS, Math.min(
@@ -737,6 +797,7 @@ function beginRegroup(leaderSession, options = {}) {
     // compact formation is reached (or expires), normal pulling may resume.
     leaderSession.partyPullState = {};
     members.forEach((member) => {
+        endTownErrand(member);
         cancelCompanionAction(member);
         member.botStay = false;
         member.stayLocation = null;
@@ -873,6 +934,12 @@ function renderPanel(leaderSession) {
 }
 
 function refreshLeaderView(leaderSession, options = {}) {
+    if (leaderSession?.partyPresetOperation && !membersForLeader(leaderSession).length) {
+        invoke('GameServer/Bot/AI/PlayerPartyPreset').cancel(leaderSession);
+    }
+    if (leaderSession?.commandParties?.size && !membersForLeader(leaderSession).length) {
+        invoke('GameServer/Bot/AI/ClanCommandParty').dismissAll(leaderSession);
+    }
     if (options.rebuildWindow !== false) {
         sendPartyWindow(leaderSession, distributionForLeader(leaderSession));
     }
@@ -894,6 +961,7 @@ function cancelCompanionAction(companionSession) {
 }
 
 function detachState(companionSession, plan = 'hunting', preserveTakeover = false, preserveConstActivity = false) {
+    invoke('GameServer/Bot/AI/ClanCommandParty').memberDetached(companionSession);
     try { invoke('GameServer/Bot/BotTradeService').cleanup(companionSession, 'party_detach'); } catch (error) { FailureLog.note('ai.cleanup.trade', error); }
     invoke('GameServer/Bot/AI/HotBotPolicyOverlay').clearForPartyDetach(companionSession);
     cancelCompanionAction(companionSession);
@@ -949,6 +1017,7 @@ const PartyCompanionService = {
     staysOutOfTown,
 
     beginRegroup,
+    endTownErrand,
     holdParty,
 
     regroupActive,
@@ -981,6 +1050,7 @@ const PartyCompanionService = {
     getSettings,
 
     canPickupLoot,
+    cancelGroundPickup,
 
     updateSettings,
 
@@ -1078,6 +1148,8 @@ const PartyCompanionService = {
 
     reconcileGroundLoot,
     groundLootLeader: partyLeaderSession,
+    groundLootOwnerId,
+    groundLootOwnerKey,
     lootBagsKey,
 
     bringToLeader(leaderSession, companionSession) {
@@ -1237,6 +1309,7 @@ const PartyCompanionService = {
         companionSession.plan = 'following';
         companionSession.followPlayerSession = leaderSession;
         companionSession.partyCompanion = true;
+        invoke('GameServer/Bot/AI/ClanCommandParty').memberAttached(leaderSession, companionSession);
         refreshPartyMemberships([companionSession], invoke);
         companionSession.botStay = false;
         companionSession.stayLocation = null;
@@ -1250,6 +1323,7 @@ const PartyCompanionService = {
         // one urgent wakeup after that update completes.
         invoke('GameServer/Bot/BotAI').cancelScheduledTick(companionSession);
         const arrivalPending = this.bringToLeader(leaderSession, companionSession);
+        invoke('GameServer/Bot/AI/ClanCommandParty').applyMemberOrder(companionSession, { joining: true });
 
         if (previousLeader && previousLeader !== leaderSession) {
             refreshLeaderView(previousLeader);
@@ -1307,6 +1381,8 @@ const PartyCompanionService = {
     },
 
     detachAll(leaderSession, options = {}) {
+        if (leaderSession?.partyPresetOperation) invoke('GameServer/Bot/AI/PlayerPartyPreset').cancel(leaderSession);
+        invoke('GameServer/Bot/AI/ClanCommandParty').dismissAll(leaderSession);
         const members = membersForLeader(leaderSession);
         const Takeover = invoke('GameServer/Bot/AI/PlayerPartyTakeover');
         const restoration = options.restoreAutonomousParty === false || members.some(member => invoke('GameServer/Bot/AI/ConstPartySession').has(member))

@@ -146,6 +146,13 @@ const CONTROL_STACK_FAMILY_BY_EFFECT = Object.freeze({
     paralyze: 'paralyze'
 });
 
+// Curse of Shade and its aura share one debuff slot in Lisvus C4.
+const curseOfShade = {
+    skillType: AGGRO_DAMAGE, trait: 'debuff', target: 'enemy', effect: 'curse_of_shade', effectType: 'debuff',
+    baseLandRate: 100, stackFamily: 'CurseShade', stackOrder: 100,
+    statsByLevel: { pDefMul: [0.94, 0.92, 0.90], mDefMul: [0.95, 0.92, 0.90] }
+};
+
 const RULES = {
     // Lisvus effect time is one period; lifetime is count * time. NPC support
     // skills also need their periodic payload/stat bonuses, not name inference.
@@ -189,6 +196,12 @@ const RULES = {
     4199: {skillType: EFFECT, target: 'enemy', trait: 'debuff', isMagic: false, ssBoost: 1, effect: 'decrease_p_atk', effectType: 'debuff', effectTrait: 'debuff', baseLandRate: 90, durationMs: 90000, power: 90, mpConsumeByLevel: [17, 29, 39, 53, 67, 83, 97, 103, 108, 112, 115, 116], magicLevelByLevel: [14, 24, 34, 44, 54, 64, 74, 79, 84, 89, 94, 99], levelDepend: 1, hitTime: 2500, castRange: 750, effectRange: 1250, statsByLevel: {pAtkMul: [0.83, 0.8, 0.8, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77]}, stackFamily: 'pAtkDown', stackOrderByLevel: [0.83, 0.8, 0.8, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77]},
     4208: {skillType: DAMAGE_EFFECT, target: 'enemy', trait: 'physical', isMagic: false, ssBoost: 1, effect: 'stun', effectType: 'debuff', effectTrait: 'shock', baseLandRate: 80, durationMs: 9000, powerByLevel: [176, 475, 1304, 3414, 8592, 16607, 25504, 29589, 33944, 38501, 43180, 47895], mpConsumeByLevel: [36, 50, 69, 93, 118, 143, 166, 175, 182, 186, 189, 192], magicLevelByLevel: [14, 24, 34, 44, 54, 64, 74, 79, 84, 89, 94, 99], levelDepend: 1, hitTime: 4500, castRange: 900, effectRange: 1400, stackFamily: 'Stun', stackOrder: 1},
     4206: {skillType: EFFECT, target: 'enemy', trait: 'debuff', isMagic: false, ssBoost: 1, effect: 'decrease_max_mp', effectType: 'debuff', effectTrait: 'debuff', baseLandRate: 90, durationMs: 30000, mpConsumeByLevel: [17, 29, 39, 53, 67, 83, 97, 103, 108, 112, 115, 116], magicLevelByLevel: [14, 24, 34, 44, 54, 64, 74, 79, 84, 89, 94, 99], levelDepend: 1, hitTime: 2500, castRange: 750, effectRange: 1250, statsByLevel: {maxMpAdd: [-2, -2, -2, -2, -2, -4, -5, -7, -8, -10, -12, -12]}},
+    // C4 grand-boss script casts and permanent vulnerabilities (Lisvus fdc7e33a).
+    4020: { skillType: HEAL, target: 'friendly', trait: 'heal', isMagic: true, power: 10845, hitTime: 3000, castRange: 600, effectRange: 1100, aggroPoints: 100 },
+    4024: { skillType: HEAL, target: 'friendly', trait: 'heal', isMagic: true, power: 10845, hitTime: 3000, castRange: 600, effectRange: 1100, aggroPoints: 100 },
+    4021: { skillType: PASSIVE, target: 'self', trait: 'passive', stats: { fireVuln: 1.5, bowWpnVuln: 0.2 } },
+    4062: { skillType: PASSIVE, target: 'self', trait: 'passive', stats: { fireVuln: 2, bowWpnVuln: 0.2 } },
+    4516: { skillType: HEAL, target: 'friendly', trait: 'heal', isMagic: true, power: 5600, hitTime: 2000, reuseTime: 8000, castRange: 600, effectRange: 1100, magicLevel: 99, aggroPoints: 100 },
     4017: {skillType: DAMAGE, target: 'enemy', trait: 'physical', isMagic: false, ssBoost: 1, effect: null, effectType: null, power: 271, hitTime: 1300, coolTime: 500, sourceTarget: 'aura', radius: 250},
     4018: {skillType: DAMAGE_EFFECT, target: 'enemy', trait: 'physical', isMagic: false, ssBoost: 1, effect: 'slow', effectType: 'debuff', effectTrait: 'slow', baseLandRate: 70, durationMs: 120000, power: 542, levelDepend: 3, hitTime: 2200, coolTime: 500, castRange: 500, effectRange: 1000, stats: {runSpdMul: 0.5}, stackFamily: 'RunSpeedDown', stackOrder: 0.5},
     // Lisvus NPC debuffs: explicit semantics prevent fallback self buffs.
@@ -203,6 +216,10 @@ const RULES = {
     4200: { skillType: EFFECT, trait: 'debuff', effect: 'decrease_atk_spd', effectType: 'debuff', target: 'enemy', isMagic: false, baseLandRate: 90, levelDepend: 1, durationMs: 15000, magicLevelByLevel: [14, 24, 34, 44, 54, 64, 74, 79, 84, 89, 94, 99], mpConsumeByLevel: [17, 29, 39, 53, 67, 83, 97, 103, 108, 112, 115, 116], hitTime: 2500, castRange: 750, effectRange: 1250, stackFamily: 'pAtkSpdDown', stackOrderByLevel: [0.83, 0.8, 0.8, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77], statsByLevel: { pAtkSpdMul: [0.83, 0.8, 0.8, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77, 0.77] } },
     4203: { skillType: EFFECT, trait: 'slow', effect: 'slow', effectType: 'debuff', target: 'enemy', isMagic: false, baseLandRate: 50, levelDepend: 1, durationMs: 120000, magicLevelByLevel: [14, 24, 34, 44, 54, 64, 74, 79, 84, 89, 94, 99], mpConsumeByLevel: [17, 29, 39, 53, 67, 83, 97, 103, 108, 112, 115, 116], hitTime: 2500, castRange: 750, effectRange: 1250, stackFamily: 'RunSpeedDown', stackOrderByLevel: [0.85, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], statsByLevel: { runSpdMul: [0.85, 0.7, 0.7, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] } },
     4205: { skillType: EFFECT, trait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', isMagic: false, baseLandRate: 30, levelDepend: 1, durationMs: 120000, magicLevelByLevel: [14, 24, 34, 44, 54, 64, 74, 79, 84, 89, 94, 99], mpConsumeByLevel: [17, 29, 39, 53, 67, 83, 97, 103, 108, 112, 115, 116], hitTime: 2500, castRange: 750, effectRange: 1250 },
+    4705: { ...curseOfShade, effectRange: 900 },
+    4706: { ...curseOfShade, sourceTarget: 'aura', radius: 200 },
+    4707: { skillType: HEAL, trait: 'heal', target: 'friendly', effectRange: 1100,
+        aggroPointsByLevel: [541, 611, 659, 666, 669, 673, 676, 679, 681, 684, 687, 689, 692] },
     4713: { skillType: HEAL, trait: 'heal', target: 'self', isMagic: true, ssBoost: 1, castRange: -1 },
     4717: { skillType: HEAL, trait: 'heal', target: 'owner', isMagic: true, ssBoost: 1, castRange: 600 },
     4718: { skillType: HEAL, trait: 'heal', target: 'owner', isMagic: true, ssBoost: 1, castRange: 600 },
@@ -1048,8 +1065,8 @@ const RULES = {
     4164: { skillType: EFFECT, trait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 15, levelDepend: 1, magicLevelByLevel: [40, 44, 48, 52, 56, 60, 64, 68, 72] },
     4165: { skillType: EFFECT, trait: 'water', effect: 'icy_air', effectType: 'debuff', target: 'enemy', ssBoost: 0, levelDepend: 1, magicLevelByLevel: [40, 44, 48, 52, 56, 62, 66, 70, 74], dot: { count: 15, intervalMs: 1000, damageByLevel: [77, 77, 77, 94, 94, 108, 108, 118, 118] } },
     4166: { skillType: EFFECT, trait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 80, levelDepend: 1, magicLevelByLevel: [40, 44, 48, 52, 56, 60, 64, 68, 72] },
-    4063: { skillType: DAMAGE_EFFECT, trait: 'physical', effectTrait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 90, levelDepend: 1, magicLevel: 50, castRange: 50, effectRange: 200 },
-    4064: { skillType: EFFECT, trait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', sourceTarget: 'area', radius: 200, ssBoost: 0, baseLandRate: 30, magicLevel: 50, castRange: 800, effectRange: 1300 },
+    4063: { durationMs: 120000, hitTime: 3500, skillType: DAMAGE_EFFECT, trait: 'physical', effectTrait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', ssBoost: 1, baseLandRate: 90, levelDepend: 1, magicLevel: 50, castRange: 50, effectRange: 200 },
+    4064: { durationMs: 120000, hitTime: 4000, skillType: EFFECT, trait: 'paralyze', effect: 'paralyze', effectType: 'debuff', target: 'enemy', sourceTarget: 'area', radius: 200, ssBoost: 0, baseLandRate: 30, magicLevel: 50, castRange: 800, effectRange: 1300 },
     4070: { skillType: EFFECT, trait: 'debuff', effect: 'decrease_atk_spd', effectType: 'debuff', target: 'enemy', ssBoost: 0, baseLandRate: 10, levelDepend: 1, stats: { pAtkSpdMul: 0.77 } },
     4072: { skillType: DAMAGE_EFFECT, trait: 'physical', effectTrait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1, overHit: true, baseLandRate: 30, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95] },
     4073: { skillType: DAMAGE_EFFECT, trait: 'physical', effectTrait: 'shock', effect: 'stun', effectType: 'debuff', target: 'enemy', ssBoost: 1, overHit: true, baseLandRate: 50, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRange: 40, effectRange: 200 },

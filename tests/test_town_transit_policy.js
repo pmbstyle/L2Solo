@@ -2,7 +2,6 @@ const assert = require('assert');
 require('../src/Global');
 const Policy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
-const Slots = invoke('GameServer/Bot/AI/TownNpcSlots');
 const Recovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const TownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
 const Geodata = invoke('GameServer/Geodata/GeodataEngine');
@@ -81,12 +80,4 @@ for (let attempt = 1; attempt <= 6; attempt++) {
     assert.strictEqual(Recovery.move(queuedSession, bot, destination, 'shopping', { targetActor: null }).status, 'waiting');
 }
 
-const first = {}, second = {}, third = {};
-const makePoints = () => [{ locX: 1 }, { locX: 2 }];
-assert.strictEqual(Slots.reserve(first, 'test-counter', makePoints, 0, 100).locX, 1);
-assert.strictEqual(Slots.reserve(second, 'test-counter', makePoints, 0, 100).locX, 2);
-assert.strictEqual(Slots.reserve(third, 'test-counter', makePoints, 0, 100), null, 'full counters must wait instead of stacking actors');
-Slots.release(first);
-assert.strictEqual(Slots.reserve(third, 'test-counter', makePoints, 0, 100).locX, 1);
-assert(Slots.reserve({}, 'test-counter', makePoints, 0, 100 + Slots.LEASE_MS + 1), 'abandoned leases must expire without global timers');
-console.log('Town transit, interaction, overload and NPC slot checks passed');
+console.log('Town transit, interaction, overload checks passed');

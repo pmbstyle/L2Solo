@@ -85,13 +85,17 @@ async function main() {
     }
     const poor = await member(31, 0), rich = await member(32, 10000000);
     const shotId = ShotStock.planForActor(rich).selfId;
-    const quotePrice = Number(DataCache.items.find(row => row.selfId === shotId).template.price);
+    // The fixed shot store sells at the x1 template price at every preset, and
+    // a bot buys a player's line only below the store's price: the player
+    // lists one Adena under it.
+    const listPrice = Number(DataCache.items.find(row => row.selfId === shotId).template.price) - 1;
     // Declare a real player's physical surplus large enough for the native
-    // table's full town-visit interval, at the precision the kit rates keep
-    // (StatsPacket.roundRates); this does not author the buyer target.
+    // table's full bag of use plus the reserve (ConsumableTarget), at the
+    // precision the kit rates keep (StatsPacket.roundRates); this does not
+    // author the buyer target.
     const tableUse = invoke('GameServer/Bot/Economy/StatsPacket').roundRates({ shotUse: Table.value(id, 'dps', 25, true).shots }).shotUse;
-    const supplyUnits = Math.ceil(tableUse
-        * invoke('GameServer/Bot/Economy/TownVisitInterval').targetHours(Economy.stateForActor(rich).stats));
+    const supplyUnits = invoke('GameServer/Bot/Economy/ConsumableTarget').target(tableUse,
+        Economy.basics(Economy.stateForActor(rich)).stock('shots').targetHours);
     const sellerAccount = 'shot_surplus_seller';
     await Database.createAccount(sellerAccount, 'fixture');
     const sellerId = Number((await Database.createCharacter(sellerAccount, { name: 'ShotSeller', race: 0, classId: 0,
@@ -102,7 +106,7 @@ async function main() {
     assert.strictEqual(sellerStock.amount, supplyUnits);
     const created = await Database.createAfkTradeShop(sellerId, { kind: 'shop', storeType: 1,
         town: 'Giran', ...world.town(), lines: [{ objectId: sellerStock.id, selfId: shotId, count: supplyUnits,
-            price: quotePrice, enchant: 0, stackable: true }] });
+            price: listPrice, enchant: 0, stackable: true }] });
     assert.strictEqual(created.ownerInventory.filter(row => row.selfId === shotId).reduce((sum, row) => sum + row.amount, 0), 0,
         'publishing the native SELL transfers the physical surplus into custody');
     assert.strictEqual(created.shop.lines[0].count, supplyUnits);
@@ -141,14 +145,14 @@ async function main() {
 
         // A weapon change buys the restock with the member's adena.
         const offers = Afk.offers(shotId, Afk.SELL, { characterId: rich.fetchId(), town: 'Giran' });
-        assert.strictEqual(offers[0].price, quotePrice, 'the current physical offer keeps the canonical template quote');
+        assert.strictEqual(offers[0].price, listPrice, 'the current physical offer keeps its listed price');
         const nativeRestock = ShotStock.restockPlan(rich, { offers });
         const policy = ShotStock.usePolicy(Economy.stateForActor(rich), { unitPrice: offers[0].price });
         const stockWish = richEconomy.network.queue.find(row => row.key === 'stock:shots');
         console.log('Native paid shot input:', JSON.stringify({ policy, stockWish: stockWish && {
             key: stockWish.key, funded: stockWish.funded, price: stockWish.price },
             target: nativeRestock.targetAmount, amount: nativeRestock.amount, cost: nativeRestock.cost,
-            npcPrice: nativeRestock.unitPrice, quotePrice }));
+            npcPrice: nativeRestock.unitPrice, listPrice }));
         assert(policy.purchaseUsePerHour > 0, 'the native XP gain covers this actual physical offer price');
         assert(stockWish && stockWish.funded, 'the actual shared queue funds the shot stock wish');
         assert(nativeRestock.amount > 0 && nativeRestock.shops.length === 1, 'the native restock chooses the funded external physical supply');
@@ -164,7 +168,7 @@ async function main() {
         assert(Number(rich.backpack.fetchItemFromSelfId(57).fetchAmount()) < 10000000, 'the funded restock is paid from the member adena');
         assert(ShotStock.shotAmount(rich) > 0, 'the bought shots are in the bag');
         const bought = ShotStock.shotAmount(rich), spent = 10000000 - rich.backpack.fetchItemFromSelfId(57).fetchAmount();
-        assert.strictEqual(spent, bought * quotePrice, 'the native transaction pays the current seller quote for actual physical shots');
+        assert.strictEqual(spent, bought * listPrice, 'the native transaction pays the seller listed price for actual physical shots');
         const buyerRows = await Database.fetchItems(32), sellerRows = await Database.fetchItems(sellerId);
         assert.strictEqual(buyerRows.filter(row => row.selfId === shotId).reduce((sum, row) => sum + row.amount, 0), bought);
         assert.strictEqual(sellerRows.filter(row => row.selfId === 57).reduce((sum, row) => sum + row.amount, 0), spent);

@@ -100,20 +100,28 @@ function restore(payload) {
     if (!(context.revision >= payload.contextRevision)) throw new Error('stale clan planning context');
     return spotCatalog.restore(payload);
 }
+// The member being planned (its state as main sent it): the buyer a configured
+// row's gate reads, as main reads the bot's cached row (MarketOpportunity.buyerOf).
+let planningMember = null;
+const buyerOf = characterId => planningMember && memberId(planningMember) === Number(characterId) ? planningMember
+    : job?.prospectById.get(Number(characterId)) || null;
 const market = {
     get TOWN_NPC_SELLERS() { return context.towns || {}; },
     npcOffersAll: (id) => npcOffers.get(Number(id)) || [],
     // MarketOpportunity.bestOffer over the same sources: the board, the
-    // configured merchants (with the plan) and the NPC shops in the towns.
+    // configured merchants (with the plan, the rows this buyer may buy:
+    // OfferQuery.sourceAllowed) and the NPC shops in the towns.
     bestOffer(id, options = {}) {
         const towns = options.town ? [options.town] : options.towns || null;
+        const buyer = buyerOf(options.buyerCharacterId);
+        const fixed = (fixedOffers.get(Number(id)) || []).filter(offer => OfferQuery.sourceAllowed(offer, true, buyer));
         return OfferQuery.bestSellOffer(tables.ready('board') ? boardIndex : null, Number(id), {
             towns,
             excludeOwner: options.buyerCharacterId,
             budget: options.budget,
             cost: options.cost,
             accept: options.accept,
-            others: OfferQuery.othersIn(towns, fixedOffers.get(Number(id)) || [], npcOffers.get(Number(id)) || [])
+            others: OfferQuery.othersIn(towns, fixed, npcOffers.get(Number(id)) || [])
         });
     }
 };
@@ -226,9 +234,15 @@ parentPort.on('message', (message) => {
                 options = { ...jobOptions, ...options };
             }
             if (options.economicMode && (job?.key !== payload.jobKey || !job.prepared)) throw Error('economic planning job missing');
-            const plan = options.economicMode ? require('./ClanRosterDemand').economicPlan(planner.planForMember, job,
-                member, spots, warehouseRows, { ...options, throwOnError: true })
-                : planner.planForMember(member, spots, warehouseRows, { ...options, throwOnError: true });
+            let plan;
+            planningMember = member;
+            try {
+                plan = options.economicMode ? require('./ClanRosterDemand').economicPlan(planner.planForMember, job,
+                    member, spots, warehouseRows, { ...options, throwOnError: true })
+                    : planner.planForMember(member, spots, warehouseRows, { ...options, throwOnError: true });
+            } finally {
+                planningMember = null;
+            }
             parentPort.postMessage({ id: message.id, result: { plan, ...(workerData?.developerDiagnostics ? { durationMs: performance.now() - startedAt, v8Heap: heapRecord() } : {}) } });
             return;
         } else {

@@ -10,6 +10,8 @@ const databasePath = path.join(rootDir, 'tmp', 'test-clan-crest-assets.sqlite');
 const Database = invoke('Database');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 const ClanService = invoke('GameServer/Clan/ClanService');
+const { normalizeMonogram, normalizeMonogramColor, monogramTokens } = invoke('GameServer/Clan/CrestGeneration/Monogram');
+const { sampleCrests } = invoke('GameServer/Clan/CrestGeneration/TesseraSampler');
 const ClientRequest = invoke('GameServer/Network/Request');
 const ServerResponse = invoke('GameServer/Network/Response');
 
@@ -31,7 +33,57 @@ function seedDatabase() {
     seed.close();
 }
 
+async function verifyMonogramInpainting() {
+    const gold = [253, 217, 112];
+    const dark = [25, 12, 21];
+    const background = [10, 30, 110];
+    const blue = [124, 186, 253];
+    const palette = Array.from({ length: 512 }, () => [0, 0, 0]);
+    [palette[1], palette[2], palette[3], palette[4]] = [gold, dark, background, blue];
+    assert.strictEqual(normalizeMonogram(' l '), 'L');
+    assert.strictEqual(normalizeMonogram(), '');
+    assert.strictEqual(normalizeMonogram('LL'), null);
+    assert.strictEqual(normalizeMonogram('7'), null);
+    assert.strictEqual(normalizeMonogramColor(), 'gold');
+    assert.strictEqual(normalizeMonogramColor('blue'), 'blue');
+    assert.strictEqual(normalizeMonogramColor('constructor'), null);
+
+    const goldMask = monogramTokens('L', palette, 16, 12);
+    assert.strictEqual(goldMask.get(2 * 16 + 4), 1n, 'glyph defaults to gold');
+    const fixed = monogramTokens('L', palette, 16, 12, 'blue');
+    assert.deepStrictEqual(fixed, new Map([...goldMask].map(([pixel, token]) => [pixel, token === 1n ? 4n : token])));
+    assert.strictEqual(fixed.size, 72);
+    assert.strictEqual(fixed.get(16 + 3), 2n, 'outline includes diagonal neighbors');
+    assert.strictEqual(fixed.has(0), false);
+
+    const ort = { Tensor: class { constructor(type, data) { this.data = data; } } };
+    const logits = new Float32Array(8 * 256 * 512).fill(-1000);
+    for (let i = 3; i < logits.length; i += 512) logits[i] = 0;
+    let steps = 0;
+    const session = { async run(feeds) {
+        if (steps++ === 0) assert.strictEqual(feeds.ratio.data[0], (192 - fixed.size) / 256);
+        for (let row = 0; row < 8; row += 1) {
+            for (const [pixel, token] of fixed) {
+                assert.strictEqual(feeds.pixels.data[row * 256 + 32 + pixel], token,
+                    'the monogram and outline must remain visible to Tessera at every step');
+            }
+        }
+        return { logits: { data: logits } };
+    } };
+    const crests = await sampleCrests(ort, session, new Float32Array(24 * 512), new Float32Array(512), palette, 'L', 'blue');
+    assert.strictEqual(steps, 16);
+    assert.strictEqual(crests.length, 4);
+    for (const crest of crests) {
+        const rgba = Buffer.from(crest, 'base64');
+        for (let pixel = 0; pixel < 192; pixel += 1) {
+            const rgb = palette[Number(fixed.get(pixel) ?? 3n)];
+            assert.deepStrictEqual([...rgba.subarray(pixel * 4, pixel * 4 + 4)], [...rgb, 255]);
+        }
+    }
+}
+
 async function main() {
+    await verifyMonogramInpainting();
     seedDatabase();
     options.default.Database.path = path.relative(rootDir, databasePath);
     Database.init();

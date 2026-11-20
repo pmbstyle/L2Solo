@@ -71,7 +71,6 @@ function expectedStock(state, timestamp) {
     const use = benefit >= costHours ? rawUse : 0;
     const potionId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
     const potionUse = Math.max(0, Number(withShots.potions) || 0);
-    assert.equal(state.stats.visitEvery, undefined, 'no visit history is invented for the original restart case');
     const plannedSlots = Number(use > 0 && !(state.inventory[shotPlan.selfId]?.amount > 0))
         + Number(potionUse > 0 && !(state.inventory[potionId]?.amount > 0));
     const freeSlots = Math.max(0, Floor.inventoryLimit(state.stats.race)

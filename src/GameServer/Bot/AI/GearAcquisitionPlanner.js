@@ -3238,7 +3238,10 @@ function rawPlanFor(state = {}, options = {}) {
     const offer = marketOfferForTarget(target.item, state, planningOptions);
     const clanRaid = options.clanCrafting && direct?.raidBoss === true;
     const craftFirst = !clanRaid && rankIndex(target.item.etc?.rank) >= 3 && target.recipe && Number.isFinite(craftKills);
-    const buy = offer && (rankIndex(target.item.etc?.rank) >= 3
+    // From C up a bot that holds the money buys its target from the cheapest
+    // landed offer, as the candidate rule prices an affordable offer
+    // (candidateEffort); below C the effort comparison alone decides.
+    const buy = offer && (rankIndex(target.item.etc?.rank) >= 2
         && Number(offer.price) <= PurchaseFunding.spendable(state, planningOptions.buyOrderEscrow, { upperBound: true })
         || !craftFirst && marketEffort(offer, state) <= Math.min(directEffort, craftKills));
     const directAssessment = direct ? partyNeedAssessmentForSource(state, direct) : null;

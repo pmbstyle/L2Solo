@@ -73,7 +73,8 @@ async function sell(state, id, price, count = 1) {
             const recipe = Recipes.resolveByRecipeId(recipeId), now = Date.now(), owners = [];
             const ore = recipe.materials.find(m => m.selfId !== 1459), itemId = recipe.productId;
             const recipeCost = { 21: 168409, 318: 150000, 324: 128052 }[recipeId], gearCost = 336127;
-            const orePrice = { 1785: 742, 3031: 1188 }[ore.selfId];
+            // Under the x1 NPC price (275 / 440 at every preset), so the board seller is the cheaper supply.
+            const orePrice = { 1785: 270, 3031: 430 }[ore.selfId];
             const bidPrice = { 21: 300, 318: 1000, 324: 1300 }[recipeId];
             const supplier = await seed([cash(1000000), { selfId: recipe.recipeItemId, amount: 1 },
                 { selfId: 2495, amount: 1 }, { selfId: ore.selfId, amount: 1000 }], { name: 'CInputs' });

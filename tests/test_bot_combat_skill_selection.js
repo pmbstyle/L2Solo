@@ -393,6 +393,68 @@ try {
     assert.strictEqual(utilityGenerics.skills[0].selfId, 1234, 'mage should choose the stronger learned offensive spell');
     assert.strictEqual(utilitySession.lastCombatDecision.skillId, 1234, 'combat choice should be observable');
 
+    const DataCache = invoke('GameServer/DataCache');
+    const Skillset = invoke('GameServer/Actor/Skillset');
+    const Profiles = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    DataCache.init({ validate: false });
+    for (const [classId, mainNuke, closeSpell] of [
+        [12, 1230, 1231], // Sorcerer: Prominence, Aura Flare
+        [27, 1235, 1231], // Spellsinger: Hydro Blast, Aura Flare
+        [13, 1148, 1172], // Necromancer: Death Spike, Aura Burn
+        [40, 1239, 1172]  // Spellhowler: Hurricane, Aura Burn
+    ]) {
+        const mage = bot(classId, [], 1000);
+        mage.skillset = new Skillset();
+        mage.skillset.populateSnapshot(Profiles.skillRecordsFromTree(classId, 44));
+        mage.fetchMaxMp = () => 1000;
+        mage.fetchCollectiveMAtk = () => 225;
+        mage.fetchCollectiveCastSpd = () => 500;
+        let bones = 0;
+        mage.backpack.fetchItemFromSelfId = id => id === 2508 && bones > 0 ? { fetchAmount: () => bones } : undefined;
+        let distance = 700;
+        const target = {
+            ...npc(12000 + classId), fetchLocX: () => distance, fetchCollectiveMDef: () => 135
+        };
+        const cast = () => {
+            const calls = generics();
+            BotAI.executeCombat({}, mage, target, calls, { party: true });
+            assert.equal(calls.attacks.length, 0);
+            return mage.skillset.fetchSkill(calls.skills[0]?.selfId);
+        };
+
+        for (const range of [700, 800, 900]) {
+            distance = range;
+            const chosen = cast();
+            assert(chosen?.fetchDistance() >= distance, `class ${classId} should cast from ${distance}`);
+            assert.notEqual(chosen.fetchSelfId(), 1148, 'Death Spike requires a Cursed Bone');
+        }
+
+        distance = 700;
+        bones = 1;
+        mage.canUseSkill = entry => [1177, mainNuke, closeSpell].includes(entry.fetchSelfId());
+        assert.equal(cast()?.fetchSelfId(), mainNuke, 'a ready, affordable class nuke can cast from range');
+        distance = 950;
+        assert.equal(cast()?.fetchSelfId(), mainNuke, 'a mage can approach to the range of a ready long-range spell');
+
+        for (const shortId of [closeSpell, 1275]) {
+            const shortSpell = mage.skillset.fetchSkill(shortId);
+            if (!shortSpell) continue;
+            mage.canUseSkill = entry => entry.fetchSelfId() === shortId;
+            distance = shortSpell.fetchDistance() + 1;
+            assert.equal(cast(), undefined, 'a short spell must wait while the ranged spells are on reuse');
+            distance--;
+            assert.equal(cast()?.fetchSelfId(), shortId, 'a short spell is usable at its exact cast range');
+        }
+
+        if (mage.skillset.fetchSkill(1148)) {
+            distance = 700;
+            mage.canUseSkill = entry => entry.fetchSelfId() === 1148;
+            assert.equal(cast()?.fetchSelfId(), 1148, 'one Cursed Bone makes Death Spike available');
+            bones = 0;
+            assert.equal(cast(), undefined, 'the next decision must see that the last bone is gone');
+        }
+    }
+
     const undeadNuke = skill(1028, {
         name: 'Might of Heaven',
         mp: 35,

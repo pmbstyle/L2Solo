@@ -1,6 +1,6 @@
 'use strict';
 
-// One durable encounter owns both parties, so HP, regeneration, admission and
+// One durable encounter owns all parties, so HP, regeneration, admission and
 // rewards have one writer. Party skills still see groups of at most nine.
 const id = value => Number(value?.characterId ?? value?.actor?.fetchId?.() ?? value?.fetchId?.() ?? value?.id ?? value);
 const markerFor = value => value?.stats?.objective?.fullRoster || value?.fullRoster || value;
@@ -8,12 +8,10 @@ const coreIds = value => {
     const marker = markerFor(value);
     return marker?.coreMemberIds || marker?.memberIds || [];
 };
-// PARTY_MEMBERS: a C4 party's nine. MAX_MEMBERS: the most one background party row
-// holds, an expedition's core party and its helpers' party. A row of up to eighteen
-// is our expedition design: C4 has no party over nine. These own the size of a party
-// row and of the party goal query's messages: its request pages and answer, the group
-// purse, validGroups and capacity read them. Other places still write the number.
-const PARTY_MEMBERS = 9, MAX_MEMBERS = 2 * PARTY_MEMBERS;
+// One background row owns the expedition. Ordinary C4 party skills still see
+// nine members; the expedition can hold the largest C4 clan, including a final
+// incomplete helper party. Transport and persistence use this same bound.
+const PARTY_MEMBERS = 9, MAX_MEMBERS = 40;
 function validGroups(marker) {
     const all = marker?.memberIds, core = coreIds(marker);
     return Array.isArray(all) && Array.isArray(core) && core.length === PARTY_MEMBERS
@@ -27,7 +25,11 @@ function helper(value, member) {
 }
 function groups(value) {
     const marker = markerFor(value), core = coreIds(marker);
-    return marker?.coreMemberIds ? [core, marker.memberIds.filter(value => !core.includes(value))] : [core];
+    if (!marker?.coreMemberIds) return [core];
+    const helpers = marker.memberIds.filter(value => !core.includes(value));
+    const result = [core];
+    for (let offset = 0; offset < helpers.length; offset += PARTY_MEMBERS) result.push(helpers.slice(offset, offset + PARTY_MEMBERS));
+    return result;
 }
 function partyMembers(members, value, member) {
     const marker = markerFor(value);

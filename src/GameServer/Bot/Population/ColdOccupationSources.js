@@ -87,11 +87,14 @@ function recipeIndex(board) {
             && !!fixedBuy.get(Number(recipe.productId))?.length });
 }
 
-// The same enabled fixed material buyers feed production actions and the
-// finite wish graph. These are supported authored exits, not player forecasts.
-function fixedBuyerOffersFor(id) {
+// The same enabled fixed material buyers feed production actions, the
+// finite wish graph and an owned item's value, for a seller the fixed
+// buyers admit (ProductionPolicy.sellsToFixedBuyer). These are supported
+// authored exits, not player forecasts.
+function fixedBuyerOffersFor(id, seller) {
     initialise();
-    return Production.buyersDisabled() ? EMPTY : fixedBuy.get(Number(id)) || EMPTY;
+    return Production.sellsToFixedBuyer(seller, ItemIndex.find(Data.items, Number(id))?.template?.kind)
+        ? fixedBuy.get(Number(id)) || EMPTY : EMPTY;
 }
 
 // One value of an owned item for the wish and the producer:
@@ -107,7 +110,7 @@ function* exitValue(state, id, board = null) {
         if (Number(line.ownerId) === Number(state.characterId)) { yield 'quote'; continue; }
         value = Math.max(value, Number(line.price || 0)); yield 'quote';
     }
-    for (const exit of fixedBuyerOffersFor(id)) { value = Math.max(value, exit.price); yield 'quote'; }
+    for (const exit of fixedBuyerOffersFor(id, state)) { value = Math.max(value, exit.price); yield 'quote'; }
     return Number.isFinite(value) ? Math.max(0, value) : NaN;
 }
 
@@ -198,11 +201,9 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
                 trip: trip(line.town), tripDetails: details, repeatable: false });
             yield 'quote';
         }
-        if (!Production.buyersDisabled() && String(template?.template?.kind || '').startsWith('Other.Material')) {
-            for (const exit of fixedBuyerOffersFor(recipe.productId)) {
-                const details = yield* ensureTrip(exit.town);
-                result.push({ ...exit, trip: trip(exit.town), tripDetails: details }); yield 'quote';
-            }
+        for (const exit of fixedBuyerOffersFor(recipe.productId, owner)) {
+            const details = yield* ensureTrip(exit.town);
+            result.push({ ...exit, trip: trip(exit.town), tripDetails: details }); yield 'quote';
         }
         for (const exit of result) {
             if (exit.type !== 'afk') { yield 'exit'; continue; }

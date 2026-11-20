@@ -195,7 +195,13 @@ async function run() {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     Economy.configure({ spots: [], knowledgeEnabled: false });
     state = await seed(9543, 1000000, { classId: 1, marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
-    state = { ...state, level: 33 };
+    // A level whose income row needs potions and whose best experience row none:
+    // the spot-use shapes below read both, whatever levels the table gives them.
+    const SpotTable = invoke('GameServer/Bot/AI/SpotValueTable'), Efficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+    const level = Array.from({ length: 31 }, (_, at) => 20 + at).find(at => Efficiency.incomeRow({ ...state, level: at })?.potions > 0
+        && !(SpotTable.best(SpotTable.roleFor({ ...state, level: at }), at, true).potions > 0));
+    assert(level, 'fixture: a level whose income row needs potions and whose experience row none');
+    state = { ...state, level };
     const packet = Economy.forState(state).statsPacket;
     // Its earning answer carries the spot's kit use, as the worker's decision publishes it.
     state = await Life.upsertState(require('./helpers/ratedKit')({ ...state, stats: { ...state.stats, ...packet } }), 'basket_fixture');
@@ -213,13 +219,15 @@ async function run() {
         return { ...state, stats: { ...state.stats, kitRates: Packet.kitRates(named),
             earning: { ...state.stats.earning, shotsPerHour: named.shotUse, potionsPerHour: named.potionUse } } };
     };
-    const published = rated({ potionUse: 15, potionRestUse: 0, outingHours: 1 });
+    // No hours to a full bag (bagHours 0): the kit is its line.
+    const published = rated({ potionUse: 15, potionRestUse: 0, bagHours: 0 });
     assert.equal(potionLine(published), 15, 'the errand fills the published line (one hour of use)');
     const potionTarget = value => Potions.restockPlan(value, { unitPrice: Restock.quoteFor(potionId, 'Dion').price }).targetAmount;
-    assert.equal(potionTarget(rated({ potionUse: 5, potionRestUse: 0, outingHours: 3 })), 15, 'its target is an outing of that use');
-    assert.equal(potionTarget(rated({ potionUse: 5, potionRestUse: 0, outingHours: .5 })), 5, 'never less than one hour of it');
+    assert.equal(potionTarget(rated({ potionUse: 5, potionRestUse: 0, bagHours: 3 })), 17,
+        'its target is a full bag\'s use plus the reserve: ceil(5 x 3 x 1.1)');
+    assert.equal(potionTarget(rated({ potionUse: 5, potionRestUse: 0, bagHours: .5 })), 5, 'never less than one hour of it');
     // The rates are read by kind: a level or weapon change since the build buys its new potion at them.
-    assert.equal(potionLine(rated({ potionUse: 15, potionRestUse: 0, outingHours: 1, potionId: 0 })), 15,
+    assert.equal(potionLine(rated({ potionUse: 15, potionRestUse: 0, bagHours: 0, potionId: 0 })), 15,
         'a row of another potion buys the bot\'s potion at the row\'s rates');
     // The spot's use by one rule on both threads (EquipmentIncomeRoute.spotUseOf): an answer saved before it
     // carried the use, a party member (its hunt is no answer's spot) and a bot holding no answer read the spot
@@ -291,18 +299,18 @@ async function run() {
     assert.deepEqual([scrollPlan(state).amount, scrollPlan(state).cost], [scrollPlan(state, built).amount, scrollPlan(state, built).cost],
         'the same scroll restock (the row keeps three digits of its hours)');
     // Shots: whether they restock, their use, the stock the bag holds now.
-    const shotRow = (shotsCanRestock, shotUse, owned) => ({ ...rated({ shotsPay: true, shotsCanRestock, shotUse, outingHours: 2 }),
+    const shotRow = (shotsCanRestock, shotUse, owned) => ({ ...rated({ shotsPay: true, shotsCanRestock, shotUse, bagHours: 2 }),
         inventory: { ...state.inventory, [shotId]: { selfId: shotId, amount: owned } } });
     const restocking = shotPlan(shotRow(true, 250, 0));
     assert(restocking.needed, 'below one hour of use the bot restocks');
-    assert.equal(restocking.targetAmount, 500, 'up to an outing of the published use');
+    assert.equal(restocking.targetAmount, 550, 'up to a full bag\'s use plus the reserve: ceil(250 x 2 x 1.1)');
     assert(restocking.amount >= 250, 'the survival part is always funded');
     const capped = shotPlan(shotRow(false, 250, 50));
     assert.equal(capped.targetAmount, 50, 'shots that cannot restock keep at most what the bag holds');
     assert.equal(capped.needed, false, 'and buy none');
     assert.equal(shotPlan(shotRow(false, 250, 80)).targetAmount, 80, 'capped shots follow the bag as it rises');
     const roseRestocking = shotPlan(shotRow(true, 250, 100));
-    assert.equal(roseRestocking.targetAmount, 500, 'restockable shots keep the outing target as they rise');
+    assert.equal(roseRestocking.targetAmount, 550, 'restockable shots keep the bag\'s target as they rise');
     assert(roseRestocking.needed);
     // Scrolls: the hours one saves, the money a side purchase may take.
     const scrollRow = scrollHours => rated({ scrollHours });

@@ -1,5 +1,6 @@
 const Runtime = require('./PvpEncounterRuntime');
 const { STEP_MS } = require('./PvpEncounterBudget');
+const ColdClock = require('./ColdClock');
 const id = s => Number(s?.actor?.fetchId?.());
 const life = () => invoke('GameServer/Bot/Population/BotLifeState');
 const coordinator = () => invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
@@ -9,7 +10,7 @@ const statesFor = e => Runtime.ids(e).map(n => life().cachedState(n));
 async function transition(e, states, next, phase, reason, validate) {
     const at = Date.now();
     const prepared = next.map(s => ({ ...s, phase,
-        timing: { ...s.timing, lastResolvedAt: at, nextResolveAt: phase === 'hot' ? null : at + STEP_MS } }));
+        timing: { ...s.timing, lastResolvedAt: ColdClock.handedAt(s, at), nextResolveAt: phase === 'hot' ? null : at + STEP_MS } }));
     const result = await invoke('Database').transitionPvpEncounter({ key: e.key, phase, expectedPhase: states[0].phase, reason, validate,
         members: prepared.map((s, i) => ({ characterId: s.characterId,
             expectedRevision: Number(states[i].simulation?.revision || 0), expectedUpdatedAt: states[i].updatedAt,

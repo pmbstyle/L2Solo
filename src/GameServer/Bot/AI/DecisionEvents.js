@@ -3,7 +3,6 @@ const { isMainThread } = require('node:worker_threads');
 const FailureLog = require('../../../FailureLog');
 const Sections = require('../Economy/DecisionSections');
 const Situations = require('../Situations');
-const TownVisitInterval = require('../Economy/TownVisitInterval');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Decisions = invoke('GameServer/Bot/Population/ColdEconomyDecision');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
@@ -65,9 +64,6 @@ function decisionStatsFor(session) {
 // { spotId, reason }, player_command's { spotId, at }).
 function raiseDecision(session, reason, { impossible = false, payload: fact = null } = {}) {
     if (!reasons.has(reason)) throw new TypeError('unknown_decision_event');
-    // The visit clock moves at the arrival, once a visit (ShoppingState.arrive). A fact
-    // of the body, kept on its stats: never part of a raise.
-    if (ARRIVALS.has(reason)) replaceStats(session, { ...statsFor(session), visitEvery: TownVisitInterval.arrived(statsFor(session)) });
     // lazy: cycle BotLifeState requires this module at its top.
     const Life = isMainThread && session.actor ? invoke('GameServer/Bot/Population/BotLifeState') : null;
     if (Life?.cachedState(session.actor.fetchId?.())?.phase === 'hot') {

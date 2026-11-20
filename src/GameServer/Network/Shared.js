@@ -81,6 +81,13 @@ const Shared = {
 
     enterCharacterHall(session, characters) {
         invoke('GameServer/World/World').retireUserActor(session, session.actor);
+        session.actor = null;
+        session.characterSelection = (session.characterSelection || 0) + 1;
+        session.characterHall = true;
+        session.characterLeaving = false;
+        session.worldEntryActor = null;
+        session.knownNpcIds?.clear();
+        session.knownCharacterActors?.clear();
         session.dataSendToMe(
             ServerResponse.charSelectInfo(characters)
         );

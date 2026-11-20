@@ -3,10 +3,13 @@
 // The files each precomputed bot table is simulated by, and their fingerprint:
 // a change in one of these files makes the table stale. Read by the generators
 // (scripts/generate-spot-table.js writes the spot table's header.fingerprint,
-// scripts/hunt-tables/common.js each hunt table's), by scripts/check-tables.js
+// scripts/hunt-tables/common.js each hunt table's, scripts/generate-town-ways.js
+// the town ways'), by scripts/check-tables.js
 // (`npm run check` fails on a stale committed table) and by SpotValueTable
 // (one log line at the first read, main thread). Readers only (SpotValueTable,
-// SpotEconomics, SpotRewardExpectation, ...) are no input. A path is a file or
+// SpotEconomics, ...) are no input; SpotRewardExpectation (the expected drop
+// weight a row's stock is sized on) and BotHuntEfficiency (the loot column)
+// are inputs. A path is a file or
 // a directory: every file under it but dot files and notes (*.md). A committed
 // table with a header (spot-table.json, hunt/*.json) is no input of another:
 // its revision moves with every rebuild, so the pair would never agree; the
@@ -21,6 +24,7 @@ const ROOT = path.resolve(__dirname, '../../../..');
 // Cold solo combat and what it calls.
 const COLD_COMBAT = ['src/GameServer/Bot/Population/BackgroundResolver.js', 'src/GameServer/Bot/Population/ColdCombatProfile.js',
     'src/GameServer/Bot/Population/ColdMobAction.js', 'src/GameServer/Bot/Population/ColdRest.js',
+    'src/GameServer/Bot/Population/ColdClock.js',
     'src/GameServer/Bot/Population/ColdKillRewards.js', 'src/GameServer/Bot/Population/BackgroundDropResolver.js',
     'src/GameServer/Bot/Population/ColdClassPolicy.js',
     'src/GameServer/Bot/Population/ColdSummonProfile.js', 'src/GameServer/Bot/Population/ColdPveEncounter.js',
@@ -37,15 +41,18 @@ const REFERENCE_BOT = ['src/GameServer/Bot/AI/BotGear.js', 'src/GameServer/Bot/A
     'src/GameServer/Bot/AI/HealingPotionStock.js', 'src/GameServer/Bot/AI/SoloSelfHeal.js', 'src/GameServer/Bot/AI/PetHealRule.js',
     'src/GameServer/Bot/AI/PetTankRule.js', 'src/GameServer/Bot/AI/BotPullEstimate.js', 'src/GameServer/Bot/AI/GearGradeRule.js',
     'src/GameServer/Bot/AI/DangerRule.js', 'src/GameServer/Bot/AI/HuntCycle.js', 'src/GameServer/Inventory/ShotStock.js',
-    'src/GameServer/Bot/Economy/TownVisitInterval.js', 'src/GameServer/ClassProgression.js'];
+    'src/GameServer/Bot/Economy/KitRule.js', 'src/GameServer/Bot/Economy/ConsumableTarget.js',
+    'src/GameServer/Bot/Economy/SpotRewardExpectation.js', 'src/GameServer/Bot/AI/BotHuntEfficiency.js',
+    'src/GameServer/ClassProgression.js'];
 // The spot catalogue every row hangs on, and what its spot ids and tags are cut
 // by: the cell size, the dungeon areas (an id's `:area`, a spot's tags) and the
 // assist height that splits a cell into floors.
 const CATALOGUE = ['src/GameServer/World/Generics/SpawnNpcs.js', 'src/GameServer/Bot/AI/SpotService.js',
+    'src/GameServer/RaidBoss/GrandBossRules.js', 'data/RaidBoss',
     'src/GameServer/Bot/AI/SpotIndex.js', 'src/GameServer/Bot/Population/SpotProfiles.js', 'scripts/geodata-release.json',
     'src/GameServer/World/WorldConstants.js', 'src/GameServer/World/WorldAreaCatalog.js',
     'src/GameServer/World/C4SevenSignsDungeonTeleports.js', 'src/GameServer/Npc/SocialAggro.js'];
-const GAME_DATA = ['data/Npcs', 'data/Items', 'data/Skills', 'data/Templates'];
+const GAME_DATA = ['data/Npcs', 'data/Items', 'data/Skills', 'data/Templates', 'data/RaidBoss'];
 // Gear ladders, item sources and hennas (hunt gear/sources/henna; the spot table's kit surface reads gear.json).
 const GEAR_LADDERS = ['src/GameServer/Bot/AI/GearAcquisitionPlanner.js', 'src/GameServer/Bot/AI/BotEquipmentCompatibility.js',
     'src/GameServer/World/Generics/NpcShopBuyLists.js', 'src/GameServer/Bot/Economy/BotLuxuryExchange.js',
@@ -59,12 +66,28 @@ const HUNT_GENERATOR = ['scripts/hunt-tables/build.js', 'scripts/hunt-tables/rot
     // Its mob and spot list (no header: it moves only with the catalogue), its nearest towns.
     'data/Bots/spot-reward-npcs.json', 'src/GameServer/World/TownRespawn.js'];
 
+// The town ways: the walk search and its step rule, the towns, the spot ids and
+// centres the catalogue cuts (the spot generator builds it; the hunting filter
+// decides which spawns make a spot) and the service NPCs whose spurs it stores
+// (the catalogue's rows read DataCache.npcSpawns: its spawn sources, and the
+// gatekeeper ids of NativeServiceIndex).
+const WAYS_GENERATOR = ['scripts/generate-town-ways.js', 'scripts/generate-spot-table.js', 'src/GameServer/World/TownRespawn.js',
+    'src/GameServer/Geodata/GeodataEngine.js', 'src/GameServer/Geodata/GardenOfEvaBarriers.js', 'src/GameServer/Geodata/VirtualObstacles',
+    'src/GameServer/Bot/AI/BotHuntingTargetPolicy.js', 'src/GameServer/Bot/Travel/TownWays.js',
+    'src/GameServer/Bot/Economy/TownServiceCatalog.js', 'src/GameServer/World/Generics/NpcShopBuyLists.js',
+    'src/GameServer/World/C4GatekeeperTeleports.js', 'src/GameServer/DataCache.js',
+    'src/GameServer/World/C4LateTownGatekeepers.js', 'src/GameServer/World/C4SevenSignsDungeonTeleports.js',
+    'src/GameServer/World/GiranMammon.js', 'src/GameServer/World/GiranCrystallizationStation.js',
+    'data/Pets/c4-quest-npcs.json', 'src/GameServer/Knowledge/NativeServiceIndex.js'];
+
 const INPUTS = Object.freeze({
     spot: [...COLD_COMBAT, ...REFERENCE_BOT, ...CATALOGUE, ...GAME_DATA, ...GEAR_LADDERS, ...SHARED_GENERATOR],
-    hunt: [...COLD_COMBAT, ...REFERENCE_BOT, ...CATALOGUE, ...GAME_DATA, ...GEAR_LADDERS, ...SHARED_GENERATOR, ...HUNT_GENERATOR]
+    hunt: [...COLD_COMBAT, ...REFERENCE_BOT, ...CATALOGUE, ...GAME_DATA, ...GEAR_LADDERS, ...SHARED_GENERATOR, ...HUNT_GENERATOR],
+    ways: [...CATALOGUE, 'data/Npcs', ...WAYS_GENERATOR]
 });
 // header.generator -> its inputs.
-const GENERATORS = Object.freeze({ 'scripts/generate-spot-table.js': 'spot', 'scripts/hunt-tables/build.js': 'hunt' });
+const GENERATORS = Object.freeze({ 'scripts/generate-spot-table.js': 'spot', 'scripts/hunt-tables/build.js': 'hunt',
+    'scripts/generate-town-ways.js': 'ways' });
 
 function walk(root, relative, out) {
     const full = path.join(root, relative);

@@ -123,11 +123,11 @@ async function resolve(original, timestamp = Date.now(), options = {}) {
                 : finish(state, timestamp, 'clan_hall_visit_cancelled');
         } else if (!Services.near(actor, npc)) {
             const to =
-                invoke('GameServer/Bot/AI/TownNpcApproach').pointsFor({
+                invoke('GameServer/Bot/AI/TownNpcApproach').talkPointFor({
                     ...Services.point(npc),
                     npcSelfId: npc.fetchSelfId(),
                     head: npc.fetchHead?.()
-                })?.interaction || Services.point(npc);
+                }, state.characterId) || Services.point(npc);
             const travelMs = Math.max(
                 1000,
                 Math.ceil(Math.hypot(to.locX - state.loc.locX, to.locY - state.loc.locY) / 120) * 1000

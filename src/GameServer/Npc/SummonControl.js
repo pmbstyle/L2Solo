@@ -26,9 +26,9 @@ const SummonSkillActions = new Map([
     [1010, { skillId: 4702, target: 'owner' }],
     [1011, { skillId: 4703, target: 'owner' }],
     [1012, { skillId: 4704, target: 'owner' }],
-    [1013, { skillId: 4705, target: 'selected' }],
-    [1014, { skillId: 4706, target: 'selected' }],
-    [1015, { skillId: 4707, target: 'owner' }],
+    [1013, { skillId: 4705, target: 'selected', approach: true }], // Nightshade - Curse of Shade
+    [1014, { skillId: 4706, target: 'self' }],                     // Nightshade - Mass Curse of Shade
+    [1015, { skillId: 4707, target: 'partyMember', approach: true }], // Nightshade - Shade Sacrifice
     [1016, { skillId: 4709, target: 'selected' }],
     [1017, { skillId: 4708, target: 'selected' }]
 ]);
@@ -227,7 +227,12 @@ function startFollowOwner(session, actor, summon) {
     summon.controlMode = 'follow';
     summon.followOwner = true;
 
-    const tick = () => scheduleFollowStep(session, actor, summon);
+    const tick = () => {
+        // An interrupt can cancel a cast approach before its arrival callback.
+        if (summon.controlMode === 'cast' && !summon.state.fetchCasts?.() &&
+            !summon.state.inMotion?.() && !summon.timer.summonResume) summon.controlMode = 'follow';
+        scheduleFollowStep(session, actor, summon);
+    };
     tick();
     summon.timer.followOwner = setInterval(tick, FollowTickMs);
     summon.timer.followOwner.unref?.();
@@ -464,6 +469,19 @@ function findSummonSkill(summon, skillId) {
     return NpcSkills.forNpc(summon).find((skill) => Number(skill.fetchSelfId()) === Number(skillId)) || null;
 }
 
+function canUseActionSkill(summon, skill) {
+    const restrictions = invoke('GameServer/Effects/EffectRestrictions');
+    return !summon.state?.fetchCasts?.() && summon.canUseSkill?.(skill) !== false &&
+        (skill.fetchSpell() ? restrictions.canCast(summon) : restrictions.canAttack(summon));
+}
+
+function canSeeSkillTarget(summon, target) {
+    return summon === target || invoke('GameServer/Geodata/GeodataEngine').hasLineOfSight(
+        summon.fetchLocX(), summon.fetchLocY(), summon.fetchLocZ(),
+        target.fetchLocX(), target.fetchLocY(), target.fetchLocZ()
+    );
+}
+
 function isValidEnemyTarget(actor, target) {
     const ArenaDuelService = invoke('GameServer/World/ArenaDuelService');
     const duel = ArenaDuelService.duelForActor?.(actor) || ArenaDuelService.duelForActor?.(target);
@@ -483,10 +501,21 @@ function isValidEnemyTarget(actor, target) {
             invoke('GameServer/Bot/AI/BotRevenge').allows(actor.session, target));
 }
 
-function resolveSkillTarget(actor, summon, config) {
+function isPartySkillTarget(session, actor, summon, target) {
+    if (!target || target.isDead?.() || target.state?.fetchDead?.()) return false;
+    if (target === actor || target === summon) return true;
+    const leader = session.partyCompanion === true ? session.followPlayerSession : session;
+    const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
+    return PartyAwareness.partyActors(leader).some(member => member === target || activeSummon(member) === target);
+}
+
+function resolveSkillTarget(session, actor, summon, config) {
     if (config.target === 'owner') return Promise.resolve(actor);
     if (config.target === 'self') return Promise.resolve(summon);
     return selectedTarget(actor).then((target) => {
+        if (config.target === 'partyMember') {
+            return isPartySkillTarget(session, actor, summon, target) ? target : null;
+        }
         if (config.target === 'corpse') {
             return target?.fetchAttackable?.() === true && (target.state?.fetchDead?.() === true || target.isDead?.() === true)
                 ? target
@@ -514,39 +543,53 @@ function useSkillAction(session, actor, summon, actionId) {
         return true;
     }
 
-    if (summon.canUseSkill?.(skill) === false) {
+    if (!canUseActionSkill(summon, skill)) {
         session.dataSendToMe(ServerResponse.actionFailed());
         return true;
     }
 
-    resolveSkillTarget(actor, summon, config).then((target) => {
-        if (!target) {
+    resolveSkillTarget(session, actor, summon, config).then((target) => {
+        if (!target || activeSummon(actor) !== summon || !canUseActionSkill(summon, skill) ||
+            (config.approach && !canSeeSkillTarget(summon, target))) {
             session.dataSendToMe(ServerResponse.actionFailed());
             return;
         }
 
-        const resumeFollow = summon.followOwner === true && summon.controlMode === 'follow';
-        clearFollowTimer(summon);
+        const resumeFollow = summon.followOwner === true;
         clearResumeTimer(summon);
         summon.attack?.clearTimers?.();
         summon.automation.abortAll(summon);
         summon.controlMode = 'cast';
 
-        summon.attack.remoteHit({
+        const castSession = {
             actor: summon,
             dataSendToMe: (packet) => session.dataSendToMe(packet),
             dataSendToMeAndOthers: (packet) => session.dataSendToMeAndOthers(packet, summon)
-        }, target, skill);
-
-        if (resumeFollow) {
-            ensureTimerBag(summon);
-            summon.timer.summonResume = setTimeout(() => {
-                summon.timer.summonResume = undefined;
-                if (summon.state?.fetchDead?.() === true || summon.isDead?.() === true) return;
-                startFollowOwner(session, actor, summon);
-            }, Math.max(100, Number(skill.fetchCalculatedHitTime?.()) || 0) + 50);
-            summon.timer.summonResume.unref?.();
-        }
+        };
+        const restoreFollow = () => {
+            if (resumeFollow && activeSummon(actor) === summon) startFollowOwner(session, actor, summon);
+        };
+        const cast = () => {
+            if (summon.controlMode !== 'cast' || activeSummon(actor) !== summon) return;
+            if (!canUseActionSkill(summon, skill) || (config.approach && !canSeeSkillTarget(summon, target)) ||
+                (config.target === 'partyMember' && !isPartySkillTarget(session, actor, summon, target))) {
+                session.dataSendToMe(ServerResponse.actionFailed());
+                restoreFollow();
+                return;
+            }
+            summon.attack.remoteHit(castSession, target, skill);
+            if (resumeFollow) {
+                ensureTimerBag(summon);
+                summon.timer.summonResume = setTimeout(() => {
+                    summon.timer.summonResume = undefined;
+                    restoreFollow();
+                }, Math.max(100, Number(skill.fetchCalculatedHitTime?.()) || 0) + 50);
+                summon.timer.summonResume.unref?.();
+            }
+        };
+        if (config.approach) {
+            if (summon.automation.scheduleAction(session, summon, target, skill.fetchDistance(), cast) === false) restoreFollow();
+        } else cast();
     });
 
     return true;

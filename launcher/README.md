@@ -14,6 +14,8 @@ The settings presentation groups related fields and orders sections from gamepla
 
 Server settings expose one generic **AI** section for any OpenAI-compatible URL, including OpenRouter. Existing OpenRouter settings are displayed there until the first AI edit migrates the complete configuration to `[AI]`, preserving credentials, models and routing options. Reading settings or saving unrelated fields does not migrate them. Langfuse developer settings stay in the configuration file and are not exposed in the launcher.
 
+The **AI** section also contains the clan-goal and clan-title switches; these still save to their original `[ClanSimulation]` keys. **Test AI** uses the current form values without saving and reports each sample's result, model, latency, reply or failure. It checks a real chat, a complete game JSON-action/tool-result exchange, the party routing model, and the enabled clan strategy/goal and title schemas. Clan probes use their runtime token limits, ten-second deadlines and disabled reasoning. A separate native API function-call round trip is optional because game tools use JSON actions. Diagnostic tools use simulated data and never change the world. Requests go to the configured provider and consume inference tokens. Changed settings invalidate the displayed result; sample success is not a guarantee for all future game requests.
+
 ## Development
 
 From the repository root:

@@ -1,10 +1,10 @@
-🪟 **Windows installation & updates**
+🤖 **AI settings and diagnostics**
 
-- Setup now checks access to the chosen folder and the previous installation before removing the old launcher. When administrator permission is needed, it requests elevation and checks access again.
-- Cancelling elevation or encountering locked, read-only or inaccessible files stops Setup before the previous version is removed. Error messages identify the affected path and explain how to retry.
-- Fixed the missing separator below the Windows title bar buttons.
+- Clan goal and member title controls are now in the **AI** settings. Existing settings carry over.
+- Find **Local clan crest generation** under **AI → Clan AI features**.
+- **Test AI** checks the current form values before you save them. It tests chat, game actions, the party routing model and enabled clan features. It can also check native API function calling.
+- Each result shows the model, response time and reply or error. Diagnostics send requests to your configured provider and use simulated game data, so your world is unaffected.
 
-🔄 **Server updates for existing folders**
+🎲 **Rates & gameplay**
 
-- Server folders containing a Git working copy can now download and apply releases through the launcher, regardless of the current branch.
-- Applying a release replaces local server code with the selected release while preserving the world databases, settings and Git metadata. Checking for or downloading an update leaves local code unchanged until you apply it.
+- Find **Epic jewelry drop multiplier** under **Economy & drops**.

@@ -301,7 +301,7 @@ async function run() {
     // A real hot ShoppingState callback, actual actor/bag/SQL delivery. Capture
     // only its existing four-second work callback; no sleeping or server.
     const seller = Npc.quoteFor(2509, 'Dion');
-    state = await seed(9614, 10000000, { classId: 12, exp: Data.experience[41], visitEvery: [10, 2] },
+    state = await seed(9614, 10000000, { classId: 12, exp: Data.experience[41] },
         [{ selfId: 1, name: 'Short Sword', amount: 1, equipped: true, slot: 7 }], 'hot');
     const Actor = invoke('GameServer/Model/Actor'), Backpack = invoke('GameServer/Actor/Backpack');
     const actor = new Actor({ id: 9614, name: 'Consumer9614', classId: 12, race: 0, level: 42,

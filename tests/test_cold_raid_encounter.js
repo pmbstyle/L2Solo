@@ -196,6 +196,29 @@ try {
     assert.equal(resumedEncounter.partyPatch.stats.restUntil, null,
         'resuming an active raid encounter must clear the stale party rest deadline');
 
+    const Formulas = invoke('GameServer/Formulas');
+    const Background = invoke('GameServer/Bot/Population/BackgroundResolver');
+    const originalAttackMs = Formulas.normalAttackMs;
+    const originalFight = Background.resolvePartyFight;
+    let fastFight;
+    try {
+        Formulas.normalAttackMs = () => Formulas.calcMeleeAtkTime(1500);
+        Background.resolvePartyFight = options => (fastFight = originalFight(options));
+        const startedAt = exhaustedOpener.nextResolveAt + 2;
+        const fast = Resolver.resolve({ party: continuityParty, members: continuityMembers, spot, targetNpcId: 10372,
+            elapsedMs: 15000, timestamp: startedAt, rng: () => .5 });
+        assert(fast.debug.combatActions >= 7 * 32, 'the fast rotation reaches its per-member allowance');
+        assert(fastFight.debug.actionBound && !Number.isInteger(fastFight.debug.durationMs),
+            'native attack and cast durations exercise a fractional action-limited slice');
+        assert.equal(fast.nextResolveAt, Math.ceil(startedAt + fastFight.debug.durationMs),
+            'the persisted party deadline rounds up without changing simulated combat duration');
+        assert(Number.isSafeInteger(fast.nextResolveAt));
+        assert(fast.nextResolveAt < startedAt + 15000,
+            'an action-limited raid resumes after covered combat time instead of losing the remainder of fifteen seconds');
+        assert(fast.memberResults.every(({ result }) => result.nextResolveAt === fast.nextResolveAt),
+            'member deadlines and the shared encounter resume on the same combat clock');
+    } finally { Formulas.normalAttackMs = originalAttackMs; Background.resolvePartyFight = originalFight; }
+
     RaidEncounter.resetForTests();
     Combat.npcForSpot = () => ({ ...ordinaryRaidMob });
     let firstMembers = members(100, 'raid-a');

@@ -2,7 +2,7 @@ const raidBossMinionDefinitions = require('../../../data/Npcs/Minions/c4_raid_bo
 
 const RAID_ENTITY_SCALE = 0.75;
 const raidBossMinionIds = new Set(
-    raidBossMinionDefinitions
+    [...raidBossMinionDefinitions, ...require('./GrandBossRules').data.minions]
         .map((entry) => Number(entry?.minionId))
         .filter((id) => Number.isInteger(id) && id > 0)
 );

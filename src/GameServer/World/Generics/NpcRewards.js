@@ -32,13 +32,14 @@ function spawnGroundDrop(world, session, npc, selfId, amount) {
     // The scatter itself is ours: a 50 circle (C4: a box of 70 each way).
     const landing = GeodataEngine.straightMoveEnd(npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ(),
         Math.round(scattered.locX), Math.round(scattered.locY), npc.fetchLocZ());
-    const leaderSession = PartyCompanionService.groundLootLeader(session);
+    const lootOwner = PartyCompanionService.groundLootOwnerKey(session);
     world.spawnItem(session, selfId, amount, {
         locX: landing.locX, locY: landing.locY, locZ: landing.locZ,
         // Ground items have no native owner metadata in this runtime. Keep a
         // lightweight provenance marker so an idle party never treats another
         // group's nearby drop as its own recovery work.
-        partyLootLeaderId: Number(leaderSession?.actor?.fetchId?.() || 0)
+        partyLootLeaderId: PartyCompanionService.groundLootOwnerId(session),
+        ...(typeof lootOwner === 'string' ? { partyLootGroupKey: lootOwner } : {})
     }, (item) => {
         PartyCompanionService.queueRandomGroundPickup(session, item);
     });
@@ -48,7 +49,7 @@ function npcRewards(session, npc) {
     DataCache.fetchNpcRewardsFromSelfId(npc.fetchSelfId(), (result) => {
         const rewards = result.rewards ?? [];
         const dropState = npc.model ?? npc;
-        const rewardContext = {
+        const rewardContext = invoke('GameServer/RaidBoss/GrandBossRuntime').dropContext(npc, session?.actor) || {
             npcLevel: npc.fetchLevel?.() ?? npc.model?.level,
             killerLevel: dropState.dropLastAttackerLevel ?? session?.actor?.fetchLevel?.(),
             attackerLevels: dropState.dropAttackerLevels ?? []

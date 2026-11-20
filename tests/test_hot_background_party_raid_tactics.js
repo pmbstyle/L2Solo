@@ -14,6 +14,8 @@ const ClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
 const SkillCapabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const Support = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const Effects = invoke('GameServer/Effects/EffectStore');
+const Skill = invoke('GameServer/Model/Skill');
+const realSupport = PvpTactics.support;
 
 const restores = [];
 function patch(object, key, value) {
@@ -346,6 +348,29 @@ try {
     assert.equal(attacks.length, 0, 'an autonomous raid healer also waits with full mana');
     attacks.length = 0;
     delete focusMinion.destId;
+    damage.role = 'archer';
+    damage.fetchMp = () => 30;
+    controller.role = 'healer';
+    controller.skillset.skills = [new Skill({ selfId: 1013, level: 1, passive: false, mp: 20, distance: 400, power: 49 })];
+    tick(sessions[3], 46100);
+    assert.deepEqual(casts.pop(), [controller.fetchId(), damage.fetchId(), 1013],
+        'autonomous rechargers support a low-MP archer during boss combat');
+    assert.equal(sessions[3].lastDecision.action, 'raid_recharge');
+    patch(tank, 'fetchLocX', () => 650);
+    patch(tank, 'fetchHp', () => 40);
+    controller.skillset.skills.push(new Skill({ selfId: 1011, level: 1, passive: false, mp: 20, distance: 600, power: 100 }));
+    const healMoves = [];
+    patch(controller, 'moveTo', move => healMoves.push(move));
+    patch(ClassTactics, 'supportCrowdControl', () => null);
+    patch(PvpTactics, 'support', realSupport);
+    try {
+        tick(sessions[3], 47500);
+        assert.equal(casts.length, 0, 'an autonomous healer must recover contact with its wounded tank before Recharge');
+        assert.equal(sessions[3].lastDecision.action, 'raid_heal_approach');
+        assert.equal(healMoves[0].to.locX, tank.fetchLocX());
+    } finally { for (let i = 0; i < 5; i++) restores.pop()(); }
+    controller.skillset.skills = [];
+    controller.role = 'mage';
     damage.role = 'dps';
     damage.fetchMp = () => 100;
 
@@ -470,6 +495,33 @@ try {
     assert.equal(attacks.length, 0, 'the raid estimate cannot authorize another boss');
     for (let count = 0; count < 8; count++) restores.pop()();
     owner.backgroundHuntTarget = boss;
+
+    // Orfen can start at any field point and return there after a lair heal.
+    // A raid gathered at the catalogue's first point must find the live boss.
+    const beforePursuit = restores.length;
+    const Index = invoke('GameServer/World/RaidEntityIndex');
+    const moves = [];
+    let bossX = 5000;
+    patch(Index, 'bossByTemplateId', (_world, id) => id === 12169 ? boss : null);
+    patch(boss, 'fetchLocX', () => bossX);
+    patch(tank, 'moveTo', data => moves.push(data.to));
+    patch(Restrictions, 'canMove', () => true);
+    party.stats.objective = { sourceKind: 'raid', raidBossTemplateId: 12169 };
+    owner.raidPreparationComplete = true;
+    try {
+        for (const [lair, x] of [[false, 5000], [true, 11000], [false, 7000]]) {
+            boss.grandBossLair = lair;
+            bossX = x;
+            owner.backgroundHuntTarget = null;
+            tick(owner, 20000);
+            assert.equal(moves.pop()?.locX, x, 'pursue the authoritative Orfen position at initial spawn, retreat and return');
+            assert.equal(owner.lastDecision.action, 'raid_follow_orfen');
+        }
+    } finally {
+        while (restores.length > beforePursuit) restores.pop()();
+        party.stats.objective = raidObjective;
+        delete boss.grandBossLair;
+    }
 
     // The servitor has its own native attack loop, even while its owner casts.
     const SummonControl = invoke('GameServer/Npc/SummonControl');

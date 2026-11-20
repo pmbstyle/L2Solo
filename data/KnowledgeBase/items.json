@@ -43326,7 +43326,7 @@
             6
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -45798,7 +45798,7 @@
             7
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -63085,7 +63085,7 @@
             7
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -68988,7 +68988,7 @@
             7
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -69269,7 +69269,7 @@
             7
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -76003,7 +76003,7 @@
             7
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -81852,7 +81852,7 @@
             7
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -85855,7 +85855,7 @@
             7
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -89523,7 +89523,7 @@
             7
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -95753,7 +95753,7 @@
             8
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -98520,7 +98520,7 @@
             8
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -101341,7 +101341,7 @@
             9
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -107498,7 +107498,7 @@
             8
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -118020,7 +118020,7 @@
             10
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -120277,7 +120277,7 @@
             10
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -135716,7 +135716,7 @@
             7
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -139803,7 +139803,7 @@
             11
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -144355,7 +144355,7 @@
             11
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -151084,7 +151084,7 @@
             10
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -164336,7 +164336,7 @@
             10
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -435169,7 +435169,7 @@
             10
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -446595,7 +446595,7 @@
             7
           ],
           "mobId": 12001,
-          "mobLevel": 43,
+          "mobLevel": 40,
           "mobName": "Queen Ant",
           "rateProfiles": {
             "x1": {
@@ -696205,6 +696205,186 @@
         "mass": 20,
         "name": "Baby Kookaburra Ocarina",
         "price": 0
+      }
+    }
+  },
+  {
+    "grade": "b",
+    "id": 6660,
+    "kind": "Armor.Jewel",
+    "name": "Ring of Queen Ant",
+    "sources": {
+      "drops": [
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            12
+          ],
+          "mobId": 12001,
+          "mobLevel": 40,
+          "mobName": "Queen Ant",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 30,
+              "expectedAmountPerKill": 0.3
+            },
+            "x10": {
+              "chancePercent": 30,
+              "expectedAmountPerKill": 0.3
+            },
+            "x50": {
+              "chancePercent": 30,
+              "expectedAmountPerKill": 0.3
+            }
+          }
+        }
+      ],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "cristals": 82,
+        "rank": "b",
+        "slot": 4
+      },
+      "selfId": 6660,
+      "stats": {
+        "evasion": 0,
+        "mDef": 48,
+        "maxMp": 21,
+        "pDef": 0
+      },
+      "template": {
+        "class1": 1,
+        "class2": 1,
+        "kind": "Armor.Jewel",
+        "mass": 150,
+        "name": "Ring of Queen Ant",
+        "price": 616000
+      }
+    }
+  },
+  {
+    "grade": "a",
+    "id": 6661,
+    "kind": "Armor.Jewel",
+    "name": "Earring of Orfen",
+    "sources": {
+      "drops": [
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            9
+          ],
+          "mobId": 12169,
+          "mobLevel": 50,
+          "mobName": "Orfen",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 30,
+              "expectedAmountPerKill": 0.3
+            },
+            "x10": {
+              "chancePercent": 30,
+              "expectedAmountPerKill": 0.3
+            },
+            "x50": {
+              "chancePercent": 30,
+              "expectedAmountPerKill": 0.3
+            }
+          }
+        }
+      ],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "cristals": 104,
+        "rank": "a",
+        "slot": 1
+      },
+      "selfId": 6661,
+      "stats": {
+        "evasion": 0,
+        "mDef": 71,
+        "maxMp": 31,
+        "pDef": 0
+      },
+      "template": {
+        "class1": 1,
+        "class2": 1,
+        "kind": "Armor.Jewel",
+        "mass": 150,
+        "name": "Earring of Orfen",
+        "price": 1300000
+      }
+    }
+  },
+  {
+    "grade": "a",
+    "id": 6662,
+    "kind": "Armor.Jewel",
+    "name": "Ring of Core",
+    "sources": {
+      "drops": [
+        {
+          "availability": {
+            "directSpawn": true,
+            "knownReachable": true,
+            "raidMinion": false
+          },
+          "groupIndexes": [
+            9
+          ],
+          "mobId": 12052,
+          "mobLevel": 50,
+          "mobName": "Core",
+          "rateProfiles": {
+            "x1": {
+              "chancePercent": 30,
+              "expectedAmountPerKill": 0.3
+            },
+            "x10": {
+              "chancePercent": 30,
+              "expectedAmountPerKill": 0.3
+            },
+            "x50": {
+              "chancePercent": 30,
+              "expectedAmountPerKill": 0.3
+            }
+          }
+        }
+      ],
+      "spoils": []
+    },
+    "template": {
+      "etc": {
+        "cristals": 69,
+        "rank": "a",
+        "slot": 4
+      },
+      "selfId": 6662,
+      "stats": {
+        "evasion": 0,
+        "mDef": 48,
+        "maxMp": 21,
+        "pDef": 0
+      },
+      "template": {
+        "class1": 1,
+        "class2": 1,
+        "kind": "Armor.Jewel",
+        "mass": 150,
+        "name": "Ring of Core",
+        "price": 870000
       }
     }
   },

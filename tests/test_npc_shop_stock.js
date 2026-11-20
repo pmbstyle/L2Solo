@@ -46,10 +46,9 @@ for (let i = 0; i < rowCount; i++) {
     });
 }
 
-// Authored Talking Island prices8/17/40 use the same published progression curve.
-const rate = invoke('GameServer/ProgressionRates').profile().multiplier;
-for (const [selfId, basePrice] of [[1835, 8], [2509, 17], [3947, 40]]) {
-    const price = Math.round(basePrice * (1 + Math.log10(Math.max(1, rate))));
+// NPC shops sell at the datapack price at every preset: Talking Island's NG
+// shots cost 8/17/40.
+for (const [selfId, price] of [[1835, 8], [2509, 17], [3947, 40]]) {
     assert.deepStrictEqual(rows.get(selfId), { amount: 0, price }, 'C4 NG shots have unlimited authored NPC stock');
     assert.strictEqual(session.activeNpcShop.prices.get(selfId), price, 'real purchase authorization uses the advertised NG price');
 }
@@ -83,8 +82,12 @@ for (const [name, town, grade] of shotStores) {
     assert.ok(store, `${town} must have a dedicated shot merchant`);
     assert.strictEqual(store.storeType, 1, `${name} must be a selling private store`);
     assert.strictEqual(store.town, town, `${name} must be placed in ${town}`);
-    assert.deepStrictEqual(store.items.map((item) => item.selfId), shotIdsByGrade[grade], `${name} must stock every shot type at its town grade only`);
-    store.items.forEach((item) => {
+    // The Giran, Oren and Aden shot stores also carry the bot-only gear and
+    // enchant reserve rows (reserve: true, never in the player's window); the
+    // store's own lines are the town grade's shots.
+    const shotLines = store.items.filter((item) => !item.reserve);
+    assert.deepStrictEqual(shotLines.map((item) => item.selfId), shotIdsByGrade[grade], `${name} must stock every shot type at its town grade only`);
+    shotLines.forEach((item) => {
         assert.strictEqual(item.priceRate, 1, `${name} must use the standard shot price`);
         assert.strictEqual(item.count, 999999, `${name} must have a practical unlimited shot stock`);
     });
@@ -112,7 +115,8 @@ const originalPreset = options.default.General.progressionPreset;
 const originalRateEnv = process.env.L2NODE_PROGRESSION_RATE;
 useRate(undefined);
 try {
-    for (const [preset, multiplier] of [['x1', 1], ['x10', 2]]) {
+    // The datapack price at every preset: a rate never scales an NPC shop.
+    for (const preset of ['x1', 'x10', 'x50']) {
         useGeneral({ progressionPreset: preset });
         const gemstonePackets = [];
         const gemstoneSession = {
@@ -131,9 +135,9 @@ try {
             });
         }
         for (const [selfId, price] of [[2130, 1100], [2131, 3300], [2132, 11000]]) {
-            assert.deepStrictEqual(gemstoneRows.get(selfId), { amount: 0, price: price * multiplier },
-                `Helvetia must advertise unlimited gemstone ${selfId} at the ${preset} price`);
-            assert.strictEqual(gemstoneSession.activeNpcShop.prices.get(selfId), price * multiplier,
+            assert.deepStrictEqual(gemstoneRows.get(selfId), { amount: 0, price },
+                `Helvetia must advertise unlimited gemstone ${selfId} at the datapack price at ${preset}`);
+            assert.strictEqual(gemstoneSession.activeNpcShop.prices.get(selfId), price,
                 'purchase authorization must use the price advertised in BuyList');
         }
     }

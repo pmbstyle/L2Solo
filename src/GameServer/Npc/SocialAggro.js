@@ -22,13 +22,13 @@ function distance2d(a, b) {
     );
 }
 
-function canAssist(helper, attackedNpc, attacker, attackedClan, radius) {
+function canAssist(helper, attackedNpc, attacker, attackedClan, radius, scriptCall = false) {
     if (!helper || !attackedNpc || !attacker || helper === attackedNpc) return false;
     if (actorId(helper) === actorId(attackedNpc)) return false;
     if (!helper.fetchAttackable?.() || helper.isDead?.()) return false;
-    if (helper.state?.fetchDead?.() || helper.state?.fetchCombats?.()) return false;
+    if (helper.state?.fetchDead?.() || !scriptCall && helper.state?.fetchCombats?.()) return false;
     if (clanName(helper) !== attackedClan) return false;
-    if (actorId(attacker) && helper.fetchDestId?.() === actorId(attacker)) return false;
+    if (!scriptCall && actorId(attacker) && helper.fetchDestId?.() === actorId(attacker)) return false;
     if (!helper.fetchLocX || !attackedNpc.fetchLocX) return false;
     if (distance2d(helper, attackedNpc) > radius) return false;
     if (Math.abs(helper.fetchLocZ() - attackedNpc.fetchLocZ()) > MAX_ASSIST_Z_DIFFERENCE) return false;
@@ -50,9 +50,11 @@ function notifyClan(session, attackedNpc, attacker) {
         ? World.fetchNpcsInRadius(attackedNpc.fetchLocX(), attackedNpc.fetchLocY(), radius)
         : [];
 
-    const helpers = nearby.filter((helper) => canAssist(helper, attackedNpc, attacker, attackedClan, radius));
+    const helpers = nearby.filter((helper) => canAssist(helper, attackedNpc, attacker, attackedClan, radius,
+        Number(helper.fetchSelfId?.()) === 12173));
     helpers.forEach((helper) => {
         helper.enterCombatState(session, attacker);
+        invoke('GameServer/RaidBoss/GrandBossRuntime').factionCall(World, helper, attackedNpc, attacker, session);
     });
     return helpers;
 }

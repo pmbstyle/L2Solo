@@ -108,7 +108,7 @@ try {
     const caster = { ...base, vitals: { ...base.vitals, mp: 0 }, stats: { ...base.stats, classId: 10, coldCombat: { ...base.stats.coldCombat, classId: 10,
         skills: [{ selfId: 1177, level: 1, mp: 10, passive: false }] } } };
     const casting = Solo.resolveSolo({ state: { ...caster, stats: { ...caster.stats, pveEncounter:
-        Encounter.save(null, Encounter.key([caster], spot), mageMob, 1e6, start + 50000, { botReadyAt: 0, mobReadyAt: 0 }) } },
+        Encounter.save(null, Encounter.key([caster], spot), mageMob, 1e6, start + 48000, { botReadyAt: 0, mobReadyAt: 0 }) } },
     spot, elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
     assert(casting.patch.stats.pveEncounter?.hp > 0, 'the fight of a mage out of MP stays pending');
     assert.strictEqual(casting.patch.activity, 'hunting');

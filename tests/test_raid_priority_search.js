@@ -32,14 +32,16 @@ const catalog = invoke('GameServer/RaidBoss/RaidBossSourceCatalog');
 const boss = catalog.findById(`raid:${fixture.bossId}`);
 
 async function run() {
-    assert.equal(invoke('GameServer/Bot/Economy/StaticMerchantPricing').botPurchasePrice(1464), 750);
+    // Stores sell at the datapack price at every preset: a C soulshot costs 15 at x50.
+    assert.equal(invoke('GameServer/Bot/Economy/StaticMerchantPricing').botPurchasePrice(1464), 15);
     const before = JSON.stringify(pool);
     const planned = await Work.run(Policy.candidateSteps(pool, new Map(), 0, at, new RaidRosterCoverage()));
     assert.deepEqual(ids(planned.proposals[0]), fixture.expected,
         'the frozen world finds the strong tank, complementary learned support and funded damage immediately');
     const fit = Policy.assessment(planned.proposals[0], boss, { timestamp: at, fundSupplies: true });
     assert(fit.ready && fit.seconds > 500 && fit.seconds < 530, JSON.stringify(fit.reasons));
-    assert(fit.supplies.some(s => s.missing > 0 && s.cost > 1000000), 'real x50 supply costs are assessed');
+    assert(fit.supplies.some(s => s.missing > 0) && fit.supplies.every(s => s.cost === s.missing * 15),
+        'missing shots are costed at the real store price at x50');
     assert.equal(JSON.stringify(pool), before, 'ranking and forecasting never buy, buff or change a live actor');
     const rich = byId.get(2007126), poor = structuredClone(rich);
     poor.adena = 1; poor.stats.money = [0,0,0,0]; poor.inventory[1464].amount = 0;

@@ -241,6 +241,9 @@ function footer(state) {
 function render(session, requestedPage) {
     const actor = session.actor;
     if (!actor) return;
+    if (session.nativePartyHubVersion) {
+        return invoke('GameServer/World/Generics/NpcBypasses/NativePartyHub').render(session);
+    }
     if (session.nativeFinderVersion === 1) {
         if (session.nativeFinderOpen) renderNative(session);
         return;
@@ -269,6 +272,9 @@ function render(session, requestedPage) {
 }
 
 function open(session) {
+    if (session.actor && session.nativePartyHubVersion) {
+        return invoke('GameServer/World/Generics/NpcBypasses/NativePartyHub').open(session, 'finder');
+    }
     resetState(session);
     if (session.nativeFinderVersion === 1) {
         session.nativeFinderOpen = true;
@@ -387,5 +393,7 @@ botParty.ROLE_FILTERS = ROLE_FILTERS;
 botParty.nativeState = nativeState;
 botParty.renderNative = renderNative;
 botParty.searchText = searchText;
+botParty.catalog = candidateCatalog;
+botParty.availability = candidateAvailability;
 
 module.exports = botParty;

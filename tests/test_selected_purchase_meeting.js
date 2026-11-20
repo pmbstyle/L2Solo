@@ -4,6 +4,10 @@ const { useRate } = require('./helpers/progressionRate');
 require('./helpers/databaseIsolation');
 process.env.L2NODE_CONFIG_FILE = 'config/default.ini';
 useRate('x50');
+// The reserve store sells a bot every C piece (the gear reserve), a bought piece
+// with no worth cap: closed here (with the store shots, one switch), the crystal
+// exchange of the gear root is what is tested.
+process.env.BOT_STATIC_SHOTS_DISABLED = 'true';
 delete process.env.L2NODE_SHARED_CONFIG_FILE;
 require('../src/Global');
 invoke('GameServer/DataCache').init();
@@ -21,12 +25,17 @@ async function run() {
     const state = shift(fixture.state), boardRows = structuredClone(fixture.boardRows);
     // T43 table: shots now pay for this level-53 archer; it holds its shot stock, so the gear source decides.
     state.inventory[1463] = { selfId: 1463, name: 'Soulshot: D-grade', amount: 1000, stackable: true };
-    // A buyer's bid puts the piece above what its crystal supply costs: an exchange is
-    // funded only within its item's worth.
-    const bid = [8101, [8101, 'buy_ad', 3, 2004571, 'Dion', 1, [[8102, 233, 0, 1, 12000000, null, 0]], 1, 0, 12000000]];
-    const crystalSupply = await native(state, { timestamp, boardRows: [...boardRows, bid], nativeRoutes: true });
-    const unbid = await native(state, { timestamp, boardRows, nativeRoutes: true });
-    assert.equal(Decision.compact(unbid.decision).activity, null, 'without it the supply costs more than the piece is worth: no step');
+    // An exchange is funded only within its item's worth (the bot's price belief of
+    // the piece). The crystal supply (two Demon Fangs at the x1 NPC price, 3.35M)
+    // costs less than the piece believed at a 12M bid, more than the piece believed
+    // at a 1M bid.
+    const bidAt = price => [8101, [8101, 'buy_ad', 3, 2004571, 'Dion', 1, [[8102, 233, 0, 1, price, null, 0]], 1, 0, price]];
+    const crystalSupply = await native(state, { timestamp, boardRows: [...boardRows, bidAt(12000000)], nativeRoutes: true });
+    const lowBid = await native(state, { timestamp, boardRows: [...boardRows, bidAt(1000000)], nativeRoutes: true });
+    const dagger = network => network.queue.find(wish => wish.key === 'power:233:7');
+    assert.equal(dagger(lowBid).funded, false, 'at the low bid the supply costs more than the piece is worth: unfunded');
+    assert.notEqual(Decision.compact(lowBid.decision).activity?.rootKey, 'power:233:7', 'no step toward the piece at the low bid');
+    assert.equal(dagger(crystalSupply).funded, true, 'at the high bid the same supply is funded');
     const crystalLeaf = Decision.compact(crystalSupply.decision).activity;
     assert.equal(crystalLeaf.sourceType, 'npc', 'a small crystal lot must not replace the reliable full equipment supply');
     const input = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, crystalLeaf.itemId);

@@ -1,4 +1,5 @@
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const { hasRequiredSkillItems } = require('../../Skills/SkillItemRequirements');
 const Attack = invoke('GameServer/Skills/WeaponMask');
 const Formulas = invoke('GameServer/Formulas');
 const HitRules = invoke('GameServer/Combat/HitRules');
@@ -23,6 +24,9 @@ const OFFENSIVE_TYPES = new Set([
 ]);
 const BOW_WEAPON_MASK = 32;
 const MIN_BOW_SKILL_RANGE = 400;
+// Wind Strike is the baseline ranged nuke. Shorter spells are for mobs
+// already within their reach.
+const MIN_MAGE_APPROACH_RANGE = 600;
 const AREA_SOURCE_TARGETS = new Set(['area', 'front_area', 'aura']);
 const MAGE_MELEE_FINISH_MAX_HITS = 2;
 
@@ -227,7 +231,13 @@ function evaluateCandidate(bot, target, skill, role, policy = {}, plannedCharges
     // effect power as damage made mages spam Sleep/Root until their MP ran out.
     if (skill.fetchSkillType() === C4SkillRules.EFFECT && semantic.effectType === 'debuff') return null;
 
-    const range = Number(skill.fetchDistance?.());
+    // The cold combat adapter has no backpack. Live casts still recheck
+    // stock when they land in case the item was spent after planning.
+    if (bot.backpack?.fetchItemFromSelfId && !hasRequiredSkillItems(bot, skill)) return reject('missing_skill_items');
+
+    const mageSpell = role === 'mage' && skill.fetchSpell?.() === true;
+    const casterAura = mageSpell && semantic.sourceTarget === 'aura' && bot.fetchLocX && target?.fetchLocX;
+    const range = Number(casterAura ? semantic.radius : skill.fetchDistance?.());
     if (!Number.isFinite(range) || range < 0) return null;
     // Some generic fighter skills (for example Power Strike) have no weapon
     // restriction in the source data.  A bow user must never pick one of
@@ -244,16 +254,24 @@ function evaluateCandidate(bot, target, skill, role, policy = {}, plannedCharges
     const reserve = ClassPolicy.offensiveMpReserve(classProfile, role, !!policy.pvp);
     if (cost > mp || (mp - cost) / maxMp < reserve) return reject('mp_budget');
 
+    const distance = distance2d(bot, target);
+    const approachDistance = mageSpell ? Math.max(0, distance - range) : 0;
+    if (casterAura && (approachDistance > 0 || bot.attack?.isWithinSkillArea?.(bot, target, range) === false)) {
+        return reject('out_of_range');
+    }
+    if (approachDistance > 0 && range < MIN_MAGE_APPROACH_RANGE && classProfile.mode.endsWith('_pve')) {
+        return reject('out_of_range');
+    }
+
     const type = skill.fetchSkillType();
     const basePower = Math.max(0, Number(skill.fetchPower?.() || 0));
     // The power the hit will have at the bot's HP (HitRules.skillPower: Death Link, Fatal).
     let power = HitRules.skillPower({ skillType: type }, basePower, bot.fetchHp?.(), bot.fetchMaxHp?.());
     if (requiredCharges > 0) power *= 0.8 + (0.201 * currentCharges);
-    const distance = distance2d(bot, target);
     const reasons = [];
     let score = 100 + Math.log2(power + 1) * 35 - cost * 1.5;
 
-    if (range + 80 >= distance) {
+    if (mageSpell ? approachDistance === 0 : range + 80 >= distance) {
         score += 100;
         reasons.push('in_range');
     } else {
@@ -261,8 +279,7 @@ function evaluateCandidate(bot, target, skill, role, policy = {}, plannedCharges
         reasons.push('close_distance');
     }
 
-    const spell = skill.fetchSpell?.() === true;
-    if (role === 'mage' && spell) {
+    if (mageSpell) {
         score += 170;
         reasons.push('mage_spell');
     }
@@ -291,7 +308,7 @@ function evaluateCandidate(bot, target, skill, role, policy = {}, plannedCharges
     // effective learned element/weapon skill when the target resists another.
     score += Math.round(180 * Math.log2(Math.max(0.01, Math.min(2, effectiveness))));
     if (effectiveness !== 1) reasons.push(`target_efficiency:${effectiveness.toFixed(2)}`);
-    return { skill, score: Math.round(score), reasons, cost, range, power, effectiveness,
+    return { skill, score: Math.round(score), reasons, cost, range, approachDistance, power, effectiveness,
         intent: type === C4SkillRules.DRAIN && bot.fetchHp?.() < bot.fetchMaxHp?.() ? 'damage_and_sustain' : 'damage',
         policyAdjustment: adjustment,
         classAdjustment: preference.score, classMode: classProfile.mode };
@@ -310,13 +327,18 @@ function select(bot, target, role, policy = {}) {
         : skills;
 
     const decisions = candidates.map((skill) => evaluate(bot, target, skill, role, policy)).filter(Boolean);
-    if (!pricesMana(policy, target)) return decisions.sort((a, b) => b.score - a.score)[0] || null;
+    // A mage casts from its current position whenever possible. If every
+    // option needs movement, approach only as far as the longest cast needs.
+    if (!pricesMana(policy, target)) {
+        return decisions.sort((a, b) => a.approachDistance - b.approachDistance || b.score - a.score)[0] || null;
+    }
     // Priced: the paying skill with the best damage rate; a skill
     // without a price (no numbers) keeps its place by score after them.
     const context = decisions.length ? priceContext(bot, target, policy) : null;
     const priced = decisions.map((decision) => ({ decision, verdict: manaPrice(context, decision) }))
         .filter(({ decision, verdict }) => !verdict || verdict.pays || rejectPrice(decision, policy));
-    return priced.sort((a, b) => (b.verdict?.rate ?? -1) - (a.verdict?.rate ?? -1)
+    return priced.sort((a, b) => a.decision.approachDistance - b.decision.approachDistance
+        || (b.verdict?.rate ?? -1) - (a.verdict?.rate ?? -1)
         || b.decision.score - a.decision.score)[0]?.decision || null;
 }
 

@@ -286,7 +286,7 @@ function prepare(members, { objective, party, spots, timestamp } = {}) {
         }
         const rest = positive(cycle.rest);
         return { fight, rest: healed[index] ? 0 : rest,
-            walk: Math.max(0, 3600 / cycle.kph - cycle.fight - rest), cap: positive(cycle.cap) };
+            walk: 3600 / cycle.kph - cycle.fight - rest, cap: positive(cycle.cap) };
     });
     const gross = Table.value(spot.id, 'dps', level, true) || Table.value(spot.id, 'mage', level, true);
     const safe = Match.spotMatchup(spot, Match.stateProfiles(buffed[0],

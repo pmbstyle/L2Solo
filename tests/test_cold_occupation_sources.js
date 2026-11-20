@@ -84,7 +84,9 @@ for (let at = 1; at < 7; at++) bids.put({ id: 700 + at, ownerId: 500 + at, store
     town: 'Giran', revision: 1, lines: [{ lineId: 800 + at, selfId: 1864, count: 1, price: 500 - at }] });
 const exit = drain(Sources.exitValue(owner, 1864, bids));
 assert.equal(exit.value, 499, 'best bid of others; the own 900 bid is not an exit');
-assert.equal(exit.stages.filter(stage => stage === 'quote').length, Sources.QUOTE_DEPTH + Sources.fixedBuyerOffersFor(1864).length);
+// The fixed buyers take materials only from a gnome (the owner is a Warsmith).
+assert(Sources.fixedBuyerOffersFor(1864, owner).length > 0);
+assert.equal(exit.stages.filter(stage => stage === 'quote').length, Sources.QUOTE_DEPTH + Sources.fixedBuyerOffersFor(1864, owner).length);
 const npcFloor = drain(Sources.exitValue(owner, 1864, null)).value;
 assert(npcFloor >= 0 && npcFloor < 499, 'without a board only NPC buyback and fixed buyers');
 const withBids = drain(Sources.prepare(owner, { board: bids, timestamp: 1000 })).value;

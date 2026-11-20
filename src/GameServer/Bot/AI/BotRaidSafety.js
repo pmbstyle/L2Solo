@@ -1,5 +1,6 @@
 const RAID_MINION_TEMPLATE_IDS = new Set(
-    require('../../../../data/Npcs/Minions/c4_raid_bosses.json')
+    [...require('../../../../data/Npcs/Minions/c4_raid_bosses.json'),
+        ...require('../../RaidBoss/GrandBossRules').data.minions]
         .map((entry) => Number(entry.minionId))
         .filter((id) => Number.isInteger(id) && id > 0)
 );
@@ -180,7 +181,8 @@ function currentCombatTargetId(actor) {
 }
 
 function raidHasPartyCombat(leaderSession, raid) {
-    const sessions = playerPartySessions(leaderSession).filter(session => session.actor.fetchIsOnline?.() === true
+    const sessions = invoke('GameServer/Bot/AI/ClanCommandParty').combatSessions(leaderSession, { includeDead: true })
+        .filter(session => session.actor.fetchIsOnline?.() === true
         && !session.actor.isDead?.() && !session.actor.state?.fetchDead?.());
     const memberIds = new Set(sessions.map((session) => objectId(session.actor)).filter(Boolean));
     if (memberIds.size === 0) return false;
@@ -272,6 +274,8 @@ function endPlayerPartyRaid(leaderSession) {
 }
 
 function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
+    const group = leaderSession?.clanCommandParty;
+    if (group?.active) return syncPlayerPartyRaid(group.commander, now);
     if (leaderSession?.pendingActorTeleport) return null;
     if (playerPartySessions(leaderSession).length === 0) {
         if (leaderSession) leaderSession.partyRaidEngagement = undefined;
@@ -332,6 +336,19 @@ function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
     if (raid.phase === 'retreat') return raid;
     if (!raid.mainTankId) raid.mainTankId = invoke('GameServer/Bot/AI/BotRoles').inferRole(leaderSession.actor) === 'tank'
         ? objectId(leaderSession.actor) : raid.openerId;
+    // An additional party may be the only surviving AI executor. Apply the
+    // main party's existing tank-loss policy before it can admit more damage.
+    if (leaderSession.commandParties?.size && (raid.phase === 'combat' || activeCombat)) {
+        const living = playerPartySessions(leaderSession).filter(member => member.actor.fetchIsOnline?.() === true
+            && !member.actor.isDead?.() && !member.actor.state?.fetchDead?.());
+        if (!living.some(member => objectId(member.actor) === Number(raid.mainTankId))) {
+            const replacement = living.find(member => member !== leaderSession
+                && invoke('GameServer/Bot/AI/BotRoles').inferRole(member.actor) === 'tank'
+                && Number((existingBoss || selectedBoss)?.fetchDestId?.()) === objectId(member.actor));
+            if (replacement) raid.mainTankId = objectId(replacement.actor);
+            else { raid.phase = 'retreat'; return raid; }
+        }
+    }
     if (activeCombat) {
         raid.phase = 'combat';
         raid.lastActiveAt = now;
@@ -346,6 +363,11 @@ function syncPlayerPartyRaid(leaderSession, now = Date.now()) {
 }
 
 function canEngagePlayerPartyRaid(session, target, leaderSession = session?.followPlayerSession) {
+    const group = session?.clanCommandParty;
+    if (group?.active) {
+        const raid = syncPlayerPartyRaid(group.commander);
+        return !!raid && raid.phase === 'combat' && belongsToRaid(target, raid);
+    }
     if (!isOnlineCompanion(session, leaderSession)) return false;
     const raid = syncPlayerPartyRaid(leaderSession);
     if (!raid || !belongsToRaid(target, raid)) return false;
@@ -381,7 +403,8 @@ function botClanRaidCombatPlan(ownerSession, target) {
     const raid = { bossId: objectId(boss), bossTemplateId: templateId(boss) };
     const EffectStore = invoke('GameServer/Effects/EffectStore');
     const minions = raidEntities(raid)
-        .filter((npc) => isRaidMinion(npc) && !npc.isDead?.())
+        .filter((npc) => isRaidMinion(npc) && !npc.isDead?.()
+            && !require('../../RaidBoss/GrandBossRules').isPassive(npc))
         .sort((left, right) => Number(objectId(left) || 0) - Number(objectId(right) || 0));
     let state = ownerSession?.backgroundRaidTactics;
     if (!state || Number(state.bossId || 0) !== Number(raid.bossId || 0)) {

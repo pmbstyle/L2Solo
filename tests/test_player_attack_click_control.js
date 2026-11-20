@@ -14,6 +14,7 @@ const Item = invoke('GameServer/Item/Item');
 const { packetReceiver } = invoke('Server');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const PvpFlag = invoke('GameServer/Actor/PvpFlag');
+const { registerSessions } = require('./helpers/worldSessions');
 
 // Lisvus fdc7e33a: L2CharacterAI.onIntentionAttack acknowledges an unchanged
 // target with ActionFailed (otherwise the client freezes until deselection).
@@ -47,7 +48,7 @@ function fixture(kind = 'Weapon.Sword', targetX = 40, entity = 'npc') {
     if (entity === 'npc') target.fetchKind = () => 'Monster';
     const actor = { x: 0, y: 0, z: 0, selected: target.fetchId(), mp: 100,
         effects: {}, state: new State(), attack: new Attack(), automation: new Automation(),
-        fetchId: () => 2000001, fetchLevel: () => 10, fetchHead: () => 0, fetchSize: () => 16,
+        fetchId: () => 2000001, fetchName: () => 'Attacker', fetchLevel: () => 10, fetchHead: () => 0, fetchSize: () => 16,
         fetchLocX() { return this.x; }, fetchLocY() { return this.y; }, fetchLocZ() { return this.z; },
         setLocXYZ(p) { this.x = p.locX; this.y = p.locY; this.z = p.locZ; },
         fetchDestId() { return this.selected; }, setDestId(id) { this.selected = id; },
@@ -88,7 +89,7 @@ function fixture(kind = 'Weapon.Sword', targetX = 40, entity = 'npc') {
 }
 
 (async () => {
-    const saved = { npc: World.fetchNpc, item: World.fetchItem, user: World.fetchUser,
+    const saved = { npc: World.fetchNpc, item: World.fetchItem, user: World.fetchUser, users: World.user,
         chance: Formulas.calcHitChance, peace: utils.isInPeaceZone,
         timeout: global.setTimeout, clear: global.clearTimeout, interval: global.clearInterval, mark: PvpFlag.mark };
     const fixtures = [];
@@ -116,6 +117,64 @@ function fixture(kind = 'Weapon.Sword', targetX = 40, entity = 'npc') {
                     checks++;
                 }
             }
+        }
+
+        for (const kind of ['Summon', 'Pet']) {
+            const f = make('Weapon.Sword', 40);
+            let flag = 1, protectedX, hits = 0;
+            const owner = { fetchId: () => 2000002, fetchPvpFlag: () => flag };
+            owner.session = { actor: owner, partyCompanion: true, followPlayerSession: f.session };
+            registerSessions([f.session, owner.session]);
+            Object.assign(f.target, {
+                fetchKind: () => kind, fetchAttackable: () => false,
+                fetchOwnerId: owner.fetchId, fetchIsSummon: () => kind === 'Summon', fetchIsPet: () => kind === 'Pet'
+            });
+            utils.isInPeaceZone = x => x === protectedX;
+            f.actor.attack.hit = () => { hits++; };
+            f.actor.setDestId(undefined);
+            f.sendClick(); await drain();
+            assert.equal(f.actor.fetchDestId(), f.target.fetchId(), `a ${kind} remains selectable`);
+            for (const opcode of [0x04, 0x0a]) {
+                f.sendClick(opcode); await drain();
+            }
+            assert.equal(f.count(0x25), 2, 'each refused party attack must finish the client action');
+            assert.equal(f.count(0x05), 0, 'a flagged party owner does not permit attacks on the summon');
+
+            owner.session.partyCompanion = false;
+            for (const x of [f.actor.fetchLocX(), f.target.fetchLocX()]) {
+                protectedX = x;
+                f.sendClick(0x0a); await drain();
+                assert.equal(f.count(0x05), 0, 'Ctrl cannot attack when either side is in a peace zone');
+            }
+            protectedX = undefined;
+            flag = 0;
+            f.sendClick(); await drain();
+            assert.equal(f.count(0x05), 0, 'an ordinary click cannot attack a neutral summon');
+            f.sendClick(0x0a); await drain();
+            assert.equal(f.count(0x05), 1, 'Ctrl can attack a neutral enemy summon in the field');
+            f.swingTimers[0].callback();
+            assert.equal(hits, 1);
+
+            flag = 1;
+            f.swingTimers[1].callback();
+            assert.equal(f.count(0x05), 2);
+            protectedX = f.target.fetchLocX();
+            f.swingTimers[2].callback();
+            f.swingTimers[3].callback();
+            assert.equal(hits, 1, 'a summon entering a peace zone is protected mid-swing');
+            assert.equal(f.count(0x05), 2, 'auto-attack stops at the peace boundary');
+            assert.equal(f.actor.state.fetchHits(), false);
+
+            protectedX = undefined;
+            f.sendClick(); await drain();
+            assert.equal(f.count(0x05), 3, 'an ordinary click can attack an outsider whose owner is flagged');
+            owner.session.partyCompanion = true;
+            f.swingTimers[4].callback();
+            f.swingTimers[5].callback();
+            assert.equal(hits, 1, 'joining the party protects a summon mid-swing');
+            assert.equal(f.count(0x05), 3, 'auto-attack stops when the owner joins the party');
+            utils.isInPeaceZone = () => false;
+            checks++;
         }
 
         for (const opcode of [0x04, 0x0a]) {
@@ -265,7 +324,7 @@ function fixture(kind = 'Weapon.Sword', targetX = 40, entity = 'npc') {
         console.log(`Player click control: ${checks} command ordering, chase acknowledgement and bow reload checks passed`);
     } finally {
         fixtures.forEach(f => f.actor.automation.abortAll(f.actor, { notifyClient: false }));
-        World.fetchNpc = saved.npc; World.fetchItem = saved.item; World.fetchUser = saved.user;
+        World.fetchNpc = saved.npc; World.fetchItem = saved.item; World.fetchUser = saved.user; World.user = saved.users;
         Formulas.calcHitChance = saved.chance; utils.isInPeaceZone = saved.peace;
         global.setTimeout = saved.timeout; global.clearTimeout = saved.clear; global.clearInterval = saved.interval;
         PvpFlag.mark = saved.mark;

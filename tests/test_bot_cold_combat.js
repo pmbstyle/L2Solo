@@ -600,7 +600,9 @@ assert(strongPartyResult.memberResults.every((entry) => entry.result.materialize
 // same time on the same ground two damage dealers kill about twice what one kills
 // alone, and a party round lives the time behind it as a solo round does.
 {
-    const hunter = { ...strongColdHunter, characterId: 930, stats: { ...strongColdHunter.stats, coldCombat: {
+    // Its clock two minutes back: the party round starts at its members' clocks.
+    const hunter = { ...strongColdHunter, characterId: 930, timing: { ...(strongColdHunter.timing || {}), lastResolvedAt: timestamp - 120000 },
+        stats: { ...strongColdHunter.stats, coldCombat: {
         ...strongColdHunter.stats.coldCombat, equipment: { ...strongColdHunter.stats.coldCombat.equipment, pAtk: 300 } } } };
     // Dense (a short walk), a mob of several blows that can hardly hurt them, no spawn production (no share).
     const ground = { ...gigantSpot, id: 'party_throughput', density: 5000 };

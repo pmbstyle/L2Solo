@@ -86,7 +86,7 @@ async function run() {
     ShoppingState.scheduleRestock = () => {};
     require.cache[npcTalkPath].exports = () => {};
 
-    const session = { shoppingTarget: { actorId: 940001 }, coldLifeState: state };
+    const session = { actor: bot, plan: 'shopping', shoppingTarget: { actorId: 940001 }, coldLifeState: state };
     await ShoppingState.sellAndRestock(session, bot, null, { say() {} });
     assert.deepStrictEqual(sold, [ANIMAL_BONE],
         'a hot sale to an AFK buy order must skip reserved craft materials and pet-locked items');
@@ -97,7 +97,7 @@ async function run() {
         limited.push([selfId, qty]);
         return { totalPrice: qty * 100 };
     };
-    await ShoppingState.sellAndRestock({ shoppingTarget: { actorId: 940001, sale: { [ANIMAL_BONE]: 5 } }, coldLifeState: state },
+    await ShoppingState.sellAndRestock({ actor: bot, plan: 'shopping', shoppingTarget: { actorId: 940001, sale: { [ANIMAL_BONE]: 5 } }, coldLifeState: state },
         bot, null, { say() {} });
     assert.deepStrictEqual(limited, [[ANIMAL_BONE, 5]], 'the decided units only');
 
@@ -109,7 +109,7 @@ async function run() {
         stats: { classId: 55, hennas: [], wishFocus: ['henna:157', 0, 0] } };
     store.items.push({ selfId: DYE, name: 'Dye', count: 50, price: 100 });
     limited.length = 0;
-    await ShoppingState.sellAndRestock({ shoppingTarget: { actorId: 940001, sale: { [DYE]: 50 } }, coldLifeState: dyeState },
+    await ShoppingState.sellAndRestock({ actor: dyeBot, plan: 'shopping', shoppingTarget: { actorId: 940001, sale: { [DYE]: 50 } }, coldLifeState: dyeState },
         dyeBot, null, { say() {} });
     assert.deepStrictEqual(limited, [], 'a stale held sale cannot take the newly selected symbol dye');
     assert.deepStrictEqual(TradeService.sellableActorItems(dyeBot, { ...dyeState,

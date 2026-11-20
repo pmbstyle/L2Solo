@@ -108,6 +108,9 @@ class ColdSafetyTransport {
         const pending = this.pending;
         if (!pending) return;
         if (!this.current()) { this.finish(pending, refused('stale')); return; }
+        // The worker refused this request or its receipt: no receipt follows.
+        if (message?.type === 'fault' && message.workerEpoch === this.epoch
+            && message.payload?.msgId === pending.msgId) { this.finish(pending, refused('worker_refused')); return; }
         if (message?.workerEpoch !== this.epoch || message.msgId !== pending.msgId
             || message.type !== TYPES[pending.kind].replace('_request', '_ack')) return;
         let timestamp;

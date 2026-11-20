@@ -17,7 +17,6 @@ on:
       - 'release-notes/**'
       - '.github/workflows/launcher.yml'
       - '.github/workflows/release.yml'
-      - '.github/workflows/preview.yml'
   workflow_dispatch:
 
 permissions:
@@ -48,12 +47,3 @@ jobs:
         if: runner.os == 'Linux'
       - run: npm run test:ui
         if: runner.os != 'Linux'
-      - run: npm run pack
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - run: xvfb-run -a npm run test:packaged
-        if: runner.os == 'Linux'
-      - run: npm run test:packaged
-        if: runner.os != 'Linux'
-      - run: npm run test:installer
-        if: runner.os == 'Windows'

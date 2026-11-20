@@ -24,8 +24,8 @@ function pending(state, timestamp) {
 function holdsTrip(subject, route, timestamp) {
     return !!route?.needed && route.reason !== 'unsafe_ground_evacuation' && pending(subject, timestamp);
 }
-// timestamp: the round that saved it, never a fight's clock inside the round
-// (ahead of the next round's start, read would drop the fight).
+// timestamp: the moment the round cut the fight, on the round's own clock: the
+// next round starts at or after it (its last action's end), so read keeps it.
 function save(previous, encounterKey, mob, hp, timestamp, timers) {
     return { version: 1, key: encounterKey, mob, hp: Math.max(0, hp), at: timestamp,
         slices: Number(previous?.slices || 0) + 1, ...timers };

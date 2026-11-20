@@ -23,7 +23,7 @@ const modules = {
     'GameServer/World/World': { init: async () => {} }, 'GameServer/DataCache': { init: noop, items: [] },
     'GameServer/Clan/ClanService': { init: async () => {} }, 'AuthenticationServer/Session': Session, 'GameServer/Session': Session,
     'GameServer/ProgressionRates': { profile: () => ({}) },
-    'WorldObserver/WorldObserverServer': { init: () => process.send({ type: 'fixture:observer' }) }
+    'WorldObserver/WorldObserverServer': { init: () => process.send({ type: 'fixture:observer' }), stopCrestGeneration: noop }
 };
 global.invoke = name => modules[name] || service;
 require.cache[path.join(root, 'src/Global.js')] = { exports: {}, loaded: true };

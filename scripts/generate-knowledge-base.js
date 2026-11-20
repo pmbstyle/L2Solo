@@ -22,11 +22,17 @@ const DataCache = invoke('GameServer/DataCache');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
-const raidMinionDefinitions = require('../data/Npcs/Minions/c4_raid_bosses.json');
-const minionDefinitions = [
+const raidMinionDefinitions = [...require('../data/Npcs/Minions/c4_raid_bosses.json'),
+    ...require('../data/RaidBoss/c4_grand_bosses.json').minions];
+const minionGroups = new Map();
+for (const row of [
     ...raidMinionDefinitions,
     ...require('../data/Npcs/Minions/c4_group_leaders.json')
-];
+]) {
+    const key = `${row.bossId}:${row.minionId}`, existing = minionGroups.get(key);
+    minionGroups.set(key, existing ? { ...existing, min: existing.min + row.min, max: existing.max + row.max } : { ...row });
+}
+const minionDefinitions = [...minionGroups.values()];
 const raidMinionIds = new Set(raidMinionDefinitions.map((definition) => Number(definition.minionId)));
 
 const SCHEMA_VERSION = 1;

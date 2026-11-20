@@ -12,8 +12,11 @@ function load(file, requireAdapter, invokeAdapter = () => { throw Error('unexpec
     return module.exports;
 }
 const item = { selfId: 101, etc: { slot: 7 }, template: { price: 100, kind: 'Armor.Chest' } };
-const recipe = { recipeId: 301, productId: 101, productCount: 1, recipeItemId: 401,
-    mpCost: 1, successRate: 100, materials: [{ selfId: 202, amount: 10 }] };
+// The material (9202) and the recipe scroll (9401) are ids no configured store
+// sells: the real store table answers the fixed offers here, and its city
+// reserve sells gear pieces (202, 401 among them) to any bot.
+const recipe = { recipeId: 301, productId: 101, productCount: 1, recipeItemId: 9401,
+    mpCost: 1, successRate: 100, materials: [{ selfId: 9202, amount: 10 }] };
 const state = { characterId: 1, level: 40, inventory: {}, stats: { recipes: [301] },
     activity: 'shopping', currentRegion: 'Giran', loc: { locX: 81100, locY: 148000, locZ: -3466 } };
 const board = new BoardIndex();
@@ -138,10 +141,10 @@ const nativeCraft = nativeBook.nodes.find(row => row.key === 'item:101').paths.f
 assert(nativeCraft, 'prepared native book enables ingredient collection without a second recipe scroll');
 assert.equal(nativeCraft.requiresRecipeLearning, false);
 assert.equal(nativeCraft.grossRequirements.length, 1);
-assert.equal(nativeCraft.grossRequirements[0].key, 'item:202');
+assert.equal(nativeCraft.grossRequirements[0].key, 'item:9202');
 const unknownBook = run(true).nodes.find(row => row.key === 'item:101').paths.find(row => row.kind === 'craft');
 assert(unknownBook?.requiresRecipeLearning, 'an unknown recipe remains a preparation goal');
-assert(unknownBook.grossRequirements.some(row => row.key === 'item:401' && row.once),
+assert(unknownBook.grossRequirements.some(row => row.key === 'item:9401' && row.once),
     'the goal acquires a real scroll without inventing recipe knowledge');
 state.stats.recipes = savedBook;
 assert.equal(run(true, { deps: { knownRecipes: [] } }).nodes.find(row => row.key === 'item:101')
@@ -150,7 +153,7 @@ assert.equal(run(true, { deps: { knownRecipes: [] } }).nodes.find(row => row.key
 assert.deepEqual(provider.recipeIds(state, { knownRecipes: [301, { recipeId: 301 }, 302, 0, NaN] }), [301, 302]);
 let safeScroll = true, scrollKind = 'drop', raidScroll = false;
 const planner = adapters['GameServer/Bot/AI/GearAcquisitionPlanner'];
-planner.sourceIndexFor = () => new Map([[401, [{ kind: scrollKind, totalCount: 1, sourceCount: 1,
+planner.sourceIndexFor = () => new Map([[9401, [{ kind: scrollKind, totalCount: 1, sourceCount: 1,
     spot: { id: 'scroll-source', raidBoss: raidScroll }, reward: { selfId: 501 } }]]]);
 planner.sourceYieldReaderFor = () => () => ({ expectedYield: 1 });
 planner.soloSafeForSource = () => safeScroll;
@@ -160,14 +163,14 @@ const farmScroll = () => run(true, { deps: { knownRecipes: [], spots: [{}] },
 const farmedBook = farmScroll();
 const preparingRecipe = farmedBook.nodes.find(row => row.key === 'item:101').paths.find(row => row.kind === 'craft');
 assert(preparingRecipe?.requiresRecipeLearning, 'known safe scroll drop admits recipe preparation with no scroll seller');
-assert(preparingRecipe.grossRequirements.some(row => row.key === 'item:401' && row.amount === 1 && row.once));
+assert(preparingRecipe.grossRequirements.some(row => row.key === 'item:9401' && row.amount === 1 && row.once));
 assert.equal(farmedBook.activity.activity, 'hunting');
-assert.equal(farmedBook.activity.itemId, 401, 'the acquisition leaf farms the actual scroll, not the product');
+assert.equal(farmedBook.activity.itemId, 9401, 'the acquisition leaf farms the actual scroll, not the product');
 const hasCraft = result => result.nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft');
 safeScroll = false;
 const unsafeScroll = farmScroll();
 assert(hasCraft(unsafeScroll), 'unsafe ground does not delete the future recipe purchase goal');
-assert.equal(unsafeScroll.plans.find(([key]) => key === 'item:401')[1].executable, false,
+assert.equal(unsafeScroll.plans.find(([key]) => key === 'item:9401')[1].executable, false,
     'unsafe recipe farming cannot execute');
 safeScroll = true; raidScroll = true;
 assert.notEqual(farmScroll().activity?.kind, 'raid', 'a raid scroll source is not a solo route');
@@ -180,26 +183,26 @@ assert(buy.queue.length && buy.focus, 'unknown future supply does not erase the 
 assert.equal(buy.plans.find(([key]) => key === 'item:101')[1].executable, false, 'an estimate without an offer cannot pay');
 assert.equal(buy.queue[0].funded, false, 'an unexecutable purchase draws no money');
 assert.equal(craft.activity, null, 'missing ingredient forecast cannot execute shopping/craft');
-assert.equal(craft.plans.find(([key]) => key === 'item:202')[1].executable, false);
+assert.equal(craft.plans.find(([key]) => key === 'item:9202')[1].executable, false);
 assert.equal(spotReads, 0, 'gear gain still has no hypothetical best-spot evaluation');
 function stock(id, amount, ownerId = 2, enchant = 0) {
     board.put({ id: 11, ownerId, storeType: 1, kind: 'sell_ad', town: 'Giran', revision: 1,
         lines: [{ lineId: 11, selfId: id, count: amount, price: 1, enchant }] });
 }
-stock(202, 6);
+stock(9202, 6);
 const partial = run(true);
 assert.equal(partial.activity.activity, 'shopping');
-assert.equal(partial.activity.object, 202);
+assert.equal(partial.activity.object, 9202);
 assert.equal(partial.activity.amount, 6, 'partial source cannot purchase the unavailable remainder');
 assert.equal(partial.plans.find(([key]) => key === 'item:101')[1].executable, false);
-stock(202, 10);
+stock(9202, 10);
 const full = run(true);
 assert.equal(full.activity.activity, 'shopping', 'ingredients must be acquired before crafting');
 assert.equal(full.activity.amount, 10);
 assert.equal(full.plans.find(([key]) => key === 'item:101')[1].executable, true);
-stock(202, 10, 1);
+stock(9202, 10, 1);
 assert.equal(run(true).activity, null, 'own standing stock does not establish external buying supply');
-stock(202, 10, 2, 1);
+stock(9202, 10, 2, 1);
 assert.equal(run(true).activity, null, 'enchanted item is not a normal recipe ingredient');
 stock(101, 1);
 board.put({ id: 11, ownerId: 2, storeType: 1, kind: 'sell_ad', town: 'Giran',
@@ -258,7 +261,7 @@ assert.equal(freeVisit.plans.get('free').effort, 3, 'zero cash is not multiplied
 
 const ColdDecision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const decoded = ColdDecision.compact({ echo: [1, 0, null], updatedAt: 1, riskWeight: 1,
-    activity: { activity: 'shopping', itemId: 202, amount: 6, price: 106, unitPrice: 1,
+    activity: { activity: 'shopping', itemId: 9202, amount: 6, price: 106, unitPrice: 1,
         rootKey: 'gear', town: 'Giran', sourceType: 'npc' } }).activity;
 assert.equal(decoded.town, 'Giran'); assert.equal(decoded.sourceType, 'npc');
 assert.equal(decoded.heldAtDecision, undefined, 'optional town fields do not manufacture held inventory');
@@ -276,7 +279,7 @@ new Function('require', 'invoke', 'module', 'exports', fs.readFileSync(path.join
     goalsModule, goalsModule.exports);
 const otherTownBoard = new BoardIndex();
 otherTownBoard.put({ id: 2, ownerId: 3, storeType: 1, town: 'Dion', kind: 'sell_ad',
-    lines: [{ lineId: 2, selfId: 202, price: 1, count: 20 }] });
+    lines: [{ lineId: 2, selfId: 9202, price: 1, count: 20 }] });
 const goal = goalsModule.exports.evaluate(state, { errand: null, board: otherTownBoard, npcOffersFor: () => [],
     economy: { network: { activity: decoded }, inputKey: 'city' } })[0];
 assert.equal(goal.plan.marketTown, 'Giran', 'execution keeps the selected reachable city instead of first public head');
@@ -296,18 +299,18 @@ console.log('PASS actual prices/road funding, one basket trip, zero-hour arithme
 console.log('PASS actual provider/network: unknown wish retained, no unsupported activity, finite partial/full sources, prerequisite acquisition, owner/enchant restrictions');
 const Evidence = require('../src/GameServer/Bot/Economy/WishPurchaseEvidence');
 const knownNpc = Evidence.reader(state, context, { board: new BoardIndex(), npcOffersFor: () => [
-    { sourceType: 'npc', selfId: 202, town: 'Giran', price: 3, available: true }] })(202);
+    { sourceType: 'npc', selfId: 9202, town: 'Giran', price: 3, available: true }] })(9202);
 assert.equal(knownNpc.availableUnits, Infinity, 'permitted static NPC source is unlimited');
 assert.equal(Evidence.reader(state, context, { board: new BoardIndex(), tripCost: () => 0,
-    npcOffersFor: () => [{ sourceType: 'npc', selfId: 202, town: 'Giran', price: 3 }] })(202), null,
+    npcOffersFor: () => [{ sourceType: 'npc', selfId: 9202, town: 'Giran', price: 3 }] })(9202), null,
     'a generic scalar cost without separate prepared cash/time cannot claim a free road');
 const unknownTown = Evidence.reader(state, context, { board: new BoardIndex(), npcOffersFor: () => [
-    { sourceType: 'npc', selfId: 202, town: 'Unknown', price: 3 }] })(202);
+    { sourceType: 'npc', selfId: 9202, town: 'Unknown', price: 3 }] })(9202);
 assert.equal(unknownTown, null, 'unknown route is not an executable quote');
 const limitedBoard = new BoardIndex();
 for (let id = 1; id <= 30; id++) limitedBoard.put({ id, ownerId: id < 30 ? 1 : 2,
-    storeType: 1, kind: 'sell_ad', town: 'Giran', lines: [{ lineId: id, selfId: 202, count: 1, price: id }] });
-assert.equal(Evidence.reader(state, context, { board: limitedBoard })(202), null,
+    storeType: 1, kind: 'sell_ad', town: 'Giran', lines: [{ lineId: id, selfId: 9202, count: 1, price: id }] });
+assert.equal(Evidence.reader(state, context, { board: limitedBoard })(9202), null,
     'quote evidence stops at its twenty-row budget rather than scanning an owner-heavy book');
 console.log('PASS source evidence: native quote query, allowed NPC, unknown route, finite inspection budget');
 
@@ -412,7 +415,7 @@ let craftPath = projected.nodes.find(row => row.key === 'item:101').paths.find(r
 assert(craftPath, 'a real public service makes the same craft transformation feasible for a fighter');
 assert.equal(craftPath.requiresRecipeLearning, false);
 assert.equal(craftPath.price, 5);
-assert(!craftPath.grossRequirements.some(row => row.key === 'item:401'), 'no recipe scroll charged to the customer');
+assert(!craftPath.grossRequirements.some(row => row.key === 'item:9401'), 'no recipe scroll charged to the customer');
 assert.equal(run(true, { deps: services([]) }).nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft'), false);
 assert.equal(run(true, { deps: services([{ ...publicService, capacityBatches: 0 }]) }).nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft'), false);
 assert.equal(run(true, { deps: services([{ ...publicService, townName: 'Unknown' }]) }).nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft'), false);
@@ -434,7 +437,7 @@ const planned = provider.personalCraftPlan(state, { network: { activity: { rootK
 assert.equal(planned.craftProviders[301].characterId, 2);
 assert.equal(planned.valueRate, 2, 'paid service inherits the personal root funding rate');
 const uncertainVariant = { ...recipe, recipeId: 302, recipeItemId: 402, successRate: 60,
-    materials: [{ selfId: 202, amount: 5 }] };
+    materials: [{ selfId: 9202, amount: 5 }] };
 recipeVariants = [uncertainVariant, recipe];
 const uncertainService = { ...publicService, characterId: 3, recipeId: 302, price: 3, entryPrice: 3 };
 const variantPaths = run(true, { deps: services([publicService, uncertainService]) }).nodes
@@ -443,8 +446,8 @@ assert.equal(variantPaths.length, 2, 'both feasible native variants enter the sh
 const certain = variantPaths.find(row => row.recipeId === 301), uncertain = variantPaths.find(row => row.recipeId === 302);
 assert.equal(certain.successProbability, 1); assert.equal(uncertain.successProbability, .6);
 assert.equal(certain.price, 5); assert.equal(uncertain.price, 3);
-assert.equal(certain.grossRequirements.find(row => row.key === 'item:202').amount, 10);
-assert.equal(uncertain.grossRequirements.find(row => row.key === 'item:202').amount, 5,
+assert.equal(certain.grossRequirements.find(row => row.key === 'item:9202').amount, 10);
+assert.equal(uncertain.grossRequirements.find(row => row.key === 'item:9202').amount, 5,
     'chance, service fee and inputs stay attached to their own variant');
 const onlyPublished = run(true, { deps: services([publicService]) }).nodes.find(row => row.key === 'item:101')
     .paths.filter(row => row.kind === 'craft');

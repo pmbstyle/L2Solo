@@ -15,6 +15,7 @@ const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
 const Luxury = invoke('GameServer/Bot/Economy/BotLuxuryExchange');
+const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig'), storeWasOff = PopulationConfig.staticShotsDisabled;
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 const town = { locX: 83396, locY: 147904, locZ: -3400 };
 const field = { locX: 78088, locY: 124933, locZ: -2792 };
@@ -92,6 +93,10 @@ async function run() {
         assert.equal(serviced.state.inventory[1458].amount, 4 * Crystals.reward(template(626)).net);
         assert.equal(serviced.state.adena, ordinary.adena);
 
+        // The crystal chain below runs with no seller of C gear (the city reserve store
+        // off): a funded bot buys the C weapon that store sells, and that purchase takes
+        // the action before any dismantling input.
+        PopulationConfig.staticShotsDisabled = true;
         const board = new BoardIndex();
         board.put({ id: 1, ownerId: 9800, storeType: 1, kind: 'shop', town: 'Giran',
             lines: [{ lineId: 1, selfId: 1458, count: 0, enchant: 0, price: 1 },
@@ -252,6 +257,6 @@ async function run() {
         assert((await DB.fetchItems(nativeBuyer.characterId)).some(row => row.selfId === paidPlan.target.selfId && row.equipped),
             'the real NPC purchase -> service -> Luxury chain ends in physical C equipment');
         console.log('PASS empty crystal market -> input purchase / own skill or Giran service -> native crystals -> equipped C gear');
-    } finally { await DB.close(); fs.rmSync(fixture.directory, { recursive: true, force: true }); }
+    } finally { PopulationConfig.staticShotsDisabled = storeWasOff; await DB.close(); fs.rmSync(fixture.directory, { recursive: true, force: true }); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

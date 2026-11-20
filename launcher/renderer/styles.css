@@ -142,6 +142,16 @@ input::placeholder { color: var(--faint); }
 .danger-button { height: 36px; border: 1px solid #be80644d; background: #482c25; border-radius: 6px; padding: 0 14px; color: #f0baaa; font-size: 11px; }
 .danger-button:hover:enabled { background: #5a332a; border-color: #e6a29466; }
 .settings-workspace { display: grid; grid-template-columns: 175px minmax(0, 1fr); gap: 24px; }
+.ai-test-panel { margin-bottom: 18px; padding: 18px; }
+.ai-test-panel > .muted { font-size: 11px; line-height: 1.6; }
+#ai-test-summary { font-size: 12px; }
+#ai-test-summary[data-status="passed"], .ai-test-result[data-status="passed"] .ai-test-status { color: var(--green); }
+#ai-test-summary[data-status="failed"], #ai-test-summary[data-status="error"], .ai-test-result[data-status="failed"] .ai-test-status { color: var(--red); }
+.ai-test-result { border-top: 1px solid var(--line); padding: 13px 0; overflow-wrap: anywhere; }
+.ai-test-result-heading { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; margin-bottom: 5px; }
+.ai-test-status { flex-shrink: 0; color: var(--muted); }
+.ai-test-result small, .ai-test-result p { font-size: 11px; }
+.ai-test-reply { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.6; color: var(--muted); margin: 8px 0 0; }
 .search-box { display: block; margin-bottom: 16px; }
 .search-box input { width: 100%; }
 #settings-nav button { width: 100%; display: block; text-align: left; color: var(--muted); font-size: 11px; padding: 10px 12px; border-radius: 6px; margin-bottom: 3px; }

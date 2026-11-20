@@ -95,7 +95,10 @@ assert.strictEqual(restingMage.patch.activity, 'resting', 'a depleted caster mus
 assert.strictEqual(BackgroundResolver.needsRest(lowManaMage, lowManaMage.vitals), true,
     'zero MP must remain a rest trigger for a caster');
 
-const standing = BackgroundResolver.applyStandingRegen(lowManaDps, lowManaDps.vitals, 30000, now);
+const ColdClock = invoke('GameServer/Bot/Population/ColdClock');
+const dpsProfile = ColdCombatProfile.fightProfile(lowManaDps, now);
+const standing = ColdClock.regen({ vitals: { ...lowManaDps.vitals, maxHp: dpsProfile.maxHp, maxMp: dpsProfile.maxMp }, stats: lowManaDps.stats },
+    30000, ColdClock.rates(lowManaDps, dpsProfile, now).standing, dpsProfile).vitals;
 assert(standing.mp > 0 && standing.mp < standing.maxMp, 'cold hunting must receive bounded standing MP regeneration');
 
 console.log('Bot background rest checks passed');

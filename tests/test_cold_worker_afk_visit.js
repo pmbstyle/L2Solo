@@ -16,7 +16,7 @@ const archerId = 730187;
 const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
 
 (async () => {
-    const world = await createWorld([{ id, classId: 0, level: 20 }, { id: sellerId, classId: 0, level: 20 },
+    const world = await createWorld([{ id, classId: 0, level: 20 }, { id: sellerId, classId: 54, level: 20 },
         { id: doneSellerId, classId: 0, level: 20 }, { id: cleanerId, classId: 0, level: 20 },
         { id: archerId, classId: 9, level: 20 }], 'native-afk-visit');
     try {
@@ -109,7 +109,8 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
 
         // E304: the same visit on a sale trip (the departure marker says it came to
         // sell). The worker showcase must not skip open: the static buyers, the
-        // junk sale and the 30-min sale retry exist only there.
+        // junk sale and the 30-min sale retry exist only there. The seller is a gnome
+        // (Scavenger): the fixed buyers take a bot's materials from a gnome only.
         await Database.createAccount('bot_native_sale_visit', 'fixture');
         await Database.execute(['UPDATE characters SET username=? WHERE id=?', ['bot_native_sale_visit', sellerId]]);
         await Database.setItem(sellerId, { selfId: 57, amount: 1000000, slot: 0 });
@@ -129,7 +130,7 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
             phase: 'cold', activity: 'shopping', currentRegion: 'Elven Village', spotId: String(spot.id),
             adena: 1000000, loc: place, vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 },
             inventory: Life.inventorySummaryFromItems(await Database.fetchItems(sellerId)),
-            stats: { classId: 0, generatedCold: true, classProgressionClassId: 0, classProgressionLevel: 20,
+            stats: { classId: 54, generatedCold: true, classProgressionClassId: 54, classProgressionLevel: 20,
                 townVisit: { town: 'Elven Village', startedAt, reason: 'sell_inventory' },
                 marketReturn: { spotId: String(spot.id), regionName: spot.name, loc: spot.center } },
             timing: { activityStartedAt: Date.now(), lastResolvedAt: Date.now() - 1000, nextResolveAt: Date.now() }
@@ -237,8 +238,13 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
             forcedMarketCleanup: { cleanupReason: 'inventory_capacity', itemCount: 18, npcOnlySlots: 0, startedAt } });
         assert.equal(cleanup.runs, 1, 'a forced cleanup keeps the worker showcase (the author path)');
         console.log('PASS sale visit controls: finished and other-town sale markers, forced cleanup keeps the showcase');
-        const arrows = await showcaseRunsFor(archerId, 'arrow_cleanup_visit', {}, 9,
-            [{ selfId: 1341, amount: 5000 }, { selfId: 1343, amount: 100 }]);
+        // The archer wears its D kit: a bot with a D piece the wallet pays now walks to
+        // the town that sells it (Gludio) and sells its arrows there, not on this errand.
+        const dKit = [[890, 4], [890, 5], [847, 1], [847, 2], [910, 3], [604, 9], [40, 12], [45, 6], [391, 10], [413, 11]]
+            .map(([selfId, slot]) => ({ selfId, amount: 1, equipped: 1, slot }));
+        const arrows = await showcaseRunsFor(archerId, 'arrow_cleanup_visit',
+            { townVisit: { town: 'Elven Village', startedAt, reason: 'restock' } }, 9,
+            [{ selfId: 1341, amount: 5000 }, { selfId: 1343, amount: 100 }, ...dKit]);
         assert.equal(invoke('GameServer/Inventory/ArrowStock').keptAmounts(arrows.visitState)[1341], 2000);
         assert.equal(arrows.runs, 1, 'unused arrows do not cost the visit its worker showcase');
         const arrowBag = await Database.fetchItems(archerId);

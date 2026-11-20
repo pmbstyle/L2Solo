@@ -489,7 +489,7 @@ function* recipeShotSearch(state, recipe, context, options = {}) {
         adena: PurchaseFunding.spendable(state, 0, { upperBound: true }) }, recipe, exits, ownedFor: ownFor,
         planFor: () => null, context: { ...context, requireOutputBenefit: true, existingOutput: ownedOutput + postedOutput
             + (options.ownIncludesIncoming ? 0 : Number(state.acceptedIncoming?.[recipe.productId] || 0)),
-            outputReserve, reservedOutputUnitHours: Number(personal?.benefitHours || 0) / Math.max(1, Number(personal?.target || 0)), preparePurchase,
+            outputReserve, outputReplacePrice: invoke('GameServer/Bot/Economy/StaticMerchantPricing').botBuyPrice(recipe.productId), reservedOutputUnitHours: Number(personal?.benefitHours || 0) / Math.max(1, Number(personal?.target || 0)), preparePurchase,
             ...(options.horizonFirst ? { valueCandidate: candidate => Horizon.value(candidate,
                 options.horizonState, options.horizonFirst, context) } : {}),
             ...(options.prepareCandidate ? { prepareCandidate: options.prepareCandidate } : {}),

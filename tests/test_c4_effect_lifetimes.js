@@ -46,7 +46,8 @@ function actor() {
         fetchCollectiveMAtk: () => 1000, fetchCollectiveMDef: () => 100,
         fetchDex: () => 30, fetchHead: () => 0,
         fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0,
-        isDead: () => false, state: { fetchDead: () => false }, statusUpdateVitals() {},
+        isDead: () => false, state: { fetchDead: () => false, fetchSeated: () => false }, statusUpdateVitals() {},
+        automation: { replenishVitals() {} },
         backpack: { fetchTotalWeaponPAtkRnd: () => 0 }, skillset: { fetchSkills: () => [] }
     };
 }

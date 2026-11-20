@@ -292,7 +292,9 @@ async function run() {
         currentRegion: 'Talking Island',
         loc: islandLoc,
         inventory: LifeState.inventorySummaryFromItems(await originals.fetchItems(87)),
-        stats: { ...state.stats, marketReturn: { ...state.stats.marketReturn,
+        // A Scavenger: the fixed buyers take materials only from a gnome (classes 54-57).
+        level: 20,
+        stats: { ...state.stats, classId: 54, marketReturn: { ...state.stats.marketReturn,
             loc: { ...islandLoc }, regionName: 'Talking Island' } }
     }, 'static_buyer_owner_geometry');
     const buyerRouted = await ListingService.open(buyerRoutedState, { now: 1000, durationMs: 60000 });

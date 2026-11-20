@@ -98,6 +98,10 @@ async function run() {
     const opened = { state: LifeState.snapshot(ownerId), shop: AfkTrade.findOwnerProjection(ownerId).shop };
     assert.strictEqual(BotAfkMarket.canTradeRemotely(opened.state, sellGoal), true);
     assert.strictEqual(opened.shop.storeType, AfkTrade.SELL);
+    // The build's sale trip sells to the NPC buyback, which the shop cannot make:
+    // the shop owner still leaves the hunt for it (x1 run: 171537 trips refused in 2 h).
+    assert(invoke('GameServer/Bot/Goals/GoalExecutor').beginMarketTravel({ ...opened.state, activity: 'hunting' },
+        { ...sellGoal, plan: { ...sellGoal.plan, marketTown: 'Talking Island' } }), 'a shop owner still takes its sale trip');
     assert.strictEqual(Number(opened.shop.expiresAt), 0, 'the shop has no deadline: it closes by events (the board)');
     assert.strictEqual(opened.shop.town, 'Talking Island');
     assert.strictEqual(MarketSnapshot.snapshot().dynamic.wts, 1,

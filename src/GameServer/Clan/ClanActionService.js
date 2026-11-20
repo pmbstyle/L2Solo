@@ -362,6 +362,7 @@ async function bootstrapOnce() {
                 actionKey: `clan:${Number(clan.clanId)}:titles:v1:${rosterKey}`,
                 actionType: ACTION_TYPES.TITLES,
                 priority: 20,
+                coalescePending: true,
                 payload: { reason: 'untitled_members', rosterKey }
             });
             if (result.created) titleCreated += 1;
@@ -373,7 +374,7 @@ async function bootstrapOnce() {
 }
 
 async function scheduleTitleReview(clan) {
-    if (Config.llmTitleManagementEnabled === false || !TitleService.available() || number(clan?.level) < 3) {
+    if (clan?.state?.mode === 'player_managed' || number(clan?.level) < 3 || !TitleService.available()) {
         return { ok: true, scheduled: false, reason: 'titles_disabled_or_unavailable' };
     }
     const memberIds = (clan.members || [])
@@ -392,6 +393,7 @@ async function scheduleTitleReview(clan) {
         actionKey: `clan:${number(clan.id)}:titles:v1:${rosterKey}`,
         actionType: ACTION_TYPES.TITLES,
         priority: 20,
+        coalescePending: true,
         payload: { reason: 'untitled_members', memberIds: missingIds, rosterKey }
     });
     if (queued.created) DiagnosticConfig.developerDiagnostics && (metrics.planned += 1);
@@ -595,7 +597,8 @@ async function resolveAction(action, options = {}) {
                 availableAt: Date.now() + retryDelay,
                 expectedAttempt: action.attempt,
                 expectedLeaseUntil: action.leaseUntil,
-                continuation: true
+                continuation: true,
+                reasonCode: action.actionType === ACTION_TYPES.TITLES && result.retryable ? reasonCode : null
             }).finally(() => {
                 DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'defer', Date.now() - deferStartedAt);
             });

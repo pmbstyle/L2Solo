@@ -92,6 +92,7 @@ const state = {
     clanCrestDraft: null,
     clanCrestSaving: false,
     clanCrestMessage: null,
+    clanCrestGeneration: { prompt: '', monogram: '', candidates: [] },
     clanOrderDraft: null,
     clanOrderItems: [],
     clanOrderSearchLoading: false,
@@ -373,6 +374,8 @@ const els = {
     closeRaidBosses: document.querySelector('#closeRaidBosses'),
     raidBossesModal: document.querySelector('#raidBossesModal'),
     raidBossFilters: document.querySelector('#raidBossFilters'),
+    raidBossMinLevel: document.querySelector('#raidBossMinLevel'),
+    raidBossMaxLevel: document.querySelector('#raidBossMaxLevel'),
     raidBossSearch: document.querySelector('#raidBossSearch'),
     raidBossSummary: document.querySelector('#raidBossSummary'),
     raidBossScope: document.querySelector('#raidBossScope'),
@@ -737,8 +740,11 @@ function raidBossStatusLabel(status) {
 
 function filteredRaidBosses() {
     const query = state.raidBossSearch.trim().toLowerCase();
+    const minLevel = Number(els.raidBossMinLevel.value || -Infinity);
+    const maxLevel = Number(els.raidBossMaxLevel.value || Infinity);
     return raidBossItems().filter((boss) => {
         if (state.raidBossFilter !== 'all' && boss.status !== state.raidBossFilter) return false;
+        if (boss.level < minLevel || boss.level > maxLevel) return false;
         if (!query) return true;
         return [boss.name, boss.location?.name, boss.level, boss.id]
             .filter((value) => value !== null && value !== undefined)
@@ -766,19 +772,20 @@ function renderRaidBosses() {
     els.raidBossScope.textContent = `${number(bosses.length)} boss${bosses.length === 1 ? '' : 'es'}`;
     els.raidBossList.innerHTML = bosses.length
         ? bosses.map((boss) => {
-            const clickable = boss.status === 'alive' && boss.loc;
+            const canShowOnMap = boss.status === 'alive' && boss.loc;
+            const detailHref = Router.href({ name: 'knowledge-npcs', id: boss.id });
             const timer = boss.status === 'alive'
                 ? 'In world'
                 : boss.status === 'respawning'
                     ? formatDuration(Math.max(0, Number(boss.respawnAt || 0) - Date.now()))
                     : 'Not found';
-            return `<button class="raid-boss-row ${escapeHtml(boss.status)}${clickable ? '' : ' is-missing'}" type="button" data-raid-boss-id="${escapeHtml(boss.id)}" ${clickable ? '' : 'disabled'}>
-                <i class="raid-boss-dot ${escapeHtml(boss.status)}"></i>
-                <span class="raid-boss-identity"><strong>${text(boss.name)}</strong><span>Lv ${number(boss.level, '?')}</span></span>
+            return `<div class="raid-boss-row" role="listitem">
+                <i class="raid-boss-dot ${escapeHtml(boss.status)}" aria-hidden="true"></i>
+                <span class="raid-boss-identity"><a href="${detailHref}">${text(boss.name)}</a><span>Lv ${number(boss.level, '?')}</span></span>
                 <span class="raid-boss-location"><strong>${text(boss.location?.name, 'Unknown location')}</strong><span>${boss.location?.area?.mapAnchor ? 'Dungeon entrance on map' : 'Surface location'}</span></span>
                 <span class="raid-boss-timer"><strong>${text(timer)}</strong><span>${text(raidBossStatusLabel(boss.status))}</span></span>
-                <span>${clickable ? '<span class="raid-boss-map-button">Show on map</span>' : ''}</span>
-            </button>`;
+                ${canShowOnMap ? `<button class="raid-boss-map-button" type="button" data-raid-boss-map-id="${escapeHtml(boss.id)}" aria-label="Show ${escapeHtml(boss.name)} on map">Show on map</button>` : ''}
+            </div>`;
         }).join('')
         : '<div class="list-empty">No raid bosses match this filter.</div>';
     els.raidBossList.scrollTop = scrollTop;
@@ -1064,6 +1071,11 @@ function resetClanCrestDraft() {
     state.clanCrestSaving = false;
 }
 
+function resetClanCrestGeneration() {
+    state.clanCrestGeneration.controller?.abort();
+    state.clanCrestGeneration = { prompt: '', monogram: '', candidates: [] };
+}
+
 function resetClanOrderDraft() {
     window.clearTimeout(state.clanOrderSearchTimer);
     state.clanOrderSearchTimer = null;
@@ -1313,11 +1325,53 @@ function clanOrderMarkup(clan) {
         </section>`;
 }
 
+function clanCrestGenerationAction(generation) {
+    if (generation.controller) return 'Generating…';
+    const sameMask = generation.candidateMonogram === generation.monogram.toUpperCase()
+        && (!generation.monogram || generation.candidateMonogramColor === generation.monogramColor);
+    return generation.candidates.length && sameMask
+        ? 'Regenerate' : 'Generate';
+}
+
+function clanCrestGenerationMarkup(clan) {
+    const generation = state.clanCrestGeneration;
+    const pending = !!generation.controller;
+    const disabled = pending || state.clanCrestSaving;
+    const initial = clan.name?.match(/[a-z]/i)?.[0].toUpperCase();
+    const colors = state.clanDetail.crestMonogramColors || [];
+    const selectedColor = generation.monogramColor || colors[0];
+    const message = generation.error || (pending ? 'Generating four options. The first run may need to finish downloading the model.' : '');
+    return `<form class="clan-crest-generation" data-clan-crest-generation aria-busy="${pending}">
+        <div class="clan-crest-generation-input">
+            <div class="clan-crest-prompt-field">
+                <label for="clanCrestPrompt">Generate a crest</label>
+                <input id="clanCrestPrompt" name="prompt" value="${escapeHtml(generation.prompt)}" placeholder="Silver wolf head, red eyes" maxlength="120" required ${pending ? 'readonly' : ''}>
+            </div>
+            <div>
+                <label for="clanCrestMonogram">Monogram <small>(optional)</small></label>
+                <div class="clan-crest-monogram">
+                    <input id="clanCrestMonogram" name="monogram" value="${escapeHtml(generation.monogram)}" maxlength="1" pattern="[A-Za-z]" title="One letter from A to Z" autocomplete="off" autocapitalize="characters" spellcheck="false" ${pending ? 'readonly' : ''}>
+                    ${initial ? `<button type="button" data-clan-crest-initial="${initial}" title="Use the clan's initial" ${disabled ? 'disabled' : ''}>Use ${initial}</button>` : ''}
+                    ${colors.length ? `<select name="monogramColor" aria-label="Monogram color" ${disabled || !generation.monogram ? 'disabled' : ''}>
+                        ${colors.map(color => `<option value="${escapeHtml(color)}" ${color === selectedColor ? 'selected' : ''}>${text(color[0].toUpperCase() + color.slice(1))}</option>`).join('')}
+                    </select>` : ''}
+                </div>
+            </div>
+            <button type="submit" ${disabled ? 'disabled' : ''}>${clanCrestGenerationAction(generation)}</button>
+        </div>
+        ${generation.candidates.length ? `<div class="clan-crest-candidates" role="group" aria-label="Generated crests">
+            ${generation.candidates.map((candidate, index) => `<button type="button" data-clan-crest-candidate="${index}" aria-label="Crest option ${index + 1}" aria-pressed="${state.clanCrestDraft?.candidate === candidate}" ${disabled ? 'disabled' : ''}><img src="${text(candidate.previewUrl)}" alt="" width="64" height="48"></button>`).join('')}
+        </div>` : ''}
+        ${message ? `<p class="clan-crest-generation-message${generation.error ? ' is-error' : ''}" role="status">${text(message)}</p>` : ''}
+    </form>`;
+}
+
 function clanManagementMarkup(clan) {
     if (!state.clanManagerOpen || !clan.playerManaged) return '';
     const hasDraft = !!state.clanCrestDraft;
     const message = state.clanCrestMessage;
     const crestAvailable = Number(clan.level || 0) >= 3;
+    const generatingDraft = state.clanCrestDraft?.candidate && state.clanCrestGeneration.controller;
     return `
         <div class="clan-management" aria-label="Clan management">
             ${state.clanManagerTab === 'goal' ? clanOrderMarkup(clan) : ''}
@@ -1346,8 +1400,9 @@ function clanManagementMarkup(clan) {
                     </div>
                     <div class="clan-crest-dropzone" data-clan-crest-dropzone>or drop an image here</div>
                 </div>
+                ${state.clanDetail?.crestGenerationEnabled ? clanCrestGenerationMarkup(clan) : ''}
                 <div class="clan-management-save">
-                    <button type="button" data-save-clan-crest ${hasDraft && !state.clanCrestSaving ? '' : 'disabled'}>${state.clanCrestSaving ? 'Saving…' : 'Save crest'}</button>
+                    <button type="button" data-save-clan-crest ${hasDraft && !state.clanCrestSaving && !generatingDraft ? '' : 'disabled'}>${state.clanCrestSaving ? 'Saving…' : state.clanCrestDraft?.candidate ? 'Apply crest' : 'Save crest'}</button>
                     <span class="${message?.kind === 'error' ? 'is-error' : ''}">${text(message?.text || (hasDraft ? `${state.clanCrestDraft.fileName || 'Image'} ready to save` : 'Only the selected clan will change'))}</span>
                 </div>
             </div>` : `<div class="clan-crest-locked" aria-label="Clan crest locked">
@@ -1378,6 +1433,10 @@ function clanCraftReason(code) {
         clan_craft_component_ready: 'Crafting an intermediate component first.' })[code] || readableToken(code);
 }
 
+function clanTableItem(item, detail = '') {
+    return `<span class="observer-table-item">${item.iconUrl ? `<img src="${text(item.iconUrl)}" width="24" height="24" alt="" loading="lazy" decoding="async">` : ''}<span>${text(item.name)}${item.enchant ? ` +${number(item.enchant)}` : ''}${detail ? `<small>${text(detail)}</small>` : ''}</span></span>`;
+}
+
 function clanCraftPreviewMarkup(plan, loading = false, error = null) {
     if (loading) return '<section class="clan-craft-preview" data-clan-craft-preview role="status">Checking recipe, selected dwarves and shared materials…</section>';
     if (error) return `<section class="clan-craft-preview is-error" data-clan-craft-preview role="alert">${text(error)}</section>`;
@@ -1385,13 +1444,18 @@ function clanCraftPreviewMarkup(plan, loading = false, error = null) {
     const craft = plan.craft;
     if (!craft) return `<section class="clan-craft-preview" data-clan-craft-preview>${text(clanCraftReason(plan.reasonCode))}</section>`;
     const stage = ({ resources: 0, components: 1, crafting: 1, delivery: 2, blocked: -1 })[craft.stage] ?? -1;
+    const materialRows = craft.materials.map(material => {
+        const detail = material.component
+            ? (material.missing ? 'Craftable component; inputs are listed below' : 'Component already available') : '';
+        return `<tr><td>${clanTableItem(material, detail)}</td><td>${number(material.required)}</td><td>${number(material.available)}</td><td class="${material.missing ? 'is-missing' : 'is-stocked'}">${material.missing ? number(material.missing) : 'Ready'}</td></tr>`;
+    }).join('');
     return `<section class="clan-craft-preview" data-clan-craft-preview aria-label="Crafting plan">
         <div class="clan-craft-title"><strong>Crafting plan</strong><span>${number(craft.successRate)}% success · ${number(craft.productCount)} per batch</span></div>
         <ol class="clan-craft-stages">${['Gather resources', 'Craft', 'Deliver'].map((label, index) => `<li class="${index === stage ? 'is-current' : index < stage ? 'is-done' : ''}"><span>${index + 1}</span>${label}</li>`).join('')}</ol>
         <p>${text(clanCraftReason(plan.reasonCode))}${craft.nextItemName ? ` Next: ${text(craft.nextItemName)}.` : ''}</p>
         ${craft.customerName ? `<p>Material carrier: ${text(craft.customerName)}${craft.activity ? ` · ${text(activityLabel(craft.activity))}` : ''}${craft.sourceName ? `<br>Current source: ${text(craft.sourceName)}${craft.sourceKind === 'spoil' ? ' · Spoil' : ''}` : ''}</p>` : ''}
         <div class="clan-craft-meta"><span><small>Recipe skill</small><strong>Level ${number(craft.level)}</strong></span><span><small>Crafter</small><strong>${text(craft.crafterName || 'Unavailable')}</strong></span><span><small>Recipe knowledge</small><strong>${craft.learned ? 'Learned' : craft.materials.some(material => material.selfId === craft.recipeItemId && !material.missing) ? 'Ready to learn' : 'Recipe scroll needed'}</strong></span></div>
-        ${craft.materials.length ? `<details class="clan-craft-materials" open><summary>Inputs for the next batch <span>Shared stock + carrier’s inventory</span></summary><div class="clan-manager-table-wrap"><table><thead><tr><th>Material</th><th>Needed</th><th>Available</th><th>Missing</th></tr></thead><tbody>${craft.materials.map(material => `<tr><td>${text(material.name)}${material.component ? '<small>Craftable component; its missing inputs are listed below</small>' : ''}</td><td>${number(material.required)}</td><td>${number(material.available)}</td><td class="${material.missing ? 'is-missing' : 'is-stocked'}">${material.missing ? number(material.missing) : 'Ready'}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+        ${materialRows ? `<details class="clan-craft-materials" open><summary>Inputs for the next batch <span>Shared stock + carrier’s inventory</span></summary><div class="clan-manager-table-wrap"><table><thead><tr><th>Material</th><th>Needed</th><th>Available</th><th>Missing</th></tr></thead><tbody>${materialRows}</tbody></table></div></details>` : ''}
         <small>Crafting repeats until the total goal is met. Failed attempts consume inputs. Crystals and gemstones are supplied automatically.</small>
     </section>`;
 }
@@ -1441,16 +1505,22 @@ function renderClanManager() {
     const tab = state.clanManagerTab || 'goal';
     const content = els.clanManagerContent;
     const previousScroll = content.querySelector('.clan-manager-body')?.scrollTop || 0;
+    const activePrompt = document.activeElement?.id === 'clanCrestPrompt' ? document.activeElement : null;
     const currentGoal = clanGoalSummary(clan.goal, clan);
     content.innerHTML = `<header class="clan-manager-header"><div class="clan-manager-heading"><span class="section-kicker">Clan management</span><h2 id="clanManagerTitle">${clanCrestMarkup(clan, 'large')}${text(clan.name)}</h2><p>Level ${number(clan.level)} · ${number(clan.memberCount)} members · ${number(clan.warehouse?.adena)} Adena in warehouse</p><div class="clan-manager-current-status" aria-label="Current clan goal">${currentGoal.iconUrl ? `<img src="${text(currentGoal.iconUrl)}" alt="">` : uiIcon(clan.goal?.type === 'adena' ? 'coins' : 'target')}<span>${detail.order ? 'Manual' : 'Automatic'} · ${text(currentGoal.title)}</span><b class="clan-goal-status" data-status="${text(clan.goal?.status || 'idle')}">${text(clan.goal ? clanOrderStatusLabel(clan.goal.status) : 'Waiting')}</b></div></div><button class="clan-manager-close" type="button" data-clan-manager-close aria-label="Close clan management" title="Close clan management">${uiIcon('close')}</button></header>
         <nav class="clan-manager-tabs" aria-label="Clan management sections">${[['goal', 'target', 'Goal'], ['members', 'users', 'Members'], ['warehouse', 'warehouse', 'Warehouse'], ['activity', 'history', 'Activity'], ['appearance', 'shield', 'Appearance']].map(([id, icon, label]) => `<button type="button" data-clan-manager-tab="${id}" aria-current="${tab === id ? 'page' : 'false'}">${uiIcon(icon)}${label}${id === 'members' ? `<span>${number(detail.members.length)}</span>` : ''}</button>`).join('')}</nav>
         <div class="clan-manager-body">${clanManagementMarkup(clan)}
         ${tab === 'members' ? `<section><div class="clan-manager-section-heading"><h3>Clan members</h3><p>Open a profile to inspect equipment and current activity. Goal executors are chosen in the Goal tab.</p></div><div class="clan-member-list">${detail.members.map(member => `<button type="button" class="clan-member-row" data-clan-member-id="${member.id}" data-clan-member-kind="${text(member.kind)}"><span class="clan-member-main"><strong>${text(member.name)}</strong><span>${text(member.className)} · Lv ${number(member.level)}</span></span><span class="clan-member-state"><strong>${text(activityLabel(member.activity || member.phase))}</strong><span>${text(member.region)}</span></span></button>`).join('')}</div></section>` : ''}
-        ${tab === 'warehouse' ? `<section><div class="clan-manager-section-heading"><h3>Shared warehouse</h3><p>Available stock is used by clan goals. Reserved quantities are held for ongoing work.</p></div><div class="clan-manager-table-wrap"><table><thead><tr><th>Item</th><th>Total</th><th>Reserved</th><th>Available</th></tr></thead><tbody>${(detail.warehouse || []).map(item => `<tr><td>${text(item.name)}${item.enchant ? ` +${number(item.enchant)}` : ''}</td><td>${number(item.amount)}</td><td>${number(item.reservedAmount)}</td><td>${number(Math.max(0, item.amount - item.reservedAmount))}</td></tr>`).join('') || '<tr><td colspan="4">The warehouse is empty.</td></tr>'}</tbody></table></div>${clanHallMarkup(detail.clanHall)}</section>` : ''}
+        ${tab === 'warehouse' ? `<section><div class="clan-manager-section-heading"><h3>Shared warehouse</h3><p>Available stock is used by clan goals. Reserved quantities are held for ongoing work.</p></div><div class="clan-manager-table-wrap"><table><thead><tr><th>Item</th><th>Total</th><th>Reserved</th><th>Available</th></tr></thead><tbody>${(detail.warehouse || []).map(item => `<tr><td>${clanTableItem(item)}</td><td>${number(item.amount)}</td><td>${number(item.reservedAmount)}</td><td>${number(Math.max(0, item.amount - item.reservedAmount))}</td></tr>`).join('') || '<tr><td colspan="4">The warehouse is empty.</td></tr>'}</tbody></table></div>${clanHallMarkup(detail.clanHall)}</section>` : ''}
         ${tab === 'activity' ? `<section class="clan-manager-activity"><div class="clan-manager-section-heading"><h3>Recent activity</h3><p>Goal changes, gathering, crafting and delivery.</p></div>${(detail.events || []).map(event => `<div class="clan-event-row"><strong>${text(uiLabel('event', event.eventType, 'Clan update'))}</strong><span>${text(uiLabel('reason', event.reasonCode, null) || readableToken(event.reasonCode))}</span><time>${text(formatTime(event.occurredAt))}</time></div>`).join('') || '<p>No activity yet.</p>'}</section>` : ''}
         </div><footer class="clan-manager-footer"><span>${state.clanOrderDraft || state.clanCrestDraft ? 'Unsaved edits stay here when you close this window.' : 'Saved goals keep running when you leave Observer.'}</span><button type="button" data-clan-manager-close>Done</button></footer>`;
     content.querySelector('.clan-manager-body').scrollTop = previousScroll;
     if (!dialog.open) dialog.showModal();
+    const prompt = activePrompt && tab === 'appearance' && content.querySelector('#clanCrestPrompt');
+    if (prompt) {
+        prompt.focus({ preventScroll: true });
+        prompt.setSelectionRange(activePrompt.selectionStart, activePrompt.selectionEnd);
+    }
 }
 
 function clanHallMarkup(finance) {
@@ -1595,18 +1665,23 @@ function renderClanDetail() {
     els.clanDetail.scrollTop = scrollTop;
 }
 
+function selectClan(clanId) {
+    if (Number(state.selectedClanId) === clanId) return;
+    resetClanCrestDraft();
+    resetClanCrestGeneration();
+    resetClanOrderDraft();
+    state.clanManagerOpen = false;
+    els.clanManagerDialog?.close();
+    state.clanCrestMessage = null;
+    state.selectedClanId = clanId;
+}
+
 async function loadClanDetail(id, { updateRoute = true } = {}) {
     const clanId = Number(id);
     if (!clanId) return;
     const requestId = ++state.clanRequest;
     const switchingClan = Number(state.clanDetail?.clan?.id || 0) !== clanId;
-    if (Number(state.selectedClanId) !== clanId) {
-        resetClanCrestDraft();
-        resetClanOrderDraft();
-        state.clanManagerOpen = false;
-        state.clanCrestMessage = null;
-    }
-    state.selectedClanId = clanId;
+    selectClan(clanId);
     if (switchingClan) {
         state.clanDetail = null;
         state.clanDetailSignature = null;
@@ -1629,8 +1704,8 @@ async function loadClanDetail(id, { updateRoute = true } = {}) {
     } finally {
         if (requestId === state.clanRequest) {
             state.clanDetailLoading = false;
-            const editor = els.clansModal?.querySelector('.clan-order-editor');
-            if (state.clanOrderDraft || editor?.contains(document.activeElement)) state.clanDetailDeferredRender = true;
+            const editing = els.clansModal?.querySelector('.clan-order-editor:focus-within, .clan-crest-generation:focus-within');
+            if (state.clanOrderDraft || editing) state.clanDetailDeferredRender = true;
             else renderClans();
         }
     }
@@ -1641,6 +1716,14 @@ function clanCrestErrorMessage(code, fallback = 'Could not update the crest') {
         invalid_clan: 'The selected clan is invalid',
         invalid_clan_crest: 'The generated crest is invalid',
         invalid_crest_pixels: 'The image could not be converted',
+        invalid_crest_prompt: 'Enter a short description of the crest',
+        invalid_crest_monogram: 'Enter one letter from A to Z or leave the monogram blank',
+        invalid_crest_monogram_color: 'Choose a color from the monogram palette',
+        crest_prompt_too_long: 'Shorten the prompt to a few words about the symbol and colors',
+        crest_generation_disabled: 'Enable local clan crest generation in the launcher and restart the server',
+        crest_generation_busy: 'Another crest is generating. Try again in a moment',
+        crest_model_unavailable: 'The local model could not be prepared. Check the server console or try again',
+        crest_generation_failed: 'The local model could not generate crests. Check the server console or try again',
         level_too_low: 'Clan level 3 is required for a crest',
         target_not_player_managed: 'Only the player-managed clan can be edited'
     };
@@ -1856,9 +1939,54 @@ async function refreshManagedClan(clanId) {
     await loadClanDetail(clanId, { updateRoute: false });
 }
 
+async function generateClanCrests(prompt, monogram, monogramColor) {
+    const generation = state.clanCrestGeneration;
+    const clanId = Number(state.clanDetail?.clan?.id || 0);
+    if (!clanId || generation.controller || state.clanCrestSaving) return;
+    generation.prompt = prompt.trim();
+    generation.monogram = monogram.toUpperCase();
+    generation.monogramColor = monogramColor;
+    generation.error = '';
+    generation.controller = new AbortController();
+    renderClanDetail();
+    try {
+        const response = await fetch(`/observer/api/clan/${encodeURIComponent(clanId)}/crest/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: generation.prompt, monogram: generation.monogram, monogramColor }),
+            signal: generation.controller.signal
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.ok) throw new Error(clanCrestErrorMessage(result.code, result.error || `Could not generate crests (HTTP ${response.status})`));
+        generation.candidates = result.candidates.map(({ pixels, preview }) => ({
+            pixels, previewUrl: `data:image/bmp;base64,${preview}`
+        }));
+        generation.candidateMonogram = generation.monogram;
+        generation.candidateMonogramColor = monogramColor;
+        if (state.clanCrestGeneration === generation && state.clanCrestDraft?.candidate) resetClanCrestDraft();
+    } catch (error) {
+        if (error.name !== 'AbortError') generation.error = error.message || 'Could not generate crests';
+    } finally {
+        generation.controller = null;
+        if (state.clanCrestGeneration === generation) renderClanDetail();
+    }
+}
+
+function selectGeneratedClanCrest(index) {
+    const generation = state.clanCrestGeneration;
+    const candidate = generation.candidates[index];
+    if (!candidate || generation.controller || state.clanCrestSaving) return;
+    resetClanCrestDraft();
+    state.clanCrestDraft = { ...candidate, candidate, fileName: 'Generated crest' };
+    state.clanCrestMessage = null;
+    renderClanDetail();
+    els.clanManagerContent?.querySelector(`[data-clan-crest-candidate="${index}"]`)?.focus({ preventScroll: true });
+}
+
 async function saveClanCrest() {
     const clanId = Number(state.clanDetail?.clan?.id || 0);
     if (!clanId || !state.clanCrestDraft || state.clanCrestSaving) return;
+    if (state.clanCrestDraft.candidate && state.clanCrestGeneration.controller) return;
     state.clanCrestSaving = true;
     state.clanCrestMessage = null;
     renderClanDetail();
@@ -1954,7 +2082,7 @@ async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
             renderMapScope();
         }
         const selectedExists = clanItems().some((clan) => Number(clan.id) === Number(state.selectedClanId));
-        if ((selectFirst || !selectedExists) && clanItems().length) state.selectedClanId = Number(clanItems()[0].id);
+        if ((selectFirst || !selectedExists) && clanItems().length) selectClan(Number(clanItems()[0].id));
         renderClans({ renderDetail: !state.clanDetail });
         playerPages?.render();
         const detailClanId = Number(state.clanDetail?.clan?.id || 0);
@@ -1977,7 +2105,7 @@ function openClans(clanId = null, { updateRoute = true } = {}) {
     if (state.raidBossOpen) closeRaidBosses({ updateRoute: false });
     const requestedClanId = Number(clanId) || null;
     if (requestedClanId) {
-        state.selectedClanId = requestedClanId;
+        selectClan(requestedClanId);
         state.clanSearch = '';
         state.clanDetail = null;
         state.clanDetailSignature = null;
@@ -2011,6 +2139,7 @@ function closeClans({ updateRoute = true } = {}) {
     state.clanManagerOpen = false;
     state.clanCrestMessage = null;
     resetClanCrestDraft();
+    resetClanCrestGeneration();
     resetClanOrderDraft();
     if (updateRoute) { commitRoute({ name: 'world' }); setApplicationView({ name: 'world' }); }
 }
@@ -3658,9 +3787,9 @@ els.rankingsModal?.addEventListener('click', (event) => {
 });
 
 els.raidBossesModal?.addEventListener('click', (event) => {
-    const row = event.target.closest('[data-raid-boss-id]');
-    if (row && !row.disabled) {
-        focusRaidBoss(row.dataset.raidBossId);
+    const mapButton = event.target.closest('[data-raid-boss-map-id]');
+    if (mapButton) {
+        focusRaidBoss(mapButton.dataset.raidBossMapId);
         return;
     }
     if (event.target === els.raidBossesModal) closeRaidBosses();
@@ -3753,6 +3882,19 @@ els.clansModal?.addEventListener('click', (event) => {
         transitionClanOrder(transition.dataset.clanOrderTransition);
         return;
     }
+    const initial = event.target.closest('[data-clan-crest-initial]');
+    if (initial) {
+        const input = initial.form.elements.monogram;
+        input.value = initial.dataset.clanCrestInitial;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+        return;
+    }
+    const candidate = event.target.closest('[data-clan-crest-candidate]');
+    if (candidate) {
+        selectGeneratedClanCrest(Number(candidate.dataset.clanCrestCandidate));
+        return;
+    }
     const fit = event.target.closest('[data-crest-fit]');
     if (fit) {
         state.clanCrestFit = fit.dataset.crestFit === 'contain' ? 'contain' : 'cover';
@@ -3785,6 +3927,12 @@ els.clansModal?.addEventListener('click', (event) => {
 });
 
 els.clansModal?.addEventListener('submit', (event) => {
+    if (event.target.matches('[data-clan-crest-generation]')) {
+        event.preventDefault();
+        const { prompt, monogram, monogramColor } = event.target.elements;
+        generateClanCrests(prompt.value, monogram.value, monogramColor?.value);
+        return;
+    }
     if (!event.target.matches('[data-clan-order-form]')) return;
     event.preventDefault();
     createClanOrder();
@@ -3814,13 +3962,26 @@ els.clansModal?.addEventListener('change', (event) => {
 els.clansModal?.addEventListener('focusout', () => {
     requestAnimationFrame(() => {
         if (!state.clanDetailDeferredRender || state.clanOrderDraft) return;
-        const editor = els.clansModal?.querySelector('.clan-order-editor');
-        if (editor?.contains(document.activeElement)) return;
+        if (els.clansModal?.querySelector('.clan-order-editor:focus-within, .clan-crest-generation:focus-within')) return;
         renderClanDetail();
     });
 });
 
 els.clansModal?.addEventListener('input', (event) => {
+    if (event.target.id === 'clanCrestPrompt') {
+        state.clanCrestGeneration.prompt = event.target.value;
+        return;
+    }
+    if (event.target.matches('[data-clan-crest-generation] :is([name="monogram"], [name="monogramColor"])')) {
+        const generation = state.clanCrestGeneration;
+        const form = event.target.form;
+        generation.monogram = form.elements.monogram.value;
+        generation.monogramColor = form.elements.monogramColor?.value;
+        const submit = form.querySelector('[type="submit"]');
+        if (form.elements.monogramColor) form.elements.monogramColor.disabled = submit.disabled || !generation.monogram;
+        submit.textContent = clanCrestGenerationAction(generation);
+        return;
+    }
     if (state.clanOrderDraft) state.clanOrderDraft.replaceConfirmed = false;
     const search = event.target.closest('[data-clan-order-search]');
     if (search) {
@@ -3912,6 +4073,13 @@ els.raidBossSearch?.addEventListener('input', (event) => {
     state.raidBossSearch = String(event.target.value || '').trim().toLowerCase();
     els.raidBossList.scrollTop = 0;
     renderRaidBosses();
+});
+
+[els.raidBossMinLevel, els.raidBossMaxLevel].forEach((input) => {
+    input?.addEventListener('input', () => {
+        els.raidBossList.scrollTop = 0;
+        renderRaidBosses();
+    });
 });
 
 els.rankingTabs?.addEventListener('click', (event) => {

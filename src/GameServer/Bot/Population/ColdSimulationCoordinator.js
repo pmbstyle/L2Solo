@@ -928,6 +928,13 @@ class ColdSimulationCoordinator {
                 this.failures.protocolFaults += 1;
                 this.failures.faultsByStage[payload.stage || 'unknown'] = (this.failures.faultsByStage[payload.stage || 'unknown'] || 0) + 1;
             }
+            // The worker will not answer this request (its reply refused by the worker's own
+            // validator, or the request refused or failed there): its waiter ends now, as at its timeout.
+            if (typeof payload.msgId === 'string' && this.waiters.has(payload.msgId)) {
+                const waiter = this.waiters.get(payload.msgId);
+                this.waiters.delete(payload.msgId);
+                waiter.reject(new Error(String(payload.reason || 'worker_reply_refused')));
+            }
             break;
         default:
             break;
@@ -1002,8 +1009,10 @@ class ColdSimulationCoordinator {
                 waitStarted = performance.now();
             });
             if (options.onWorkerWait && waitStarted !== undefined) options.onWorkerWait(performance.now() - waitStarted);
-            if (this.worker !== worker || this.workerEpoch !== epoch || this.stopping || Date.now() >= replyBy)
+            if (this.worker !== worker || this.workerEpoch !== epoch || this.stopping || Date.now() >= replyBy) {
+                FailureLog.note('cold.party_goal_stale_worker', new Error('party_goal_stale_worker'));
                 return { ok: false, reason: 'party_goal_stale_worker' };
+            }
             if (!result.ok) return result;
             if (JSON.stringify(result.sources) !== JSON.stringify(expected)
                 || JSON.stringify(members.map(escrowFor)) !== JSON.stringify(escrows))
@@ -1567,17 +1576,36 @@ class ColdSimulationCoordinator {
 
     handleProposalBatch(message, worker = this.worker, epoch = this.workerEpoch) {
         if (message.payload.capacityBlocked === true) this.queue.capacityBlocked = true;
+        const received = message.payload.proposals || [];
+        const source = Object.freeze({ worker, epoch });
+        let proposals;
+        try { proposals = Protocol.expandAtomicGroups(received); }
+        catch (_) {
+            this.handleCommitResults(received.map(proposal => {
+                proposal[PROPOSAL_SOURCE] = source;
+                return { ok: false, characterId: proposal.characterId, reason: 'invalid_atomic_group_reference', proposal };
+            })).catch(error => this.recordError(error));
+            return;
+        }
         const rejected = [];
         const sizes = message.payload.proposalBytes;
-        const source = Object.freeze({ worker, epoch });
-        (message.payload.proposals || []).forEach((proposal, index) => {
+        const groupBytes = new Map();
+        proposals.forEach((proposal, index) => {
             proposal[PROPOSAL_SOURCE] = source;
             // The step's base revision: the commit's only fence.
             if (!Number.isSafeInteger(proposal.revision) || proposal.revision < 0) {
                 rejected.push({ ok: false, characterId: Number(proposal.characterId || 0), reason: 'invalid_revision', proposal });
                 return;
             }
-            const queued = this.queue.enqueue(proposal, Array.isArray(sizes) ? sizes[index] : null);
+            let bytes = Array.isArray(sizes) ? sizes[index] : null;
+            // Queue pressure counts the expanded proposal, while the incoming
+            // frame's size counts the single shared wire copy.
+            if (received[index].atomicGroupRef !== undefined && Number.isFinite(bytes)) {
+                const group = proposal.atomicGroup;
+                if (!groupBytes.has(group.id)) groupBytes.set(group.id, Protocol.byteLength({ atomicGroup: group }));
+                bytes += groupBytes.get(group.id) - Protocol.byteLength({ atomicGroupRef: group.id });
+            }
+            const queued = this.queue.enqueue(proposal, bytes);
             if (!queued.ok) rejected.push({ ok: false, characterId: proposal.characterId, reason: queued.reason, proposal });
             else this.trackCommitAcknowledgement(proposal, source);
         });
@@ -2234,7 +2262,7 @@ class ColdSimulationCoordinator {
             await Promise.all(commitAcks);
             return { ok: true, reason: 'fenced', ...fenced, economyDecision: takeDecision() };
         } catch (error) {
-            DiagnosticConfig.developerDiagnostics && (this.counters.fenceTimeouts += 1);
+            DiagnosticConfig.developerDiagnostics && error.message === 'cold_worker_fence_timeout' && (this.counters.fenceTimeouts += 1);
             this.waiters.delete(msgId);
             return { ok: false, reason: error.message };
         } finally {

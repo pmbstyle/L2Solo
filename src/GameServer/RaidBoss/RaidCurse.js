@@ -37,7 +37,8 @@ function isRaidBoss(target) {
 }
 
 function isAboveRaidThreshold(actor, boss) {
-    return combatLevel(actor) > Number(boss?.fetchLevel?.() || 0) + RAID_LEVEL_MAX_DIFFERENCE;
+    return !require('./GrandBossRules').isGrandBoss(boss)
+        && combatLevel(actor) > Number(boss?.fetchLevel?.() || 0) + RAID_LEVEL_MAX_DIFFERENCE;
 }
 
 function currentCombatTargetId(target) {

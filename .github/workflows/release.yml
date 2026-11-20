@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   plan:
+    if: github.event.created
     runs-on: ubuntu-22.04
     outputs:
       component: ${{ steps.plan.outputs.component }}
@@ -119,6 +120,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run runtime
+      - run: npm run test:installer
+        if: runner.os == 'Windows'
       - name: Build Linux launcher
         if: runner.os == 'Linux'
         run: npm run dist -- --x64 --config.publish.channel=latest-x64 --config.publish.url=https://github.com/pmbstyle/L2Solo/releases/download/${{ github.ref_name }}/

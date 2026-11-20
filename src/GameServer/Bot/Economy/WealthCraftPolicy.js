@@ -131,7 +131,10 @@ function* evaluatePrepared({ state, recipe, batches = 1, basket, exit, ownedFor 
     if (!Number.isFinite(oldCount) || !Number.isSafeInteger(oldCount + productCount)) return null;
     // A commercial batch first fills the crafter's missing personal stock.
     // Those units give their own use benefit, never external sale receipts.
-    const reservedOutput = exit.type === 'use' ? 0 : Math.min(productCount, count(context.outputReserve ?? 0));
+    // An exit paying more than the crafter's own price to buy the unit back
+    // (outputReplacePrice: the store) takes them all: it sells and restocks there.
+    const reservedOutput = exit.type === 'use' || Number(exit.price) > Number(context.outputReplacePrice ?? Infinity) ? 0
+        : Math.min(productCount, count(context.outputReserve ?? 0));
     if (!Number.isFinite(reservedOutput)) return null;
     const without = Price.saleOutcome(saleInput(exit, oldCount, context));
     yield 'without';

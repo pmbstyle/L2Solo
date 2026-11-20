@@ -111,7 +111,11 @@ const skillTemplates = new Map(
 );
 
 const skillsByNpc = new Map();
+const epic = require('../../../data/RaidBoss/c4_grand_bosses.json');
+const epicIds = new Set(epic.npcs.map(row => row.selfId));
+epic.skillTemplates.forEach(row => skillTemplates.set(row.selfId, row));
 npcSkillRows.forEach((row) => {
+    if (epicIds.has(Number(row.npcId))) return;
     const npcId = Number(row.npcId);
     if (!skillsByNpc.has(npcId)) {
         skillsByNpc.set(npcId, []);
@@ -120,6 +124,10 @@ npcSkillRows.forEach((row) => {
         skillId: Number(row.skillId),
         level: Number(row.level) || 1
     });
+});
+epic.skillRows.forEach(row => {
+    if (!skillsByNpc.has(row.npcId)) skillsByNpc.set(row.npcId, []);
+    skillsByNpc.get(row.npcId).push(row);
 });
 
 const COMBAT_SKILL_TYPES = new Set([
@@ -262,6 +270,7 @@ function templateMaxHpMultiplierFor(npc) {
 }
 
 module.exports = {
+    forId: (skillId, level = 1) => instantiate({ skillId, level }),
     prepareThreats,
     threatFor,
     threatBytes,

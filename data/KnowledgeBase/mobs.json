@@ -738544,18 +738544,18 @@
       "raidMinion": false
     },
     "defaultEffectiveStats": {
-      "accuracy": 95.86335345031,
-      "attackSpeed": 257,
-      "castSpeed": 333,
-      "evasion": 75.86335345031,
-      "mAtk": 143,
-      "mDef": 124,
-      "maxHp": 60000,
-      "maxMp": 300.84,
-      "pAtk": 210,
-      "pDef": 186,
-      "runSpeed": 230,
-      "walkSpeed": 80
+      "accuracy": 96.014022471905,
+      "attackSpeed": 278,
+      "castSpeed": 1972,
+      "evasion": 91.264022471905,
+      "mAtk": 58,
+      "mDef": 491,
+      "maxHp": 172424,
+      "maxMp": 667,
+      "pAtk": 247,
+      "pDef": 1211,
+      "runSpeed": 372,
+      "walkSpeed": 129
     },
     "drops": [
       {
@@ -739245,25 +739245,81 @@
           }
         ],
         "overallChancePercent": 65
+      },
+      {
+        "groupIndex": 12,
+        "items": [
+          {
+            "baseChancePercent": 30,
+            "itemId": 6660,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 30,
+                "expectedAmountPerKill": 0.3
+              },
+              "x10": {
+                "chancePercent": 30,
+                "expectedAmountPerKill": 0.3
+              },
+              "x50": {
+                "chancePercent": 30,
+                "expectedAmountPerKill": 0.3
+              }
+            },
+            "selectionWeightPercent": 100,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 30
       }
     ],
     "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
     "id": 12001,
     "kind": "Boss",
-    "level": 43,
+    "level": 40,
     "minionOf": [],
-    "minions": [],
+    "minions": [
+      {
+        "bossId": 12001,
+        "maxCount": 1,
+        "minCount": 1,
+        "minionId": 12002
+      },
+      {
+        "bossId": 12001,
+        "maxCount": 8,
+        "minCount": 8,
+        "minionId": 12003
+      },
+      {
+        "bossId": 12001,
+        "maxCount": 25,
+        "minCount": 25,
+        "minionId": 12004
+      },
+      {
+        "bossId": 12001,
+        "maxCount": 8,
+        "minCount": 8,
+        "minionId": 12005
+      }
+    ],
     "name": "Queen Ant",
     "progression": {
-      "baseExp": 18490,
-      "baseSp": 1500,
-      "expModifier": 10
+      "baseExp": 2179535,
+      "baseSp": 140740,
+      "expModifier": 1362.209375
     },
-    "raidBoss": false,
+    "raidBoss": true,
     "skillIds": [
       "4017:1",
       "4018:1",
-      "4019:1"
+      "4019:1",
+      "4021:1",
+      "4045:1",
+      "4301:1"
     ],
     "spawnIds": [
       "spawn-12001-a52bee4e29a2"
@@ -739271,16 +739327,16 @@
     "spoils": [],
     "template": {
       "base": {
-        "con": 43,
-        "dex": 30,
-        "int": 21,
-        "men": 10,
-        "str": 40,
-        "wit": 20
+        "con": 57,
+        "dex": 73,
+        "int": 76,
+        "men": 80,
+        "str": 60,
+        "wit": 70
       },
       "clan": {
-        "clanName": "Queen Ant",
-        "helpRadius": 2000
+        "clanName": "queen_ant_clan",
+        "helpRadius": 1000
       },
       "collision": {
         "radius": 45,
@@ -739292,42 +739348,45 @@
         "weapon": 0
       },
       "rewards": {
-        "exp": 10,
-        "sp": 1500
+        "exp": 1362.209375,
+        "sp": 140740
       },
       "selfId": 12001,
       "speed": {
-        "run": 230,
-        "walk": 80
+        "run": 372,
+        "walk": 129
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
-        "atkSpd": 257,
-        "castSpd": 333,
-        "mAtk": 143.4357712,
-        "mDef": 123.7650462,
-        "pAtk": 210.0483158,
-        "pAtkRnd": 7,
-        "pDef": 186.0475883
+        "atkSpd": 278,
+        "castSpd": 1972,
+        "mAtk": 58,
+        "mDef": 491,
+        "pAtk": 247,
+        "pAtkRnd": 30,
+        "pDef": 1211
       },
       "template": {
         "ai": "BALANCED",
+        "grandBoss": true,
         "hostile": false,
         "kind": "Boss",
-        "level": 43,
+        "level": 40,
         "name": "Queen Ant",
+        "raidBoss": true,
+        "raidCurse": false,
         "title": ""
       },
       "traits": {
         "race": "insect"
       },
       "vitals": {
-        "corpseTime": 300000,
-        "maxHp": 60000,
-        "maxMp": 300.84,
-        "revHp": 50,
-        "revMp": 2.1
+        "corpseTime": 20000,
+        "maxHp": 172424,
+        "maxMp": 667,
+        "revHp": 371,
+        "revMp": 2.14
       }
     }
   },
@@ -739335,20 +739394,20 @@
     "aiType": "fighter",
     "availability": {
       "directSpawn": false,
-      "knownReachable": false,
-      "raidMinion": false
+      "knownReachable": true,
+      "raidMinion": true
     },
     "defaultEffectiveStats": {
-      "accuracy": 81.86335345031,
+      "accuracy": 66.61335345031,
       "attackSpeed": 282,
       "castSpeed": 257,
       "evasion": 61.86335345031,
-      "mAtk": 53,
-      "mDef": 110,
-      "maxHp": 935,
+      "mAtk": 40,
+      "mDef": 83,
+      "maxHp": 701,
       "maxMp": 349,
-      "pAtk": 126,
-      "pDef": 140,
+      "pAtk": 95,
+      "pDef": 105,
       "runSpeed": 66,
       "walkSpeed": 44
     },
@@ -739357,7 +739416,14 @@
     "id": 12002,
     "kind": "Monster",
     "level": 29,
-    "minionOf": [],
+    "minionOf": [
+      {
+        "bossId": 12001,
+        "maxCount": 1,
+        "minCount": 1,
+        "minionId": 12002
+      }
+    ],
     "minions": [],
     "name": "Queen Ant Larva",
     "progression": {
@@ -739404,18 +739470,19 @@
         "walk": 44
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
         "atkSpd": 282,
         "castSpd": 257,
-        "mAtk": 53,
-        "mDef": 110,
-        "pAtk": 126,
-        "pAtkRnd": 7,
-        "pDef": 140
+        "mAtk": 40,
+        "mDef": 83,
+        "pAtk": 95,
+        "pAtkRnd": 30,
+        "pDef": 105
       },
       "template": {
         "ai": "FIGHTER",
+        "grandBossOwnerId": 12001,
         "hostile": false,
         "kind": "Monster",
         "level": 29,
@@ -739423,14 +739490,13 @@
         "title": ""
       },
       "traits": {
-        "race": "insect",
-        "undead": false
+        "race": "insect"
       },
       "vitals": {
-        "corpseTime": 7000,
-        "maxHp": 935,
+        "corpseTime": 20000,
+        "maxHp": 701,
         "maxMp": 349,
-        "revHp": 5.53,
+        "revHp": 4,
         "revMp": 1.53
       }
     }
@@ -739439,52 +739505,64 @@
     "aiType": "fighter",
     "availability": {
       "directSpawn": false,
-      "knownReachable": false,
-      "raidMinion": false
+      "knownReachable": true,
+      "raidMinion": true
     },
     "defaultEffectiveStats": {
-      "accuracy": 87.86335345031,
-      "attackSpeed": 257,
-      "castSpeed": 333,
+      "accuracy": 72.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
       "evasion": 67.86335345031,
-      "mAtk": 88,
-      "mDef": 100,
-      "maxHp": 773,
-      "maxMp": 402.6,
-      "pAtk": 129,
-      "pDef": 150,
-      "runSpeed": 130,
-      "walkSpeed": 80
+      "mAtk": 667,
+      "mDef": 206,
+      "maxHp": 4740,
+      "maxMp": 446,
+      "pAtk": 710,
+      "pDef": 509,
+      "runSpeed": 143,
+      "walkSpeed": 44
     },
     "drops": [],
     "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
     "id": 12003,
     "kind": "Monster",
     "level": 35,
-    "minionOf": [],
+    "minionOf": [
+      {
+        "bossId": 12001,
+        "maxCount": 8,
+        "minCount": 8,
+        "minionId": 12003
+      }
+    ],
     "minions": [],
     "name": "Nurse Ant",
     "progression": {
-      "baseExp": 122.5,
+      "baseExp": 0,
       "baseSp": 1,
-      "expModifier": 0.1
+      "expModifier": 0
     },
     "raidBoss": false,
-    "skillIds": [],
+    "skillIds": [
+      "4020:1",
+      "4024:1",
+      "4045:1",
+      "4301:1"
+    ],
     "spawnIds": [],
     "spoils": [],
     "template": {
       "base": {
         "con": 43,
         "dex": 30,
-        "int": 21,
+        "int": 41,
         "men": 10,
         "str": 40,
         "wit": 20
       },
       "clan": {
-        "clanName": "Queen Ant",
-        "helpRadius": 300
+        "clanName": "queen_ant_clan",
+        "helpRadius": 700
       },
       "collision": {
         "radius": 26,
@@ -739496,27 +739574,28 @@
         "weapon": 0
       },
       "rewards": {
-        "exp": 0.1,
+        "exp": 0,
         "sp": 1
       },
       "selfId": 12003,
       "speed": {
-        "run": 130,
-        "walk": 80
+        "run": 143,
+        "walk": 44
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
-        "atkSpd": 257,
-        "castSpd": 333,
-        "mAtk": 88.314912283455,
-        "mDef": 100.052701197714,
-        "pAtk": 129.32895629306,
-        "pAtkRnd": 7,
-        "pDef": 150.402430546793
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 667,
+        "mDef": 206,
+        "pAtk": 710,
+        "pAtkRnd": 30,
+        "pDef": 509
       },
       "template": {
         "ai": "FIGHTER",
+        "grandBossOwnerId": 12001,
         "hostile": false,
         "kind": "Monster",
         "level": 35,
@@ -739527,11 +739606,11 @@
         "race": "insect"
       },
       "vitals": {
-        "corpseTime": 7000,
-        "maxHp": 772.738017248857,
-        "maxMp": 402.6,
-        "revHp": 4.5,
-        "revMp": 1.8
+        "corpseTime": 20000,
+        "maxHp": 4740,
+        "maxMp": 446,
+        "revHp": 128,
+        "revMp": 1.84
       }
     }
   },
@@ -739540,53 +739619,87 @@
     "availability": {
       "directSpawn": true,
       "knownReachable": true,
-      "raidMinion": false
+      "raidMinion": true
     },
     "defaultEffectiveStats": {
-      "accuracy": 89.86335345031,
-      "attackSpeed": 257,
-      "castSpeed": 333,
+      "accuracy": 74.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
       "evasion": 69.86335345031,
-      "mAtk": 100,
-      "mDef": 106,
-      "maxHp": 847,
-      "maxMp": 432.72,
-      "pAtk": 147,
-      "pDef": 144,
-      "runSpeed": 230,
-      "walkSpeed": 80
+      "mAtk": 47,
+      "mDef": 221,
+      "maxHp": 5146,
+      "maxMp": 480,
+      "pAtk": 202,
+      "pDef": 546,
+      "runSpeed": 253,
+      "walkSpeed": 44
     },
     "drops": [],
     "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
     "id": 12004,
     "kind": "Monster",
     "level": 37,
-    "minionOf": [],
+    "minionOf": [
+      {
+        "bossId": 12001,
+        "maxCount": 25,
+        "minCount": 25,
+        "minionId": 12004
+      }
+    ],
     "minions": [],
-    "name": "Ant",
+    "name": "Guard Ant",
     "progression": {
-      "baseExp": 136.9,
+      "baseExp": 0,
       "baseSp": 1,
-      "expModifier": 0.1
+      "expModifier": 0
     },
     "raidBoss": false,
-    "skillIds": [],
+    "skillIds": [
+      "4045:1",
+      "4301:1"
+    ],
     "spawnIds": [
-      "spawn-12004-5c7a6451223e"
+      "spawn-12004-0521c2f78704",
+      "spawn-12004-1c7b4eda85b6",
+      "spawn-12004-291dfe11083a",
+      "spawn-12004-35bdb043c9b8",
+      "spawn-12004-3a762e80eabc",
+      "spawn-12004-477d221089a9",
+      "spawn-12004-5341207604f9",
+      "spawn-12004-56542d298228",
+      "spawn-12004-5758ccf5e67b",
+      "spawn-12004-5ad2a396c8f1",
+      "spawn-12004-6f9ff0fdf21f",
+      "spawn-12004-72d65a2d83b7",
+      "spawn-12004-75d64c9380ff",
+      "spawn-12004-7e29e02e2243",
+      "spawn-12004-84f8608abb45",
+      "spawn-12004-88161e162b97",
+      "spawn-12004-8cfe4df27cda",
+      "spawn-12004-8f07b1144d21",
+      "spawn-12004-9151d44409ac",
+      "spawn-12004-a0144bc73053",
+      "spawn-12004-a23545525979",
+      "spawn-12004-ba61a62356e4",
+      "spawn-12004-c2680d2440ce",
+      "spawn-12004-d8d27c93a5e7",
+      "spawn-12004-e6e499622dd9"
     ],
     "spoils": [],
     "template": {
       "base": {
         "con": 43,
         "dex": 30,
-        "int": 21,
+        "int": 41,
         "men": 10,
         "str": 40,
         "wit": 20
       },
       "clan": {
-        "clanName": "Queen Ant",
-        "helpRadius": 300
+        "clanName": "queen_ant_clan",
+        "helpRadius": 700
       },
       "collision": {
         "radius": 26,
@@ -739598,42 +739711,43 @@
         "weapon": 0
       },
       "rewards": {
-        "exp": 0.1,
+        "exp": 0,
         "sp": 1
       },
       "selfId": 12004,
       "speed": {
-        "run": 230,
-        "walk": 80
+        "run": 253,
+        "walk": 44
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
-        "atkSpd": 257,
-        "castSpd": 333,
-        "mAtk": 100.263036766284,
-        "mDef": 105.722425414172,
-        "pAtk": 146.825870789948,
-        "pAtkRnd": 7,
-        "pDef": 144.477583542986
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 47,
+        "mDef": 221,
+        "pAtk": 202,
+        "pAtkRnd": 30,
+        "pDef": 546
       },
       "template": {
         "ai": "FIGHTER",
-        "hostile": false,
+        "grandBossOwnerId": 12001,
+        "hostile": true,
         "kind": "Monster",
         "level": 37,
-        "name": "Ant",
+        "name": "Guard Ant",
         "title": ""
       },
       "traits": {
         "race": "insect"
       },
       "vitals": {
-        "corpseTime": 7000,
-        "maxHp": 847.317544872598,
-        "maxMp": 432.72,
-        "revHp": 4.5,
-        "revMp": 1.8
+        "corpseTime": 20000,
+        "maxHp": 5146,
+        "maxMp": 480,
+        "revHp": 136,
+        "revMp": 1.84
       }
     }
   },
@@ -739641,52 +739755,62 @@
     "aiType": "fighter",
     "availability": {
       "directSpawn": false,
-      "knownReachable": false,
-      "raidMinion": false
+      "knownReachable": true,
+      "raidMinion": true
     },
     "defaultEffectiveStats": {
-      "accuracy": 91.86335345031,
-      "attackSpeed": 257,
-      "castSpeed": 333,
+      "accuracy": 76.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
       "evasion": 71.86335345031,
-      "mAtk": 113,
-      "mDef": 112,
-      "maxHp": 926,
-      "maxMp": 463.32,
-      "pAtk": 183,
-      "pDef": 152,
-      "runSpeed": 230,
-      "walkSpeed": 80
+      "mAtk": 1932,
+      "mDef": 237,
+      "maxHp": 8355,
+      "maxMp": 514,
+      "pAtk": 1370,
+      "pDef": 585,
+      "runSpeed": 253,
+      "walkSpeed": 44
     },
     "drops": [],
     "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
     "id": 12005,
     "kind": "Monster",
     "level": 39,
-    "minionOf": [],
+    "minionOf": [
+      {
+        "bossId": 12001,
+        "maxCount": 8,
+        "minCount": 8,
+        "minionId": 12005
+      }
+    ],
     "minions": [],
     "name": "Royal Guard Ant",
     "progression": {
-      "baseExp": 152.1,
+      "baseExp": 0,
       "baseSp": 1,
-      "expModifier": 0.1
+      "expModifier": 0
     },
     "raidBoss": false,
-    "skillIds": [],
+    "skillIds": [
+      "4045:1",
+      "4301:1"
+    ],
     "spawnIds": [],
     "spoils": [],
     "template": {
       "base": {
         "con": 43,
         "dex": 30,
-        "int": 21,
+        "int": 41,
         "men": 10,
         "str": 40,
         "wit": 20
       },
       "clan": {
-        "clanName": "Queen Ant",
-        "helpRadius": 300
+        "clanName": "queen_ant_clan",
+        "helpRadius": 700
       },
       "collision": {
         "radius": 26,
@@ -739698,27 +739822,28 @@
         "weapon": 0
       },
       "rewards": {
-        "exp": 0.1,
+        "exp": 0,
         "sp": 1
       },
       "selfId": 12005,
       "speed": {
-        "run": 230,
-        "walk": 80
+        "run": 253,
+        "walk": 44
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
-        "atkSpd": 257,
-        "castSpd": 333,
-        "mAtk": 113.400702999844,
-        "mDef": 111.56911764393,
-        "pAtk": 182.671234120426,
-        "pAtkRnd": 7,
-        "pDef": 152.467524766579
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 1932,
+        "mDef": 237,
+        "pAtk": 1370,
+        "pAtkRnd": 30,
+        "pDef": 585
       },
       "template": {
         "ai": "FIGHTER",
+        "grandBossOwnerId": 12001,
         "hostile": false,
         "kind": "Monster",
         "level": 39,
@@ -739729,11 +739854,11 @@
         "race": "insect"
       },
       "vitals": {
-        "corpseTime": 7000,
-        "maxHp": 925.858787967454,
-        "maxMp": 463.32,
-        "revHp": 4.5,
-        "revMp": 1.8
+        "corpseTime": 20000,
+        "maxHp": 8355,
+        "maxMp": 514,
+        "revHp": 145,
+        "revMp": 1.84
       }
     }
   },
@@ -744109,18 +744234,18 @@
       "raidMinion": false
     },
     "defaultEffectiveStats": {
-      "accuracy": 102.86335345031,
-      "attackSpeed": 257,
-      "castSpeed": 333,
-      "evasion": 82.86335345031,
-      "mAtk": 44,
-      "mDef": 180,
-      "maxHp": 90000,
-      "maxMp": 259.2,
-      "pAtk": 158,
-      "pDef": 250,
-      "runSpeed": 110,
-      "walkSpeed": 50
+      "accuracy": 106.014022471905,
+      "attackSpeed": 278,
+      "castSpeed": 1972,
+      "evasion": 101.264022471905,
+      "mAtk": 375,
+      "mDef": 678,
+      "maxHp": 121921,
+      "maxMp": 575,
+      "pAtk": 401,
+      "pDef": 1670,
+      "runSpeed": 1,
+      "walkSpeed": 1
     },
     "drops": [
       {
@@ -744704,6 +744829,34 @@
           }
         ],
         "overallChancePercent": 42
+      },
+      {
+        "groupIndex": 9,
+        "items": [
+          {
+            "baseChancePercent": 30,
+            "itemId": 6662,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 30,
+                "expectedAmountPerKill": 0.3
+              },
+              "x10": {
+                "chancePercent": 30,
+                "expectedAmountPerKill": 0.3
+              },
+              "x50": {
+                "chancePercent": 30,
+                "expectedAmountPerKill": 0.3
+              }
+            },
+            "selectionWeightPercent": 100,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 30
       }
     ],
     "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
@@ -744711,31 +744864,53 @@
     "kind": "Boss",
     "level": 50,
     "minionOf": [],
-    "minions": [],
+    "minions": [
+      {
+        "bossId": 12052,
+        "maxCount": 10,
+        "minCount": 10,
+        "minionId": 12054
+      },
+      {
+        "bossId": 12052,
+        "maxCount": 5,
+        "minCount": 5,
+        "minionId": 12055
+      },
+      {
+        "bossId": 12052,
+        "maxCount": 4,
+        "minCount": 4,
+        "minionId": 12058
+      }
+    ],
     "name": "Core",
     "progression": {
-      "baseExp": 25000,
-      "baseSp": 1800,
-      "expModifier": 10
+      "baseExp": 2041407,
+      "baseSp": 153786,
+      "expModifier": 816.5628
     },
-    "raidBoss": false,
-    "skillIds": [],
+    "raidBoss": true,
+    "skillIds": [
+      "4045:1",
+      "4291:1"
+    ],
     "spawnIds": [
-      "spawn-12052-ad91838e0d51"
+      "spawn-12052-609ec96a6926"
     ],
     "spoils": [],
     "template": {
       "base": {
-        "con": 43,
-        "dex": 30,
-        "int": 21,
-        "men": 10,
-        "str": 40,
-        "wit": 20
+        "con": 57,
+        "dex": 73,
+        "int": 76,
+        "men": 80,
+        "str": 60,
+        "wit": 70
       },
       "clan": {
-        "clanName": "Cruma Core",
-        "helpRadius": 1800
+        "clanName": "curma_core_clan",
+        "helpRadius": 2500
       },
       "collision": {
         "radius": 140,
@@ -744747,42 +744922,45 @@
         "weapon": 0
       },
       "rewards": {
-        "exp": 10,
-        "sp": 1800
+        "exp": 816.5628,
+        "sp": 153786
       },
       "selfId": 12052,
       "speed": {
-        "run": 110,
-        "walk": 50
+        "run": 0,
+        "walk": 0
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
-        "atkSpd": 257,
-        "castSpd": 333,
-        "mAtk": 44.271872576323,
-        "mDef": 180,
-        "pAtk": 158.478296408802,
+        "atkSpd": 278,
+        "castSpd": 1972,
+        "mAtk": 375,
+        "mDef": 678,
+        "pAtk": 401,
         "pAtkRnd": 30,
-        "pDef": 250
+        "pDef": 1670
       },
       "template": {
         "ai": "FIGHTER",
+        "grandBoss": true,
         "hostile": false,
         "kind": "Boss",
         "level": 50,
         "name": "Core",
+        "raidBoss": true,
+        "raidCurse": false,
         "title": ""
       },
       "traits": {
         "race": "construct"
       },
       "vitals": {
-        "corpseTime": 10000,
-        "maxHp": 90000,
-        "maxMp": 259.2,
-        "revHp": 70,
-        "revMp": 1.5
+        "corpseTime": 20000,
+        "maxHp": 121921,
+        "maxMp": 575,
+        "revHp": 487,
+        "revMp": 1.53
       }
     }
   },
@@ -744790,56 +744968,68 @@
     "aiType": "fighter",
     "availability": {
       "directSpawn": false,
-      "knownReachable": false,
-      "raidMinion": false
+      "knownReachable": true,
+      "raidMinion": true
     },
     "defaultEffectiveStats": {
-      "accuracy": 102.86335345031,
-      "attackSpeed": 257,
-      "castSpeed": 333,
+      "accuracy": 87.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
       "evasion": 82.86335345031,
-      "mAtk": 209,
-      "mDef": 147,
-      "maxHp": 1421,
-      "maxMp": 747.8,
-      "pAtk": 336,
-      "pDef": 200,
-      "runSpeed": 110,
-      "walkSpeed": 27
+      "mAtk": 146,
+      "mDef": 339,
+      "maxHp": 16373,
+      "maxMp": 830,
+      "pAtk": 512,
+      "pDef": 835,
+      "runSpeed": 121,
+      "walkSpeed": 29
     },
     "drops": [],
     "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
     "id": 12054,
-    "kind": "Boss",
+    "kind": "Monster",
     "level": 50,
-    "minionOf": [],
+    "minionOf": [
+      {
+        "bossId": 12052,
+        "maxCount": 10,
+        "minCount": 10,
+        "minionId": 12054
+      }
+    ],
     "minions": [],
     "name": "Death Knight",
     "progression": {
-      "baseExp": 250,
+      "baseExp": 0,
       "baseSp": 1,
-      "expModifier": 0.1
+      "expModifier": 0
     },
     "raidBoss": false,
-    "skillIds": [],
+    "skillIds": [
+      "4045:1",
+      "4275:3",
+      "4278:1",
+      "4290:1"
+    ],
     "spawnIds": [],
     "spoils": [],
     "template": {
       "base": {
         "con": 43,
         "dex": 30,
-        "int": 21,
+        "int": 41,
         "men": 10,
         "str": 40,
         "wit": 20
       },
       "clan": {
-        "clanName": "Cruma Core",
-        "helpRadius": 1500
+        "clanName": "curma_core_clan",
+        "helpRadius": 2300
       },
       "collision": {
-        "radius": 14,
-        "size": 29
+        "radius": 12,
+        "size": 31
       },
       "equipment": {
         "reuseTime": 0,
@@ -744847,29 +745037,30 @@
         "weapon": 75
       },
       "rewards": {
-        "exp": 0.1,
+        "exp": 0,
         "sp": 1
       },
       "selfId": 12054,
       "speed": {
-        "run": 110,
-        "walk": 27
+        "run": 121,
+        "walk": 29
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
-        "atkSpd": 257,
-        "castSpd": 333,
-        "mAtk": 208.650402871762,
-        "mDef": 146.525801870672,
-        "pAtk": 336.103970998851,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 146,
+        "mDef": 339,
+        "pAtk": 512,
         "pAtkRnd": 30,
-        "pDef": 200.238442298688
+        "pDef": 835
       },
       "template": {
         "ai": "FIGHTER",
-        "hostile": false,
-        "kind": "Boss",
+        "grandBossOwnerId": 12052,
+        "hostile": true,
+        "kind": "Monster",
         "level": 50,
         "name": "Death Knight",
         "title": ""
@@ -744878,11 +745069,11 @@
         "race": "undead"
       },
       "vitals": {
-        "corpseTime": 7000,
-        "maxHp": 1421.00102792361,
-        "maxMp": 747.8,
-        "revHp": 5.5,
-        "revMp": 2.1
+        "corpseTime": 20000,
+        "maxHp": 16373,
+        "maxMp": 830,
+        "revHp": 197,
+        "revMp": 2.14
       }
     }
   },
@@ -744890,39 +745081,50 @@
     "aiType": "balanced",
     "availability": {
       "directSpawn": false,
-      "knownReachable": false,
-      "raidMinion": false
+      "knownReachable": true,
+      "raidMinion": true
     },
     "defaultEffectiveStats": {
-      "accuracy": 107.86335345031,
-      "attackSpeed": 257,
-      "castSpeed": 333,
+      "accuracy": 92.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
       "evasion": 87.86335345031,
-      "mAtk": 265,
-      "mDef": 164,
-      "maxHp": 1673,
-      "maxMp": 889.8,
-      "pAtk": 427,
-      "pDef": 224,
-      "runSpeed": 230,
-      "walkSpeed": 100
+      "mAtk": 1628,
+      "mDef": 392,
+      "maxHp": 18974,
+      "maxMp": 987,
+      "pAtk": 609,
+      "pDef": 966,
+      "runSpeed": 253,
+      "walkSpeed": 110
     },
     "drops": [],
     "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
     "id": 12055,
-    "kind": "Boss",
+    "kind": "Monster",
     "level": 55,
-    "minionOf": [],
+    "minionOf": [
+      {
+        "bossId": 12052,
+        "maxCount": 5,
+        "minCount": 5,
+        "minionId": 12055
+      }
+    ],
     "minions": [],
-    "name": "Death Blader",
+    "name": "Death Wraith",
     "progression": {
-      "baseExp": 302.5,
+      "baseExp": 0,
       "baseSp": 1,
-      "expModifier": 0.1
+      "expModifier": 0
     },
     "raidBoss": false,
     "skillIds": [
-      "4001:5"
+      "4001:5",
+      "4045:1",
+      "4275:3",
+      "4278:1",
+      "4290:1"
     ],
     "spawnIds": [],
     "spoils": [],
@@ -744930,14 +745132,14 @@
       "base": {
         "con": 43,
         "dex": 30,
-        "int": 21,
+        "int": 41,
         "men": 10,
         "str": 40,
         "wit": 20
       },
       "clan": {
-        "clanName": "Cruma Core",
-        "helpRadius": 1500
+        "clanName": "curma_core_clan",
+        "helpRadius": 700
       },
       "collision": {
         "radius": 15,
@@ -744949,42 +745151,43 @@
         "weapon": 1472
       },
       "rewards": {
-        "exp": 0.1,
+        "exp": 0,
         "sp": 1
       },
       "selfId": 12055,
       "speed": {
-        "run": 230,
-        "walk": 100
+        "run": 253,
+        "walk": 110
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
-        "atkSpd": 257,
-        "castSpd": 333,
-        "mAtk": 265.029791693132,
-        "mDef": 163.647266965872,
-        "pAtk": 426.922566144327,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 1628,
+        "mDef": 392,
+        "pAtk": 609,
         "pAtkRnd": 30,
-        "pDef": 223.636201988549
+        "pDef": 966
       },
       "template": {
         "ai": "BALANCED",
-        "hostile": false,
-        "kind": "Boss",
+        "grandBossOwnerId": 12052,
+        "hostile": true,
+        "kind": "Monster",
         "level": 55,
-        "name": "Death Blader",
+        "name": "Death Wraith",
         "title": ""
       },
       "traits": {
         "race": "undead"
       },
       "vitals": {
-        "corpseTime": 7000,
-        "maxHp": 1673.05472560685,
-        "maxMp": 889.8,
-        "revHp": 6.5,
-        "revMp": 2.4
+        "corpseTime": 20000,
+        "maxHp": 18974,
+        "maxMp": 987,
+        "revHp": 219,
+        "revMp": 2.45
       }
     }
   },
@@ -745199,38 +745402,47 @@
     "availability": {
       "directSpawn": true,
       "knownReachable": true,
-      "raidMinion": false
+      "raidMinion": true
     },
     "defaultEffectiveStats": {
-      "accuracy": 101.86335345031,
-      "attackSpeed": 257,
-      "castSpeed": 333,
+      "accuracy": 86.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
       "evasion": 81.86335345031,
-      "mAtk": 198,
-      "mDef": 143,
-      "maxHp": 1372,
-      "maxMp": 720,
-      "pAtk": 290,
-      "pDef": 215,
-      "runSpeed": 150,
-      "walkSpeed": 27
+      "mAtk": 138,
+      "mDef": 329,
+      "maxHp": 15866,
+      "maxMp": 799,
+      "pAtk": 485,
+      "pDef": 810,
+      "runSpeed": 165,
+      "walkSpeed": 29
     },
     "drops": [],
     "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
     "id": 12058,
-    "kind": "Boss",
+    "kind": "Monster",
     "level": 49,
-    "minionOf": [],
+    "minionOf": [
+      {
+        "bossId": 12052,
+        "maxCount": 4,
+        "minCount": 4,
+        "minionId": 12058
+      }
+    ],
     "minions": [],
     "name": "Susceptor",
     "progression": {
-      "baseExp": 240.1,
+      "baseExp": 0,
       "baseSp": 1,
-      "expModifier": 0.1
+      "expModifier": 0
     },
     "raidBoss": false,
     "skillIds": [
-      "4001:4"
+      "4001:4",
+      "4045:1",
+      "4291:1"
     ],
     "spawnIds": [
       "spawn-12058-c056ade91694"
@@ -745240,13 +745452,13 @@
       "base": {
         "con": 43,
         "dex": 30,
-        "int": 21,
+        "int": 41,
         "men": 10,
         "str": 40,
         "wit": 20
       },
       "clan": {
-        "clanName": "Cruma Core",
+        "clanName": "curma_core_clan",
         "helpRadius": 1500
       },
       "collision": {
@@ -745259,29 +745471,30 @@
         "weapon": 0
       },
       "rewards": {
-        "exp": 0.1,
+        "exp": 0,
         "sp": 1
       },
       "selfId": 12058,
       "speed": {
-        "run": 150,
-        "walk": 27
+        "run": 165,
+        "walk": 29
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
-        "atkSpd": 257,
-        "castSpd": 333,
-        "mAtk": 198.336884859089,
-        "mDef": 143.177709588328,
-        "pAtk": 290.445878844496,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 138,
+        "mDef": 329,
+        "pAtk": 485,
         "pAtkRnd": 30,
-        "pDef": 215.229326789024
+        "pDef": 810
       },
       "template": {
         "ai": "BALANCED",
-        "hostile": false,
-        "kind": "Boss",
+        "grandBossOwnerId": 12052,
+        "hostile": true,
+        "kind": "Monster",
         "level": 49,
         "name": "Susceptor",
         "title": ""
@@ -745290,11 +745503,11 @@
         "race": "construct"
       },
       "vitals": {
-        "corpseTime": 7000,
-        "maxHp": 1372.18568429614,
-        "maxMp": 720,
-        "revHp": 5.5,
-        "revMp": 2.1
+        "corpseTime": 20000,
+        "maxHp": 15866,
+        "maxMp": 799,
+        "revHp": 192,
+        "revMp": 2.14
       }
     }
   },
@@ -752592,18 +752805,18 @@
       "raidMinion": false
     },
     "defaultEffectiveStats": {
-      "accuracy": 102.86335345031,
-      "attackSpeed": 257,
-      "castSpeed": 333,
-      "evasion": 82.86335345031,
-      "mAtk": 209,
-      "mDef": 292,
-      "maxHp": 120000,
-      "maxMp": 747.8,
-      "pAtk": 610,
-      "pDef": 200,
-      "runSpeed": 230,
-      "walkSpeed": 60
+      "accuracy": 106.014022471905,
+      "attackSpeed": 278,
+      "castSpeed": 1972,
+      "evasion": 101.264022471905,
+      "mAtk": 93,
+      "mDef": 678,
+      "maxHp": 243843,
+      "maxMp": 1660,
+      "pAtk": 415,
+      "pDef": 1670,
+      "runSpeed": 372,
+      "walkSpeed": 97
     },
     "drops": [
       {
@@ -753253,6 +753466,34 @@
           }
         ],
         "overallChancePercent": 120
+      },
+      {
+        "groupIndex": 9,
+        "items": [
+          {
+            "baseChancePercent": 30,
+            "itemId": 6661,
+            "maxAmount": 1,
+            "minAmount": 1,
+            "rateProfiles": {
+              "x1": {
+                "chancePercent": 30,
+                "expectedAmountPerKill": 0.3
+              },
+              "x10": {
+                "chancePercent": 30,
+                "expectedAmountPerKill": 0.3
+              },
+              "x50": {
+                "chancePercent": 30,
+                "expectedAmountPerKill": 0.3
+              }
+            },
+            "selectionWeightPercent": 100,
+            "sourceName": ""
+          }
+        ],
+        "overallChancePercent": 30
       }
     ],
     "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
@@ -753260,37 +753501,53 @@
     "kind": "Boss",
     "level": 50,
     "minionOf": [],
-    "minions": [],
+    "minions": [
+      {
+        "bossId": 12169,
+        "maxCount": 7,
+        "minCount": 7,
+        "minionId": 12171
+      },
+      {
+        "bossId": 12169,
+        "maxCount": 4,
+        "minCount": 4,
+        "minionId": 12173
+      }
+    ],
     "name": "Orfen",
     "progression": {
-      "baseExp": 25000,
-      "baseSp": 1800,
-      "expModifier": 10
+      "baseExp": 2041407,
+      "baseSp": 153786,
+      "expModifier": 816.5628
     },
-    "raidBoss": false,
+    "raidBoss": true,
     "skillIds": [
-      "4063:1"
+      "4045:1",
+      "4062:1",
+      "4063:1",
+      "4296:1"
     ],
     "spawnIds": [
-      "spawn-12169-1f78b0a69d17"
+      "spawn-12169-83b0238fac1b"
     ],
     "spoils": [],
     "template": {
       "base": {
-        "con": 43,
-        "dex": 30,
-        "int": 21,
-        "men": 10,
-        "str": 40,
-        "wit": 20
+        "con": 57,
+        "dex": 73,
+        "int": 76,
+        "men": 80,
+        "str": 60,
+        "wit": 70
       },
       "clan": {
-        "clanName": "Orfen",
-        "helpRadius": 2000
+        "clanName": "orfen_clan",
+        "helpRadius": 3000
       },
       "collision": {
         "radius": 35,
-        "size": 125
+        "size": 143
       },
       "equipment": {
         "reuseTime": 0,
@@ -753298,42 +753555,45 @@
         "weapon": 0
       },
       "rewards": {
-        "exp": 10,
-        "sp": 1800
+        "exp": 816.5628,
+        "sp": 153786
       },
       "selfId": 12169,
       "speed": {
-        "run": 230,
-        "walk": 60
+        "run": 372,
+        "walk": 97
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
-        "atkSpd": 257,
-        "castSpd": 333,
-        "mAtk": 208.650402871762,
-        "mDef": 292,
-        "pAtk": 610,
+        "atkSpd": 278,
+        "castSpd": 1972,
+        "mAtk": 93,
+        "mDef": 678,
+        "pAtk": 415,
         "pAtkRnd": 30,
-        "pDef": 200.238442298688
+        "pDef": 1670
       },
       "template": {
         "ai": "FIGHTER",
-        "hostile": false,
+        "grandBoss": true,
+        "hostile": true,
         "kind": "Boss",
         "level": 50,
         "name": "Orfen",
+        "raidBoss": true,
+        "raidCurse": false,
         "title": ""
       },
       "traits": {
         "race": "spirit"
       },
       "vitals": {
-        "corpseTime": 300000,
-        "maxHp": 120000,
-        "maxMp": 747.8,
-        "revHp": 70,
-        "revMp": 2.1
+        "corpseTime": 20000,
+        "maxHp": 243843,
+        "maxMp": 1660,
+        "revHp": 487,
+        "revMp": 2.14
       }
     }
   },
@@ -753442,57 +753702,71 @@
   {
     "aiType": "fighter",
     "availability": {
-      "directSpawn": false,
-      "knownReachable": false,
-      "raidMinion": false
+      "directSpawn": true,
+      "knownReachable": true,
+      "raidMinion": true
     },
     "defaultEffectiveStats": {
-      "accuracy": 101.86335345031,
-      "attackSpeed": 289,
-      "castSpeed": 333,
+      "accuracy": 86.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
       "evasion": 81.86335345031,
-      "mAtk": 198,
-      "mDef": 143,
-      "maxHp": 1372,
-      "maxMp": 720,
-      "pAtk": 226,
-      "pDef": 196,
-      "runSpeed": 230,
-      "walkSpeed": 60
+      "mAtk": 3269,
+      "mDef": 329,
+      "maxHp": 7932,
+      "maxMp": 799,
+      "pAtk": 1314,
+      "pDef": 810,
+      "runSpeed": 253,
+      "walkSpeed": 66
     },
     "drops": [],
     "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
     "id": 12171,
-    "kind": "Boss",
+    "kind": "Monster",
     "level": 49,
-    "minionOf": [],
+    "minionOf": [
+      {
+        "bossId": 12169,
+        "maxCount": 7,
+        "minCount": 7,
+        "minionId": 12171
+      }
+    ],
     "minions": [],
     "name": "Raikel Leos",
     "progression": {
-      "baseExp": 240.1,
+      "baseExp": 0,
       "baseSp": 1,
-      "expModifier": 0.1
+      "expModifier": 0
     },
     "raidBoss": false,
-    "skillIds": [],
-    "spawnIds": [],
+    "skillIds": [
+      "4045:1",
+      "4292:1"
+    ],
+    "spawnIds": [
+      "spawn-12171-0b0c5a6378d4",
+      "spawn-12171-3060e453dcf2",
+      "spawn-12171-67f6771eb33a"
+    ],
     "spoils": [],
     "template": {
       "base": {
         "con": 43,
         "dex": 30,
-        "int": 21,
+        "int": 41,
         "men": 10,
         "str": 40,
         "wit": 20
       },
       "clan": {
-        "clanName": "Orfen",
-        "helpRadius": 300
+        "clanName": "orfen_clan",
+        "helpRadius": 2700
       },
       "collision": {
         "radius": 37,
-        "size": 70
+        "size": 64
       },
       "equipment": {
         "reuseTime": 0,
@@ -753500,29 +753774,30 @@
         "weapon": 0
       },
       "rewards": {
-        "exp": 0.1,
+        "exp": 0,
         "sp": 1
       },
       "selfId": 12171,
       "speed": {
-        "run": 230,
-        "walk": 60
+        "run": 253,
+        "walk": 66
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
-        "atkSpd": 289,
-        "castSpd": 333,
-        "mAtk": 198.336884859089,
-        "mDef": 143.177709588328,
-        "pAtk": 226.000058841371,
-        "pAtkRnd": 10,
-        "pDef": 195.663024353658
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 3269,
+        "mDef": 329,
+        "pAtk": 1314,
+        "pAtkRnd": 30,
+        "pDef": 810
       },
       "template": {
         "ai": "FIGHTER",
+        "grandBossOwnerId": 12169,
         "hostile": false,
-        "kind": "Boss",
+        "kind": "Monster",
         "level": 49,
         "name": "Raikel Leos",
         "title": ""
@@ -753531,11 +753806,11 @@
         "race": "beast"
       },
       "vitals": {
-        "corpseTime": 7000,
-        "maxHp": 1372.18568429614,
-        "maxMp": 720,
-        "revHp": 5.5,
-        "revMp": 2.1
+        "corpseTime": 20000,
+        "maxHp": 7932,
+        "maxMp": 799,
+        "revHp": 192,
+        "revMp": 2.14
       }
     }
   },
@@ -753646,57 +753921,71 @@
     "availability": {
       "directSpawn": true,
       "knownReachable": true,
-      "raidMinion": false
+      "raidMinion": true
     },
     "defaultEffectiveStats": {
-      "accuracy": 101.86335345031,
-      "attackSpeed": 257,
-      "castSpeed": 333,
+      "accuracy": 86.61335345031,
+      "attackSpeed": 278,
+      "castSpeed": 253,
       "evasion": 81.86335345031,
-      "mAtk": 198,
-      "mDef": 143,
-      "maxHp": 1372,
-      "maxMp": 720,
-      "pAtk": 290,
-      "pDef": 196,
-      "runSpeed": 230,
-      "walkSpeed": 60
+      "mAtk": 3269,
+      "mDef": 329,
+      "maxHp": 15866,
+      "maxMp": 799,
+      "pAtk": 1314,
+      "pDef": 810,
+      "runSpeed": 253,
+      "walkSpeed": 66
     },
     "drops": [],
     "effectiveStatsContext": "daytime spawn defaults with permanent passive skills and no temporary effects",
     "id": 12173,
-    "kind": "Boss",
+    "kind": "Monster",
     "level": 49,
-    "minionOf": [],
+    "minionOf": [
+      {
+        "bossId": 12169,
+        "maxCount": 4,
+        "minCount": 4,
+        "minionId": 12173
+      }
+    ],
     "minions": [],
     "name": "Riba Iren",
     "progression": {
-      "baseExp": 240.1,
+      "baseExp": 0,
       "baseSp": 1,
-      "expModifier": 0.1
+      "expModifier": 0
     },
     "raidBoss": false,
-    "skillIds": [],
+    "skillIds": [
+      "4045:1",
+      "4301:1",
+      "4516:1"
+    ],
     "spawnIds": [
-      "spawn-12173-0a2391cf05d9"
+      "spawn-12173-2005eb252dfc",
+      "spawn-12173-2567f1009bb1",
+      "spawn-12173-7d8edf1dbbcf",
+      "spawn-12173-af4dec383ffd"
     ],
     "spoils": [],
     "template": {
       "base": {
         "con": 43,
         "dex": 30,
-        "int": 21,
+        "int": 41,
         "men": 10,
         "str": 40,
         "wit": 20
       },
       "clan": {
-        "clanName": "Orfen",
-        "helpRadius": 300
+        "clanName": "orfen_clan",
+        "helpRadius": 2900
       },
       "collision": {
         "radius": 25,
-        "size": 80
+        "size": 72
       },
       "equipment": {
         "reuseTime": 0,
@@ -753704,29 +753993,30 @@
         "weapon": 0
       },
       "rewards": {
-        "exp": 0.1,
+        "exp": 0,
         "sp": 1
       },
       "selfId": 12173,
       "speed": {
-        "run": 230,
-        "walk": 60
+        "run": 253,
+        "walk": 66
       },
       "stats": {
-        "accur": 20,
+        "accur": 4.75,
         "atkRadius": 40,
-        "atkSpd": 257,
-        "castSpd": 333,
-        "mAtk": 198.336884859089,
-        "mDef": 143.177709588328,
-        "pAtk": 290.445878844496,
+        "atkSpd": 278,
+        "castSpd": 253,
+        "mAtk": 3269,
+        "mDef": 329,
+        "pAtk": 1314,
         "pAtkRnd": 30,
-        "pDef": 195.663024353658
+        "pDef": 810
       },
       "template": {
         "ai": "FIGHTER",
+        "grandBossOwnerId": 12169,
         "hostile": false,
-        "kind": "Boss",
+        "kind": "Monster",
         "level": 49,
         "name": "Riba Iren",
         "title": ""
@@ -753735,11 +754025,11 @@
         "race": "insect"
       },
       "vitals": {
-        "corpseTime": 7000,
-        "maxHp": 1372.18568429614,
-        "maxMp": 720,
-        "revHp": 5.5,
-        "revMp": 2.1
+        "corpseTime": 20000,
+        "maxHp": 15866,
+        "maxMp": 799,
+        "revHp": 192,
+        "revMp": 2.14
       }
     }
   },

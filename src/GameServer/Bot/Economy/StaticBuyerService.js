@@ -33,7 +33,7 @@ function candidatesFor(state, town) {
     const buyers = buyersInTown(town);
     if (!buyers.length) return [];
     return ItemDisposition.saleCandidates(state, { limit: 20 }).flatMap((item) => {
-        if (!String(item.kind || '').startsWith('Other.Material')) return [];
+        if (!ProductionPolicy.sellsToFixedBuyer(state, item.kind)) return [];
         const offer = buyers.reduce((best, buyer) => {
             const line = (buyer.items || []).find((entry) => Number(entry.selfId) === Number(item.selfId));
             if (!line) return best;

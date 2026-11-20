@@ -9,9 +9,9 @@ const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
 
 const Attack = invoke('GameServer/Actor/Attack');
+const Actor = invoke('GameServer/Actor/Actor');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const BasicAction = invoke('GameServer/Actor/Generics/BasicAction');
-const AttackExec = invoke('GameServer/Actor/Generics/AttackExec');
 const Backpack = invoke('GameServer/Actor/Backpack');
 const Item = invoke('GameServer/Item/Item');
 const Npc = invoke('GameServer/Npc/Npc');
@@ -21,7 +21,6 @@ const Skill = invoke('GameServer/Model/Skill');
 const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 const CubicControl = invoke('GameServer/Skills/CubicControl');
 const SummonControl = invoke('GameServer/Npc/SummonControl');
-const SkillExec = invoke('GameServer/Actor/Generics/SkillExec');
 const World = invoke('GameServer/World/World');
 const { registerSessions } = require('./helpers/worldSessions');
 const Database = invoke('Database');
@@ -51,6 +50,8 @@ function buildSkill(selfId, level) {
 
 function sessionFor(backpack, skill, options = {}) {
     let mp = options.mp ?? 100;
+    let hp = options.hp ?? 100;
+    let pvpFlag = 0;
     let casts = false;
     let destId = options.destId;
     const loc = {
@@ -62,7 +63,7 @@ function sessionFor(backpack, skill, options = {}) {
         backpack,
         skillset: { fetchSkill: () => skill },
         summon: options.summon || null,
-        fetchId: () => 2000001,
+        fetchId: () => options.id ?? 2000001,
         fetchName: () => 'Summoner',
         fetchTitle: () => '',
         fetchRace: () => 0,
@@ -103,7 +104,8 @@ function sessionFor(backpack, skill, options = {}) {
         fetchCollectiveCritical: () => 1,
         fetchCollectiveMAtk: () => 1,
         fetchCollectiveMDef: () => 1,
-        fetchPvpFlag: () => 0,
+        fetchPvpFlag: () => pvpFlag,
+        setPvpFlag(value) { pvpFlag = value; },
         fetchKarma: () => 0,
         fetchCollectiveRunSpd: () => 1,
         fetchCollectiveWalkSpd: () => 1,
@@ -120,9 +122,9 @@ function sessionFor(backpack, skill, options = {}) {
         fetchPvp: () => 0,
         fetchRecRemain: () => 0,
         fetchEvalScore: () => 0,
-        fetchHp: () => 100,
-        setHp() {},
-        fetchMaxHp: () => 100,
+        fetchHp: () => hp,
+        setHp(value) { hp = value; },
+        fetchMaxHp: () => options.maxHp ?? 100,
         fetchCollectiveCastSpd: () => 333,
         fetchCollectiveAtkSpd: () => 333,
         statusUpdateVitals() {},
@@ -148,7 +150,8 @@ function sessionFor(backpack, skill, options = {}) {
         },
         dataSendToMeAndOthers(packet) {
             this.packets.push(packet);
-        }
+        },
+        dataSendToOthers() {}
     };
 }
 
@@ -214,6 +217,115 @@ async function checkPhantomActions(session, summon, summonSkillId) {
             const mp = summon.fetchMp();
             await cast(0x2f);
             assert.strictEqual(summon.fetchMp(), mp, 'Steal Blood must reject a cast during reuse');
+        } else if (summonSkillId === 1333) {
+            // Keep the real hate ledger while isolating HP costs from retaliation.
+            for (const enemy of [target, nearby]) enemy.meleeHit = () => {};
+            const partyMember = sessionFor(null, null, { id: 2000002, hp: 100, maxHp: 2000 });
+            partyMember.partyCompanion = true;
+            partyMember.followPlayerSession = session;
+            const opponent = sessionFor(null, null);
+            opponent.actor = new Actor(opponent, {
+                id: 2000003, name: 'Opponent', title: '', level: 76, classId: 0, isOnline: true, pvpFlag: 1,
+                ...loc, hp: 1000, mp: 1000, str: 40, dex: 30, con: 43, int: 21, wit: 11, men: 25,
+                paperdoll: Array.from({ length: 16 }, () => ({})), items: []
+            });
+            const neutral = sessionFor(null, null, { id: 2000004 });
+            registerSessions([session, partyMember, opponent, neutral]);
+            for (const member of [session, partyMember, opponent, neutral]) member.actor.session = member;
+            try {
+                summon.setHp(2000);
+                SummonControl.startFollowOwner(session, session.actor, summon);
+                const EffectStore = invoke('GameServer/Effects/EffectStore');
+                EffectStore.apply(summon, { id: 1064, key: 'silence', type: 'debuff', durationMs: 30000 });
+                await cast(1013);
+                assert.strictEqual(summon.fetchMp(), 1000, 'A silenced Nightshade cannot cast magic');
+                EffectStore.remove(summon, 'silence');
+
+                summon.state.setCasts(true);
+                await cast(1014);
+                assert.strictEqual(summon.state.fetchCasts(), true, 'A second skill command must preserve the active cast');
+                summon.state.setCasts(false);
+
+                const geo = invoke('GameServer/Geodata/GeodataEngine');
+                const hasLineOfSight = geo.hasLineOfSight;
+                try {
+                    geo.hasLineOfSight = () => false;
+                    await cast(1013);
+                    assert.strictEqual(summon.fetchMp(), 1000, 'Curse of Shade cannot pass through a wall');
+                    assert.strictEqual(summon.controlMode, 'follow', 'Rejected line of sight must preserve follow');
+                } finally {
+                    geo.hasLineOfSight = hasLineOfSight;
+                }
+
+                EffectStore.apply(summon, { id: 1201, key: 'root', type: 'debuff', durationMs: 30000 });
+                session.actor.setDestId(distant.fetchId());
+                await cast(1013);
+                assert.strictEqual(summon.fetchMp(), 1000, 'A rooted Nightshade cannot approach an out-of-range target');
+                assert.strictEqual(summon.controlMode, 'follow', 'A failed approach must resume follow');
+                EffectStore.remove(summon, 'root');
+
+                BasicAction(session, session.actor, { actionId: 1013 });
+                await new Promise(resolve => setImmediate(resolve));
+                assert(summon.state.inMotion(), 'The ranged cast must approach an out-of-range monster');
+                const root = EffectStore.apply(summon, { id: 1201, key: 'root', type: 'debuff', durationMs: 30000 });
+                invoke('GameServer/Effects/EffectRestrictions').interruptOnApply(session, summon, root);
+                await new Promise(resolve => setTimeout(resolve, 550));
+                assert.strictEqual(summon.controlMode, 'follow', 'Interrupting the approach must restore follow');
+                assert.strictEqual(summon.fetchMp(), 1000, 'An interrupted approach must not cast');
+                EffectStore.remove(summon, 'root');
+
+                const peace = utils.isInPeaceZone;
+                try {
+                    utils.isInPeaceZone = x => x === summon.fetchLocX();
+                    const massCurse = NpcSkills.forId(4706, 3);
+                    const targets = summon.attack.resolveSkillTargets(session, summon, summon, massCurse);
+                    assert(targets.includes(nearby), 'The summon peace check only filters PvP targets');
+                    assert(!targets.includes(opponent.actor), 'Mass Curse of Shade must exclude PvP targets when the caster is in peace');
+                    assert(summon.attack.blockedPvpDefense(session, summon, opponent.actor, massCurse),
+                        'A summon entering peace before impact cannot land the spell on a player');
+                } finally {
+                    utils.isInPeaceZone = peace;
+                }
+
+                session.actor.setDestId(target.fetchId());
+                await cast(1013);
+                assert.strictEqual(EffectStats.multiplier(target, 'pDefMul'), 0.90);
+                assert.strictEqual(EffectStats.multiplier(target, 'mDefMul'), 0.90);
+                assert.strictEqual(target.getHating(summon), 101, 'Curse of Shade must add 100 hate to the initial combat entry');
+                assert(!nearby.effects?.curse_of_shade, 'Curse of Shade must be single-target');
+                assert.strictEqual(summon.fetchMp(), 931);
+
+                session.actor.setDestId(null);
+                await cast(1014);
+                assert(nearby.effects?.curse_of_shade, 'Mass Curse of Shade must work without a selected target');
+                assert.strictEqual(nearby.getHating(summon), 101);
+                assert(!distant.effects?.curse_of_shade, 'Mass Curse of Shade must respect the 200-unit radius');
+                assert.strictEqual(EffectStats.multiplier(target, 'pDefMul'), 0.90, 'The curses must share one stack');
+                assert(opponent.actor.effects?.curse_of_shade, 'Mass Curse of Shade must affect an eligible PvP target');
+                assert.strictEqual(opponent.actor.fetchDestId(), summon.fetchId());
+                assert.strictEqual(session.actor.fetchPvpFlag(), 1, 'Nightshade aggression must flag its owner');
+                assert(!neutral.actor.effects?.curse_of_shade, 'Mass Curse of Shade must exclude neutral players');
+                assert(!partyMember.actor.effects?.curse_of_shade, 'Mass Curse of Shade must exclude party members');
+                assert.strictEqual(summon.fetchMp(), 827);
+
+                session.actor.setDestId(target.fetchId());
+                await cast(1015);
+                assert.strictEqual(summon.fetchHp(), 2000, 'Shade Sacrifice must reject a monster target');
+                session.actor.setDestId(partyMember.actor.fetchId());
+                await cast(1015);
+                assert.strictEqual(partyMember.actor.fetchHp(), 759, 'Shade Sacrifice must heal the selected party member');
+                assert.strictEqual(summon.fetchHp(), 1054, 'Shade Sacrifice rank three must spend 946 HP');
+                assert.strictEqual(summon.fetchMp(), 827, 'Shade Sacrifice has no MP cost');
+
+                summon.skillReuseUntil.delete(4707);
+                summon.setHp(946);
+                await cast(1015);
+                assert.strictEqual(partyMember.actor.fetchHp(), 759, 'Shade Sacrifice must fail when its cost would kill Nightshade');
+                assert.strictEqual(summon.fetchHp(), 946);
+            } finally {
+                clearTimeout(session.pvpFlagTimer);
+                invoke('GameServer/Effects/EffectTicker').clearAll(opponent.actor);
+            }
         } else {
             await cast(0x24);
             for (const enemy of [target, nearby]) {
@@ -277,8 +389,7 @@ async function checkPhantomActions(session, summon, summonSkillId) {
     assert.strictEqual(World.npc.spawns[0].fetchSelfId(), 12006, 'Summon Kat level 1 should spawn sourced npcId 12006');
     assert.strictEqual(World.npc.spawns[0].fetchOwnerId(), session.actor.fetchId(), 'summoned servitor should keep owner id');
     assert.strictEqual(World.npc.spawns[0].fetchIsSummon(), true, 'summoned servitor should be marked as summon');
-    assert.strictEqual(AttackExec.canAttackNpc(World.npc.spawns[0]), true, 'player attack path should treat an active servitor as damageable');
-    assert.strictEqual(SkillExec.canTargetEnemyNpc(World.npc.spawns[0]), true, 'player skill path should treat an active servitor as an enemy target');
+    assert.strictEqual(World.npc.spawns[0].fetchIsKillable(), true, 'an active servitor can take damage');
     assert.strictEqual(session.actor.summon, World.npc.spawns[0], 'actor should retain active summon reference');
     assert.strictEqual(World.npc.spawns[0].controlMode, 'follow', 'summoned servitor should enter native follow mode on spawn');
     assert.strictEqual(World.npc.spawns[0].followOwner, true, 'summoned servitor should follow owner by default');
@@ -472,11 +583,16 @@ async function checkPhantomActions(session, summon, summonSkillId) {
         [12456, [60, 4887, 1327, 860, 368, 478, 345]],
         [12464, [76, 6876, 1972, 1614, 534, 994, 500]],
         [12503, [42, 1992, 679, 342, 215, 152, 202]],
-        [12538, [76, 5157, 1972, 1775, 534, 994, 500]]
+        [12538, [76, 5157, 1972, 1775, 534, 994, 500]],
+        [13165, [58, 5778, 1251, 313, 349, 428, 327]],
+        [13174, [76, 8595, 1972, 577, 534, 994, 500]]
     ]);
-    for (const selfId of [1128, 1228, 1278]) {
+    const phantomSkills = [
+        [1128, 18, [4233]], [1228, 18, [4260]], [1278, 14, [4138, 4259]], [1333, 10, [4705, 4706, 4707]]
+    ];
+    for (const [selfId, rankCount, expectedSkills] of phantomSkills) {
         const skillData = DataCache.skills.find((entry) => entry.selfId === selfId);
-        assert.strictEqual(skillData.levels.length, selfId === 1278 ? 14 : 18);
+        assert.strictEqual(skillData.levels.length, rankCount);
         for (const levelData of skillData.levels) {
             const label = `summon skill ${selfId} level ${levelData.level}`;
             const templates = DataCache.npcs.filter((entry) => entry.selfId === levelData.npcId);
@@ -495,13 +611,15 @@ async function checkPhantomActions(session, summon, summonSkillId) {
                 assert.strictEqual(summoned.fetchSelfId(), levelData.npcId, label);
                 assert.strictEqual(summoned.fetchName(), template.template.name, label);
                 const skills = NpcSkills.forNpc(summoned);
-                const expectedSkills = selfId === 1128 ? [4233] : selfId === 1228 ? [4260] : [4138, 4259];
                 for (const id of expectedSkills) {
                     const ability = skills.find(entry => entry.fetchSelfId() === id);
                     assert(ability, `${label} must have skill ${id}`);
-                    assert.strictEqual(ability.fetchLevel(), id === 4233 ? 1 : Math.floor(summoned.fetchLevel() / 10),
+                    let expectedRank = id === 4233 ? 1 : Math.floor(summoned.fetchLevel() / 10);
+                    if (selfId === 1333) expectedRank = Math.min(3, Math.ceil(levelData.level / 3));
+                    assert.strictEqual(ability.fetchLevel(), expectedRank,
                         `${label} must have the sourced rank of skill ${id}`);
                 }
+                if (selfId === 1333) assert.strictEqual(summoned.fetchLevel(), 56 + 2 * levelData.level, label);
                 if (selfId === 1128) assert.strictEqual(EffectStats.add(summoned, 'absorbDam'), 15, label);
                 const stats = [summoned.fetchLevel(), summoned.fetchMaxHp(), summoned.fetchMaxMp(),
                     summoned.fetchPAtk(), summoned.fetchPDef(), summoned.fetchMAtk(), summoned.fetchMDef()];
@@ -925,6 +1043,36 @@ async function checkPhantomActions(session, summon, summonSkillId) {
             BotAI.promoteForPlayerInteraction = saved.promote; Flag.mark = saved.mark;
             utils.isInPeaceZone = saved.peace;
             World.user = previousPvpWorld;
+        }
+    }
+    // A servitor's poison is its hit while its owner, in the world, has it out;
+    // after the unsummon its next tick is nobody's: the servitor gains no hate,
+    // the monster still loses the HP (C4: the effect outlives its caster).
+    {
+        const EffectTicker = invoke('GameServer/Effects/EffectTicker');
+        const EffectStore = invoke('GameServer/Effects/EffectStore');
+        const previousWorld = World.user;
+        registerSessions([boxerSession]);
+        const poisoned = npc(1, 990055);
+        poisoned.setHp(1000);
+        // The cast relay SummonControl.useSkillAction builds: its body is the servitor.
+        const relay = { actor: soulless, dataSendToMe() {}, dataSendToMeAndOthers() {} };
+        const smoke = (key) => EffectTicker.applyDot(relay, soulless, poisoned, EffectStore.apply(poisoned, {
+            key, id: 4259, level: 1, type: 'debuff', dot: { damage: 10, count: 1, intervalMs: 5 }, durationMs: 50 }));
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        try {
+            smoke('held_smoke');
+            await wait(30);
+            const held = poisoned.getHating(soulless);
+            assert(held > 0, 'a held servitor\'s poison tick is its hit');
+            SummonControl.unsummon(boxerSession, boxerSession.actor, soulless);
+            smoke('gone_smoke');
+            await wait(30);
+            assert.strictEqual(poisoned.getHating(soulless), held, 'an unsummoned servitor\'s tick gains it no hate');
+            assert.strictEqual(poisoned.fetchHp(), 980, 'the poison still takes its HP');
+        } finally {
+            poisoned.destructor(boxerSession);
+            World.user = previousWorld;
         }
     }
     soulless.destructor(boxerSession);

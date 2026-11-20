@@ -77,6 +77,12 @@ const Formulas = {
         return this.calcBaseMod.CON(con) * 69000;
     },
 
+    // C4 regeneration by posture (Formulas.java calcHpRegen/calcMpRegen): seated
+    // x1.5, moving x0.7, standing still x1.1. Hot (Automation) and cold (ColdRest) read it.
+    regenStateMultiplier({ seated = false, moving = false } = {}) {
+        return seated ? 1.5 : moving ? 0.7 : 1.1;
+    },
+
     calcLevelMod(level) {
         return (level + 89) / 100;
     },

@@ -25,7 +25,8 @@ function member(id, classId, level, weapon, healer = false) {
         slot: i + 1, name: Data.items.find(t => t.selfId === selfId).template.name }));
     items.push({ selfId: weapon === 3 ? 1835 : 1463, amount: 2500, slot: 0, equipped: 0 });
     const s = { characterId: id, name: `adventurer_${id}`, accountName: `bot_${id}`, level, classId,
-        adena: 100000, phase: 'cold', activity: 'hunting', party: { partyId: null }, updatedAt: at,
+        // Above each member's kit reserve (the dwarf's D shots for 5.1 h to a full bag: ~219k).
+        adena: 300000, phase: 'cold', activity: 'hunting', party: { partyId: null }, updatedAt: at,
         stats: { classId, coldCombat: { classId, skills: Combat.skillsFor({ classId, level }) } },
         inventory: Life.inventorySummaryFromItems(items) };
     const p = Combat.profileFor(s); s.vitals = { hp: p.maxHp, maxHp: p.maxHp, mp: p.maxMp, maxMp: p.maxMp };
@@ -157,6 +158,22 @@ async function run() {
         members: grouped, spot, elapsedMs: 60000, timestamp: at, targetNpcId: 10366 });
     assert.equal(held.debug.reason, 'raid_wait_native_activation', JSON.stringify(held.debug));
     assert.equal(held.debug.fights, 0, 'the invisible simplified resolver never rewards these raids');
+    const clanPolicy = invoke('GameServer/Clan/ClanRaidPolicy');
+    const originalComposition = clanPolicy.composition;
+    clanPolicy.composition = () => ({ ready: true }); // This case owns execution routing, not roster composition.
+    try { for (const npcId of [12001, 12052, 12169]) {
+        const epic = Catalog.findById(`raid:${npcId}`);
+        const epicParty = { ...formation, spotId: epic.id, stats: { objective: {
+            sourceKind: 'raid', npcId, spotId: epic.id, clanGoalKey: `epic:${npcId}`
+        } } };
+        const epicMembers = grouped.map(s => ({ ...s, spotId: epic.id, loc: epic.center }));
+        const native = invoke('GameServer/Bot/Population/BackgroundPartyResolver').resolve({
+            party: epicParty, members: epicMembers, spot: epic, elapsedMs: 60000, timestamp: at, targetNpcId: npcId
+        });
+        assert.equal(native.debug.reason, 'raid_wait_native_activation', 'clan epics also require native actors');
+        assert.equal(native.debug.fights, 0);
+        assert(native.memberResults.every(({ result }) => result.materialize.items.length === 0));
+    } } finally { clanPolicy.composition = originalComposition; }
     // Main activates or dissolves it (each writes its members); the cold roster
     // steps again only at the expedition's end, its wait lived, not hunted.
     const expedition = { ...formation, stats: { objective: { ...objective, expiresAt: at + 600000 } } };

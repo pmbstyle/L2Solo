@@ -288,9 +288,18 @@ async function main() {
     // Run the actual poison timer through the real character death handler
     // and back into the clan service, rather than mocking lethal damage.
     const intervals = new Map();
+    // The tick's HP is the shared damage-over-time rule; a tick of the leader's
+    // own effect reaches the character's hit pipeline with no attacker, here a
+    // stand-in that ends in the real death handler.
+    mocks['GameServer/Combat/HitRules'] = require('../src/GameServer/Combat/HitRules');
+    mocks[global.path.actor] = { receivedHit(session, actor, hit) {
+        actor.setHp(Math.max(0, actor.fetchHp() - hit));
+        if (actor.fetchHp() <= 0) mocks['GameServer/Actor/Generics/Die'](session, actor, { source: null });
+    } };
     const ticker = load('src/GameServer/Effects/EffectTicker.js', {
         setInterval: fn => { const token = {}; intervals.set(token, fn); return token; },
-        clearInterval: token => intervals.delete(token), clearTimeout() {}
+        clearInterval: token => intervals.delete(token), clearTimeout() {},
+        path: global.path
     });
     ticker.refreshEffects = () => {};
     ticker.scheduleExpiry = () => {};

@@ -164,12 +164,9 @@ class Automation extends SelectedModel {
         if (typeof creature?.fetchClassId !== 'function') return 1;
 
         const state = creature.state;
-        if (standing && !seated) return 1.1;
-        return seated || state?.fetchSeated?.() === true
-            ? 1.5
-            : state?.inMotion?.() === true
-                ? 0.7
-                : 1.1;
+        const still = standing && !seated;
+        return Formulas.regenStateMultiplier({ seated: !still && (seated || state?.fetchSeated?.() === true),
+            moving: !still && state?.inMotion?.() === true });
     }
 
     stopReplenish() {

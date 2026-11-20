@@ -13,7 +13,8 @@ const exact = (left, right) => Array.isArray(left) && Array.isArray(right) && le
 function identity(marker) {
     return marker && [marker.clanId, marker.ownerSection, marker.goalKey, marker.generation,
         ids(marker.memberIds), marker.sourceId, marker.npcId, marker.raidInstanceId, marker.minPartySize, marker.maxPartySize,
-        ids(Expedition.coreIds(marker)), ids(marker.unchargedHelperIds || [])];
+        ids(Expedition.coreIds(marker)), ids(marker.unchargedHelperIds || []),
+        Expedition.validGroups(marker) ? Expedition.groups(marker).map(ids) : []];
 }
 const same = (left, right) => JSON.stringify(identity(left)) === JSON.stringify(identity(right));
 function inputFingerprint(member) {
@@ -27,7 +28,8 @@ function valid(marker) {
         && !!marker.goalKey && !!marker.generation && !!marker.sourceId && marker.npcId > 0 && !!marker.raidInstanceId
         && Expedition.validGroups(marker) && marker.minPartySize === marker.memberIds.length && marker.maxPartySize === marker.memberIds.length
         && (marker.unchargedHelperIds === undefined || Array.isArray(marker.unchargedHelperIds)
-            && marker.unchargedHelperIds.length <= 9 && new Set(marker.unchargedHelperIds).size === marker.unchargedHelperIds.length
+            && marker.unchargedHelperIds.length <= Expedition.MAX_MEMBERS - Expedition.PARTY_MEMBERS
+            && new Set(marker.unchargedHelperIds).size === marker.unchargedHelperIds.length
             && marker.unchargedHelperIds.every(value => Number.isSafeInteger(value) && Expedition.helper(marker, value)))
         && marker.memberIds.every(value => Number.isSafeInteger(value) && value > 0);
 }

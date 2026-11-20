@@ -91,6 +91,14 @@ async function main() {
         await LifeState.upsertState(result.state, 'test_craft_completed');
         return result;
     };
+    const closeMaterialRequest = async goal => {
+        const carrier = await LifeState.findByCharacterId(goal.plan.craft.customerId);
+        const request = { status: 'closed', clanGoalKey: goal.goalKey,
+            priority: 'required', clanId: 6300001, lastReason: 'no_compatible_level_match' };
+        await LifeState.upsertState({ ...carrier, stats: { ...carrier.stats,
+            partyRequest: request, clanPartyObjective: { ...request, status: 'open' }
+        } }, 'test_material_party_closed');
+    };
     try {
         await Database.syncPlayerManagedClan(6300001);
         const newGoalServer = http.createServer(invoke('WorldObserver/WorldObserverServer').route);
@@ -139,9 +147,18 @@ async function main() {
             assert.strictEqual((await fetch(url)).status, 405);
         } finally { await new Promise(resolve => server.close(resolve)); }
 
+        await closeMaterialRequest(created.goal);
         const assigned = await OrderService.resolveClan(await projection());
         assert.strictEqual(assigned.assignment.ok, true);
+        assert(!assigned.assignment.closedRequest, 'a closed farming request must not block the final recipe either');
         const customerId = assigned.goal.plan.craft.customerId;
+        await closeMaterialRequest(assigned.goal);
+        const repeated = await OrderService.resolveClan(await projection());
+        assert.strictEqual(repeated.assignment.ok, true);
+        const repeatedCarrier = await LifeState.findByCharacterId(customerId);
+        assert.strictEqual(repeatedCarrier.stats.partyRequest, null,
+            'an unchanged ready plan must clear a stale closed farming request too');
+        assert.strictEqual(repeatedCarrier.stats.clanPartyObjective, null);
         const waitingCustomer = await LifeState.findByCharacterId(customerId);
         const dwarfBeforeMove = await LifeState.findByCharacterId(5300006);
         const initialTrip = Cold.beginTravel(waitingCustomer);
@@ -235,6 +252,56 @@ async function main() {
         }
         assert.strictEqual(await OrderService.current(6300001), null);
         assert((await Database.fetchClanWarehouseItems(6300001)).some(row => row.selfId === 1884 && row.amount > 0));
+
+        // Composite Armor can be waiting only for four Silver Molds, with
+        // their finished inputs and one learning scroll already in stock.
+        const composite = Recipes.resolveByProductId(60);
+        const frame = Recipes.resolveByProductId(1892);
+        const mold = Recipes.resolveByProductId(1886);
+        for (const material of composite.materials.filter(row => row.selfId !== frame.productId)) {
+            await stock(material.selfId, material.amount);
+        }
+        for (const material of frame.materials.filter(row => row.selfId !== mold.productId)) {
+            await stock(material.selfId, material.amount * 4);
+        }
+        const priorStock = await Database.fetchClanWarehouseItems(6300001);
+        for (const [selfId, amount] of [[1878, 22], [1879, 20], [1873, 40]]) {
+            await stock(selfId, amount - priorStock.filter(row => row.selfId === selfId)
+                .reduce((sum, row) => sum + row.amount, 0));
+        }
+        for (const recipe of [composite, frame, mold]) await stock(recipe.recipeItemId, 1);
+        const rested = await LifeState.findByCharacterId(5300006);
+        await LifeState.upsertState({ ...rested, vitals: { ...rested.vitals, mp: 1000, maxMp: 1000 } }, 'test_composite_crafter_rested');
+        const compositeOrder = await OrderService.create(await projection(), { itemId: 60, amount: 1,
+            strategy: 'craft', memberIds: members }, { source: null });
+        assert.strictEqual(compositeOrder.goal.plan.reasonCode, 'clan_craft_component_ready');
+        assert.strictEqual(compositeOrder.goal.plan.craft.nextItemName, 'Silver Mold');
+        const missingMold = compositeOrder.goal.plan.craft.materials.find(row => row.selfId === 1886);
+        assert.strictEqual(missingMold.missing, 4);
+        for (const [selfId, amount] of [[1878, 22], [1879, 20], [1873, 40], [mold.recipeItemId, 1]]) {
+            const material = compositeOrder.goal.plan.craft.materials.find(row => row.selfId === selfId);
+            assert.strictEqual(material.available, amount);
+            assert.strictEqual(material.missing, 0);
+        }
+        await closeMaterialRequest(compositeOrder.goal);
+        const compositeCrafts = [];
+        for (let attempt = 0; attempt < 8 && await OrderService.current(6300001); attempt++) {
+            const resolved = await OrderService.resolveClan(await projection(), { source: null });
+            assert.strictEqual(resolved.assignment?.ok, true, JSON.stringify(resolved));
+            assert(!resolved.assignment.closedRequest, 'a closed farming request must not block an already stocked component craft');
+            const carrier = await LifeState.findByCharacterId(resolved.goal.plan.craft.customerId);
+            assert.strictEqual(carrier.stats.partyRequest, null, 'crafting needs no farming party request');
+            assert.strictEqual(carrier.stats.clanPartyObjective, null, 'the old farming duty must not hold the ready carrier');
+            const result = await travelAndCraft(resolved.goal.plan.craft.customerId);
+            assert.strictEqual(result.crafted, true, result.error || result.reason);
+            compositeCrafts.push([result.productId, result.batchCount]);
+            await OrderService.syncProgress(await projection());
+        }
+        assert.deepStrictEqual(compositeCrafts, [[1886, 1], [1892, 1], [1886, 3], [1892, 3], [60, 1]]);
+        assert.strictEqual(await OrderService.current(6300001), null);
+        for (const recipe of [composite, frame, mold]) {
+            assert((await Database.fetchCharacterRecipes(5300006)).some(row => row.recipeId === recipe.recipeId));
+        }
 
         // This native resource recipe has a real 25% success chance. Failure
         // spends inputs and MP without inventing output or progress.

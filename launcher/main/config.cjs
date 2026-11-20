@@ -16,8 +16,11 @@ const featured = {
 const extras = {
     General: { spRate: '1', spoilRate: '1' },
     GameServer: { advertisedHostname: '' },
-    AI: { enabled: 'false', apiUrl: '', apiKey: '', model: '', partyRouterModel: '', temperature: '', reasoningEffort: 'off', completionLimitParam: 'max_tokens', strictSchema: 'true', maxConcurrentRequests: '32' }
+    AI: { enabled: 'false', apiUrl: '', apiKey: '', model: '', partyRouterModel: '', temperature: '', reasoningEffort: 'off', completionLimitParam: 'max_tokens', strictSchema: 'false', maxConcurrentRequests: '32' }
 };
+const clanAiDefaults = { llmGoalManagementEnabled: 'true', llmTitleManagementEnabled: 'false' };
+const clanAiKeys = new Set([...Object.keys(clanAiDefaults), 'localCrestGenerationEnabled']);
+const sourceSection = (section, key) => section === 'AI' && clanAiKeys.has(key) ? 'ClanSimulation' : section;
 // Keep enum choices in the settings schema so rendering and validation agree.
 const enumOptions = {
     'General.progressionPreset': ['x1', 'x10', 'x50'],
@@ -73,14 +76,18 @@ function settings(root) {
     }
     const sections = { ...config };
     sections.AI = Object.fromEntries(Object.entries(aiConfig(config)).filter(([key]) => Object.hasOwn(extras.AI, key)));
+    for (const [key, fallback] of Object.entries(clanAiDefaults)) sections.AI[key] = config.ClanSimulation?.[key] ?? fallback;
+    if (config.ClanSimulation?.localCrestGenerationEnabled !== undefined) {
+        sections.AI.localCrestGenerationEnabled = config.ClanSimulation.localCrestGenerationEnabled;
+    }
     delete sections.OpenRouter;
     delete sections.Langfuse;
     return Object.entries(sections).sort(([a], [b]) => (sectionOrder.includes(a) ? sectionOrder.indexOf(a) : 99) - (sectionOrder.includes(b) ? sectionOrder.indexOf(b) : 99)).map(([section, values]) => ({
         id: section, active: true,
         fields: Object.entries({ ...extras[section], ...values }).filter(([key]) => fieldVisible(section, key)).map(([key, value]) => ({
-            key, value: String(section === 'General' && values[key] === undefined && key === 'spRate' ? values.expRate || '1'
+            key, section: sourceSection(section, key), value: String(section === 'General' && values[key] === undefined && key === 'spRate' ? values.expRate || '1'
                 : section === 'General' && values[key] === undefined && key === 'spoilRate' ? values.dropChanceRate || '1' : value),
-            ...settingHelp(section, key, comments[`${section}.${key}`]),
+            ...settingHelp(sourceSection(section, key), key, comments[`${sourceSection(section, key)}.${key}`]),
             type: enumOptions[`${section}.${key}`] ? 'select' : /^(true|false)$/i.test(String(value)) ? 'boolean' : /key|secret|password/i.test(key) ? 'password' : 'text',
             options: enumOptions[`${section}.${key}`]?.slice(),
             ...fieldLayout(section, key),
@@ -109,11 +116,11 @@ function validate(section, key, value) {
     }
 }
 
-async function saveSettings(root, changes) {
+function validateChanges(root, changes) {
     if (!Array.isArray(changes) || changes.length > 1000) throw new Error('Invalid settings request.');
-    const schema = new Map(settings(root).map(section => [section.id, new Map(section.fields.map(field => [field.key, field]))]));
+    const schema = new Map(settings(root).flatMap(section => section.fields.map(field => [`${field.section}.${field.key}`, field])));
     for (const change of changes) {
-        const field = schema.get(change?.section)?.get(change?.key);
+        const field = schema.get(`${change?.section}.${change?.key}`);
         if (!field) throw new Error('Unknown server setting.');
         validate(change.section, change.key, change.value);
         if (field.options && !field.options.includes(change.value)) {
@@ -121,6 +128,18 @@ async function saveSettings(root, changes) {
         }
         if (field.type === 'boolean' && !['true', 'false'].includes(change.value)) throw new Error('Expected true or false.');
     }
+}
+
+function previewConfig(root, changes = []) {
+    validateChanges(root, changes);
+    const config = readConfig(root);
+    if (changes.some(change => change.section === 'AI') && !config.AI) config.AI = aiConfig(config);
+    for (const { section, key, value } of changes) (config[section] ||= Object.create(null))[key] = value;
+    return config;
+}
+
+async function saveSettings(root, changes) {
+    validateChanges(root, changes);
     const config = readConfig(root);
     // Creating [AI] changes provider precedence. Carry the complete legacy
     // configuration across before applying edits, including hidden routing keys.
@@ -169,4 +188,4 @@ async function saveSettings(root, changes) {
     return settings(root);
 }
 
-module.exports = { featured, parseIni, readConfig, settings, saveSettings };
+module.exports = { featured, parseIni, readConfig, settings, saveSettings, previewConfig };

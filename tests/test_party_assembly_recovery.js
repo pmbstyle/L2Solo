@@ -85,7 +85,7 @@ console.log('Party assembly on known ends: wait at the arrival, the absent membe
 (async () => {
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
     const { ColdSimulationKernel, lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
-    const { stepElapsedMs } = require('../src/GameServer/Bot/Population/ColdSoloWindow');
+    const ColdClock = require('../src/GameServer/Bot/Population/ColdClock');
     const clanObjective = { ...objective, clanGoalKey: 'clan-goal', clanId: 7 };
     const solo = { ...members[0], characterId: 31, activity: 'hunting', party: { partyId: null },
         timing: { lastResolvedAt: at - minute }, simulation: { revision: 1 },
@@ -110,7 +110,7 @@ console.log('Party assembly on known ends: wait at the arrival, the absent membe
     kernel.upsert({ state: cleared });
     kernel.dueCandidates(now, 4);
     assert(kernel.busy(31), 'the objective\'s end wakes it at once (its command starts), not at the hold\'s retry');
-    assert.strictEqual(stepElapsedMs(cleared, at + 10 * minute), 1000, 'ten minutes waiting are not hunted');
+    assert.strictEqual(ColdClock.step(cleared, at + 10 * minute).elapsedMs, 0, 'ten minutes waiting are not hunted');
     // The hold has no due of its own: a command holding the waiter (its clan hall
     // visit) runs at once, and the write that ends it leaves the bot held, no step.
     const behind = { ...waiting, stats: { ...waiting.stats, clanHallVisit: { hallId: 1 } }, simulation: { revision: 5 } };

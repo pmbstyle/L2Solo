@@ -9,6 +9,12 @@ const REJECTED_ROUTE_TTL_MS = 5000;
 const CAST_RANGE_MARGIN = 32;
 const GEODATA_CELL_SIZE = 16;
 
+function anchorFor(session) {
+    const owner = session.followPlayerSession?.actor;
+    return session.clanCommandParty?.active
+        ? invoke('GameServer/Bot/AI/ClanCommandParty').formationTarget(session.clanCommandParty.owner) || owner : owner;
+}
+
 function loc(actor) {
     return {
         locX: Number(actor.fetchLocX?.() ?? actor.locX),
@@ -94,7 +100,7 @@ function segmentExposes(from, to, hazard, clearance) {
 // Check the actual geodata route as well as its endpoint. Already exposed
 // companions may move away from a hostile, but must not move deeper into it.
 function routeAllowed(session, bot, route, goal, { complete = true, endpointOnly = false } = {}) {
-    const leader = session.followPlayerSession?.actor;
+    const leader = anchorFor(session);
     if (!leader || session.partyCompanion !== true) return false;
     const anchor = loc(leader);
     const from = loc(bot);
@@ -123,7 +129,7 @@ function routeAllowed(session, bot, route, goal, { complete = true, endpointOnly
 }
 
 function rejectedRecently(session, goal) {
-    const anchor = loc(session.followPlayerSession.actor);
+    const anchor = loc(anchorFor(session));
     session.supportRouteRejections = (session.supportRouteRejections || []).filter(rejection =>
         Date.now() - rejection.at < REJECTED_ROUTE_TTL_MS && distance(anchor, rejection.anchor) <= TARGET_DRIFT);
     return session.supportRouteRejections.some(rejection => distance(goal, rejection.goal) < 32);
@@ -137,7 +143,7 @@ function selectDestination(session, bot, candidates) {
 }
 
 function followDestination(session, bot, formation) {
-    const anchor = loc(session.followPlayerSession.actor);
+    const anchor = loc(anchorFor(session));
     return selectDestination(session, bot, [formation, {
         locX: Math.round((formation.locX + anchor.locX) / 2),
         locY: Math.round((formation.locY + anchor.locY) / 2),
@@ -153,7 +159,7 @@ function castPosition(from, target, range) {
 }
 
 function supportDestination(session, bot, target, castRange) {
-    const anchor = loc(session.followPlayerSession.actor);
+    const anchor = loc(anchorFor(session));
     const range = Math.max(0, castRange - CAST_RANGE_MARGIN);
     return selectDestination(session, bot, [
         castPosition(loc(bot), loc(target), range),
@@ -167,11 +173,11 @@ function routeGuard(session, bot, destination) {
         if (routeAllowed(session, bot, route, goal, options)) return true;
         if (session.followPlayerSession?.actor) {
             session.supportRouteRejections = [...(session.supportRouteRejections || []), {
-                goal, anchor: loc(session.followPlayerSession.actor), at: Date.now()
+                goal, anchor: loc(anchorFor(session)), at: Date.now()
             }].slice(-3);
         }
         return false;
     };
 }
 
-module.exports = { PARTY_RADIUS, TARGET_DRIFT, followDestination, supportDestination, routeGuard };
+module.exports = { PARTY_RADIUS, TARGET_DRIFT, CAST_RANGE_MARGIN, castPosition, followDestination, supportDestination, routeGuard };

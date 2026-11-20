@@ -71,7 +71,7 @@ class RaidSupplyPreparation {
         }
         const saved = await this.fenced(plan.memberIds, async () => {
             const current = plan.memberIds.map(id => this.life.cachedState(id));
-            if (current.some(s => !Policy.available(s, now) || !Policy.recruitLevelAllowed(s, objective.sourceLevel))
+            if (current.some(s => !Policy.available(s, now) || !Policy.recruitLevelAllowed(s, objective.sourceLevel, objective))
                 || !Policy.composition(current).ready
                 || !current.every((s, i) => current.slice(i + 1).every(peer => Policy.compatible(s, peer, this.memory.assess.bind(this.memory), now)))
                 || current.some(s => objective.assessment.kits?.find(([id]) => id === s.characterId)?.[1]
@@ -113,7 +113,7 @@ class RaidSupplyPreparation {
             const states = plan.memberIds.map(id => this.life.cachedState(id));
             if (!this.owns(plan) || now >= plan.expiresAt || states.some(s => s.phase !== 'cold'
                 || s.party?.partyId || s.partyId || Policy.criminal(s) || Number(s.vitals?.hp) <= 0
-                || !Policy.recruitLevelAllowed(s, plan.objective.sourceLevel))
+                || !Policy.recruitLevelAllowed(s, plan.objective.sourceLevel, plan.objective))
                 || !states.every((s, i) => states.slice(i + 1).every(peer => Policy.compatible(s, peer, this.memory.assess.bind(this.memory), now)))) {
                 await this.cancel(plan, 'raid_preparation_cancelled'); continue;
             }

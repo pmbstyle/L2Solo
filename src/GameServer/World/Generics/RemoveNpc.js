@@ -2,6 +2,8 @@ const SpoilSweep     = invoke('GameServer/Npc/SpoilSweep');
 const SpawnNpcs      = invoke('GameServer/World/Generics/SpawnNpcs');
 const NpcDecay        = invoke('GameServer/World/Generics/NpcDecay');
 const RaidBossState   = invoke('GameServer/World/RaidBossState');
+const FailureLog      = require('../../../FailureLog');
+const { killEffect }  = require('../KillEffect');
 
 function canRespawnDefinition(world, definition, periodRevision) {
     if (!SpawnNpcs.isPeriodic(definition?.spawn)) return true;
@@ -10,14 +12,12 @@ function canRespawnDefinition(world, definition, periodRevision) {
 }
 
 function removeNpc(session, npc) {
-    const npcId = npc.fetchId();
-
     let corpseDelay = 0;
     try {
         corpseDelay = SpoilSweep.corpseTime(npc);
     }
     catch (error) {
-        utils.infoWarn('NpcDecay', 'failed to calculate corpse time for NPC %d: %s', npcId, error.message);
+        FailureLog.note('npc.corpse_time', error); // the corpse decays at once
     }
     // Register decay before any reward or quest side effect can fail. The
     // corpse timer retries a failed removal itself (NpcDecay.expire).
@@ -43,20 +43,15 @@ function removeNpc(session, npc) {
                     this.spawnNpc(this, definition);
                 }
                 catch (error) {
-                    utils.infoWarn('Spawn', 'failed to respawn NPC %d: %s', npcId, error.message);
+                    FailureLog.note('npc.respawn', error); // this spawn does not return
                 }
             }, delayMs);
         }
     }
 
-    try {
-        this.npcRewards(session, npc);
-    }
-    catch (error) {
-        // Rewards are auxiliary to corpse cleanup. A bad drop row or a
-        // disconnected recipient must not strand the dead NPC forever.
-        utils.infoWarn('NpcRewards', 'failed for NPC %d: %s', npcId, error.message);
-    }
+    // The drops are a consequence of the kill (killEffect): a bad drop row is counted, the
+    // corpse still decays (registered above) and the kill's other rewards still run.
+    killEffect('kill.drops', () => this.npcRewards(session, npc));
 }
 
 module.exports = removeNpc;

@@ -26,7 +26,7 @@ function cold(scrolls, { adena = 100000, scrollHours = .5, hour = 10000, karma =
         stats: { classId: 0, role: 'dps', karma, earning: { shotsPerHour: 0, potionsPerHour: 0 },
             money: Packet.money({ hourAdena: hour, moneyPrice: 1 / hour, refillReserve: 0, firstUnfundedPrice: 0 }),
             kitRates: Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0, shotsCanRestock: false, potionId: 0, potionUse: 0,
-                potionRestUse: 0, potionBenefit: 0, scrollHours, outingHours: 1, gapHorizonHours: 0 }) },
+                potionRestUse: 0, potionBenefit: 0, scrollHours, bagHours: 1, gapHorizonHours: 0 }) },
         inventory: { 57: { selfId: 57, name: 'Adena', amount: adena },
             ...(scrolls ? { 736: { selfId: 736, name: 'Scroll of Escape', amount: scrolls } } : {}) }
     };

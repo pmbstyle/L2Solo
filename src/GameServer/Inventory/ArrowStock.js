@@ -52,7 +52,8 @@ function loadLimit(value) {
     // A live actor's limit (buffs included), as a state carries it (MarketListingPolicy.actorState), else the cold profile's.
     const maximum = typeof value?.fetchMaxLoad === 'function' ? value.fetchMaxLoad() : value?.maxLoad > 0 ? value.maxLoad
         : invoke('GameServer/Bot/Population/ColdCombatProfile').profileFor(value).maxLoad;
-    return maximum > 0 ? Math.ceil(maximum / 2) - 1 : 0;
+    // Below the first weight step (SurvivalFloor requires this module: read when called).
+    return invoke('GameServer/Bot/Population/SurvivalFloor').loadLimit(maximum);
 }
 
 function totalLoad(value) {

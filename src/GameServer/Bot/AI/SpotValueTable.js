@@ -186,12 +186,12 @@ const valueMemo = new Map();
 const valueMemoOrder = [];
 let valueMemoTail = 0;
 function clearValueMemo() { valueMemo.clear(); valueMemoOrder.length = 0; valueMemoTail = 0; }
-// The Map holds a key's slot; the row lives at that slot as 13 numbers in a slab and a flag
+// The Map holds a key's slot; the row lives at that slot as 14 numbers in a slab and a flag
 // byte. A new row drops the key filed at its slot, so a slot holds its key's row while the key
 // lives. At the cap (x10, 24k real rows) the memo held 7.0 MB of the cold worker heap
 // with object rows, 1.0 MB so, plus the slab's 3 MB outside the JS heap (arrayBuffers). The ring fills
 // its slots in order before it wraps, so the slab grows by doubling and a small memo stays small.
-const ROW_NUMBERS = 13;
+const ROW_NUMBERS = 14;
 const NO_ROW = 1, NO_STACKS = 2, NO_REWARDS = 4;
 const ADENA = 4, LOOT = 7, SHOTS = 8, POTIONS = 9, PRODUCTION = 12;
 let memoNumbers = new Float64Array(0), memoFlags = new Uint8Array(0);
@@ -210,7 +210,7 @@ function storeRow(slot, row) {
     n[at] = row.kills; n[at + 1] = row.deaths; n[at + 2] = row.exp; n[at + 3] = row.sp; n[at + ADENA] = row.adena;
     n[at + 5] = row.dropLoot; n[at + 6] = row.spoilLoot; n[at + LOOT] = row.loot; n[at + SHOTS] = row.shots;
     n[at + POTIONS] = row.potions; n[at + 10] = row.stacks ?? 0; n[at + 11] = row.busyShare;
-    n[at + PRODUCTION] = row.production ?? NaN;
+    n[at + PRODUCTION] = row.production ?? NaN; n[at + 13] = row.load;
     memoFlags[slot] = (row.stacks === null ? NO_STACKS : 0) | (row.rewardSource === 'npc_rewards' ? 0 : NO_REWARDS);
 }
 // A fresh row of computeValue's shape and key order, or null.
@@ -220,8 +220,8 @@ function rowAt(slot) {
     const n = memoNumbers, at = slot * ROW_NUMBERS;
     return { kills: n[at], deaths: n[at + 1], exp: n[at + 2], sp: n[at + 3], adena: n[at + ADENA], dropLoot: n[at + 5],
         spoilLoot: n[at + 6], loot: n[at + LOOT], rewardSource: flags & NO_REWARDS ? 'unavailable' : 'npc_rewards',
-        shots: n[at + SHOTS], potions: n[at + POTIONS], stacks: flags & NO_STACKS ? null : n[at + 10], busyShare: n[at + 11],
-        production: Number.isNaN(n[at + PRODUCTION]) ? null : n[at + PRODUCTION] };
+        shots: n[at + SHOTS], potions: n[at + POTIONS], stacks: flags & NO_STACKS ? null : n[at + 10], load: n[at + 13],
+        busyShare: n[at + 11], production: Number.isNaN(n[at + PRODUCTION]) ? null : n[at + PRODUCTION] };
 }
 let valueMemoTable = null, valueMemoRates = null;
 function refreshValueMemo(t, rates) {
@@ -651,13 +651,7 @@ function killSpot(t, row, spotId, mask = ALL_SPECIES) {
     const key = `${spotId}|${maskedMixKey(mix, mask, true)}|${base.npcEntries?.length || 0}`;
     let held = boundedGet(killSpots, key);
     if (!held || held.base !== base) {
-        const present = new Set((base.npcEntries || []).map(entry => Number(entry.selfId)));
-        const npcEntries = [];
-        for (let at = 0; at < mix.length; at += 2) {
-            if (!(mask & (1 << (at / 2))) || !present.has(Number(mix[at]))) continue;
-            npcEntries.push({ selfId: mix[at], count: Math.max(1, Math.round(mix[at + 1] * 1000)) });
-        }
-        held = { base, spot: npcEntries.length ? { ...base, npcEntries, npcSelfIds: undefined } : base };
+        held = { base, spot: Rewards.mixSpot(base, mix, mask) };
         boundedSet(killSpots, key, held);
     }
     return held.spot;
@@ -729,16 +723,16 @@ function killGapFactor(t, row, level, spotLevel, mask = ALL_SPECIES) {
 // row measured the walk to its reference's admitted spawns (a cap is 3600 /
 // the walk per mob, BackgroundResolver.soloWalkMs) inside its hour; the bot
 // of the gap walks to its own. The level curve (measured: the row's
-// kills at the gap) moves the rest of a kill's time, the fight, the rest and
-// the deaths; a walk to a mob takes the same time at any level. Without a
-// gate, the kills as measured.
-function walked(t, row, refGap, gate, measured) {
-    const reference = gate && gateAt(t, row, refGap);
-    if (!reference || !(measured > 0) || !(gate.cap > 0) || !(reference.cap > 0)) return measured;
+// kills at the gap) moves the rest of a kill's time (combat splits that
+// time into fight and rest); a walk to a mob takes the same time at any
+// level. refWalk, gapWalk: the walk to one mob at the reference and at the
+// gap (seconds), both 0 without the two gates: the kills as measured.
+function walked(t, row, refWalk, gapWalk, measured) {
+    if (!(measured > 0)) return measured;
     const kph = row[t.f.kph];
     // Seconds per mob besides the walk, at the reference, then at the gap.
-    const rest = Math.max(0, 3600 / kph - 3600 / reference.cap) * kph / measured;
-    return 3600 / (rest + 3600 / gate.cap);
+    const rest = Math.max(0, 3600 / kph - refWalk) * kph / measured;
+    return 3600 / (rest + gapWalk);
 }
 
 // The mobs per hour a row's kills may reach: its cap at the bot's gap (gate),
@@ -780,10 +774,30 @@ function combat(t, s, r, level, shots) {
     const measured = row[t.f.kph] * ratio(curve.kph, t.gaps, refGap, gap);
     const production = gapProduction(t, row, spot[0], gate);
     const cap = Math.min(rowCap(t, row, spot, gate), production ?? Infinity);
-    const kills = Math.min(walked(t, row, refGap, gate, measured), cap);
+    // One time budget per kill: the row's kill time is its fight (the walk to
+    // the mob inside) + its rest + the time no step counts (idle: respawn
+    // waits, the gap between rounds), and at the gap it stays one. The kill
+    // rate and the fight are the curves' best-measured parts (our choice, no
+    // C4 source): the kill time follows the level curve with the gap's walk,
+    // the fight the fight curve, the rest is what the kill time leaves, and a
+    // fight longer than that time lengthens the kill. A table before the
+    // cycle columns reads no fight and no idle: the level curve's kills. The
+    // rows' 4-digit rounding can leave a row's idle a hair below 0: it is 0.
+    // The fight holds the walk to its mob: the fight curve moves the fight
+    // besides the walk, and the gap's walk replaces the reference's, as in
+    // the kills (walked).
+    const reference = gate && gateAt(t, row, refGap);
+    const walks = reference && gate.cap > 0 && reference.cap > 0;
+    const refWalk = walks ? 3600 / reference.cap : 0, gapWalk = walks ? 3600 / gate.cap : 0;
+    const fightRatio = t.f.fight < 0 ? 1 : ratio(curve.fight, t.gaps, refGap, gap);
+    const fight = t.f.fight < 0 ? 0 : Math.max(0, row[t.f.fight] - refWalk) * fightRatio + gapWalk;
+    const idle = t.f.fight < 0 ? 0 : Math.max(0, 3600 / row[t.f.kph] - row[t.f.fight] - row[t.f.rest]);
+    const busy = Math.max(fight, 3600 / walked(t, row, refWalk, gapWalk, measured) - idle);
+    const kills = Math.min(3600 / (busy + idle), cap);
     if (!(kills > 0)) return null;
-    return { row, curve, gap, refGap, kills, cap, production, gate, mask, expRatio: ratio(curve.exp, t.gaps, refGap, gap),
-        busyRatio: ratio(curve.busy, t.gaps, refGap, gap), gapFactor: killGapFactor(t, row, botLevel, spotLevel, mask) };
+    return { row, curve, gap, refGap, kills, cap, production, gate, mask, fight, rest: busy - fight, busy, fightRatio,
+        expRatio: ratio(curve.exp, t.gaps, refGap, gap), busyRatio: ratio(curve.busy, t.gaps, refGap, gap),
+        gapFactor: killGapFactor(t, row, botLevel, spotLevel, mask) };
 }
 // A curve's value at the bot's gap over its value at the row's reference gap.
 function ratio(values, gaps, refGap, gap) {
@@ -809,7 +823,9 @@ function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLev
     // Keep the original multiplication order and return a fresh result.
     const lootFactor = lootRateFactor(t.spots[s], rates.drop);
     const rewards = Rewards.value(killSpot(t, row, spotId, mask), Math.min(t.maxLevel, Number(level)), { spoilSkillLevel: skill });
-    const busy = row[t.f.busy] * busyRatio;
+    // A kill's busy seconds: the budget's fight + rest (combat), or the busy
+    // curve's in a table before the cycle columns.
+    const busy = t.f.fight < 0 ? row[t.f.busy] * busyRatio : c.busy;
     return {
         kills,
         deaths: kills * Math.max(0, row[t.f.deaths] + at(curve.deaths, t.gaps, gap) - at(curve.deaths, t.gaps, refGap)),
@@ -824,6 +840,9 @@ function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLev
         potions: kills * row[t.f.potions] * busyRatio,
         stacks: t.f.stacks < 0 || Number.isNaN(row[t.f.stacks]) ? null
             : kills * row[t.f.stacks] * lootFactor,
+        // The kill mix's expected drop (and a spoiler's landed spoil) weight an
+        // hour; an NPC without reward data drops only the fallback adena, so 0.
+        load: kills * (rewards?.load || 0),
         busyShare: Math.min(1, kills * busy / 3600),
         production: c.production
     };
@@ -831,8 +850,9 @@ function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLev
 
 // One kill of the reference bot (the role's class in the author's kit) at the
 // spot for the role at the level, the hunt cycle model's input (HuntCycle):
-// fight and rest seconds, the mob's damage before heals (taken; spellTaken
-// its part from spells, 0 in a table before the column), the HP and
+// fight and rest seconds (the parts of the kill's one time budget), the
+// mob's damage before heals (taken; spellTaken its part from spells, 0 in a
+// table before the column), the HP and
 // MP it ends short (hpLost, mpLost), deaths, money (adena and loot at the NPC
 // buy-back), shots and potions per kill, all at the bot's level gap (the
 // curves; HP lost follows taken, MP lost the fight); kph the kills per hour
@@ -884,12 +904,14 @@ function cycle(spotId, role, level, shots = true, rewardOptions = {}) {
     if (memoFlags[slot] & NO_ROW) return null;
     const n = memoNumbers, at = slot * ROW_NUMBERS, kills = n[at];
     const { row, curve, gap, refGap } = c, f = t.f, spot = t.spots[s];
-    const fight = ratio(curve.fight, t.gaps, refGap, gap), taken = ratio(curve.taken, t.gaps, refGap, gap);
+    const taken = ratio(curve.taken, t.gaps, refGap, gap);
     // kph: the hour's kills, value()'s (combat: the walk at the bot's gap, at
-    // most the cap); cap: the spawns' and their production's.
+    // most the cap); cap: the spawns' and their production's. fight and rest:
+    // the parts of the kill's one time budget (combat), so fight + rest never
+    // outgrow 3600 / kph.
     return { spotId: spot[0], kph: kills, cap: c.cap, pull: 1,
-        fight: row[f.fight] * fight, rest: row[f.rest] * ratio(curve.rest, t.gaps, refGap, gap),
-        taken: row[f.taken] * taken, spellTaken: f.spellTaken < 0 ? 0 : row[f.spellTaken] * taken, hpLost: row[f.hpLost] * taken, mpLost: row[f.mpLost] * fight,
+        fight: c.fight, rest: c.rest,
+        taken: row[f.taken] * taken, spellTaken: f.spellTaken < 0 ? 0 : row[f.spellTaken] * taken, hpLost: row[f.hpLost] * taken, mpLost: row[f.mpLost] * c.fightRatio,
         deaths: n[at + 1] / kills, money: (n[at + ADENA] + n[at + LOOT]) / kills,
         shots: n[at + SHOTS] / kills, potions: n[at + POTIONS] / kills,
         mobAccur: Number(spot[7]) || 0, mobEvasion: Number(spot[8]) || 0 };

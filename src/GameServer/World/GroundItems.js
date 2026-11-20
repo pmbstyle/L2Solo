@@ -11,10 +11,14 @@ function leaderOf(item) {
     return Number(item?.model?.partyLootLeaderId ?? item?.partyLootLeaderId ?? 0);
 }
 
+function ownerOf(item) {
+    return item?.model?.partyLootGroupKey || item?.partyLootGroupKey || leaderOf(item);
+}
+
 function put(items, item) {
     items.spawns.push(item);
-    const leaderId = leaderOf(item);
-    if (leaderId <= 0) return item;
+    const leaderId = ownerOf(item);
+    if (!leaderId || typeof leaderId === 'number' && leaderId <= 0) return item;
     items.byLeader ??= new Map();
     const owned = items.byLeader.get(leaderId) ?? new Set();
     owned.add(item);
@@ -25,14 +29,15 @@ function put(items, item) {
 // Removes the spawn at `index` and returns it.
 function take(items, index) {
     const [item] = items.spawns.splice(index, 1);
-    const leaderId = leaderOf(item);
+    const leaderId = ownerOf(item);
     const owned = items.byLeader?.get(leaderId);
     if (owned?.delete(item) && owned.size === 0) items.byLeader.delete(leaderId);
     return item;
 }
 
 function ownedBy(items, leaderId) {
-    return items?.byLeader?.get(Number(leaderId)) ?? NONE;
+    const key = typeof leaderId === 'string' && leaderId.startsWith('command:') ? leaderId : Number(leaderId);
+    return items?.byLeader?.get(key) ?? NONE;
 }
 
-module.exports = { put, take, ownedBy, leaderOf };
+module.exports = { put, take, ownedBy, leaderOf, ownerOf };

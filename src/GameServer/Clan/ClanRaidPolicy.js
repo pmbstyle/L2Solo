@@ -4,6 +4,7 @@ const GradeRule = invoke('GameServer/Bot/AI/GearGradeRule');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const SpotRisk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const Priority = require('../Bot/Population/RaidRosterPriority');
+const Expedition = require('./ClanRaidExpedition');
 
 const MIN_MEMBERS = 7;
 const MAX_MEMBERS = 9;
@@ -58,7 +59,8 @@ function availableMember(member, profile, retained = new Set()) {
         // controlled, or already active raid groups here.
         if (!reclaimableEquipmentParty) return false;
     }
-    if (bossLevel && (level < bossLevel - MAX_LEVEL_BELOW_BOSS || level > bossLevel + MAX_LEVEL_ABOVE_BOSS)) return false;
+    if (bossLevel && (level < bossLevel - MAX_LEVEL_BELOW_BOSS
+        || level > require('../RaidBoss/GrandBossRules').maxLevel(profile, bossLevel + MAX_LEVEL_ABOVE_BOSS))) return false;
     if ((member?.stats?.clanHuntBackoffs || []).some((entry) => (
         String(entry?.spotId || '') === String(profile?.id || '')
         && SpotRisk.markActive(entry, member)
@@ -342,17 +344,32 @@ function assessment(clan = {}, profile = {}, previousGoal = null, options = {}) 
             if (!readinessCache.has(key)) readinessCache.set(key, Priority.facts(member, 'damage').score);
             return readinessCache.get(key);
         };
-        const helpers = available.filter(member => !mainIds.includes(memberId(member))
+        const preferredOrder = new Map((options.preferredMemberIds || []).map((id, index) => [id, index]));
+        const helperCandidates = available.filter(member => !mainIds.includes(memberId(member))
             && Number(member.clanId ?? member.stats?.clanId) === Number(clan.id)
-            && (!coreMemberIds || options.preferredMemberIds?.includes(memberId(member))))
-            .sort((a, b) => rank(b) - rank(a) || memberId(a) - memberId(b)).slice(0, 9);
-        // No role quota or equipment gate for helpers. A spare learned buffer
-        // may improve their own party, but is never needed to form it.
-        const buffer = available.find(member => !mainIds.includes(memberId(member))
-            && Number(member.clanId ?? member.stats?.clanId) === Number(clan.id)
-            && raidRole(member) === 'buffer' && (!coreMemberIds || options.preferredMemberIds?.includes(memberId(member)))
-            && require('./ClanCandidateCapabilities').contextualCapability(member, 'mainBuffer', { beneficiaries: helpers }));
-        if (!coreMemberIds && buffer && helpers.length > 1 && !helpers.includes(buffer)) helpers[helpers.length - 1] = buffer;
+            && (!coreMemberIds || preferredOrder.has(memberId(member))));
+        // A committed roster retains its authored group boundaries even if
+        // equipment or damage priorities change before admission.
+        const helpers = helperCandidates.sort((a, b) => coreMemberIds
+            ? preferredOrder.get(memberId(a)) - preferredOrder.get(memberId(b))
+            : Number(raidRole(b) === 'damage') - Number(raidRole(a) === 'damage')
+                || rank(b) - rank(a) || memberId(a) - memberId(b))
+            .slice(0, Expedition.MAX_MEMBERS - MAX_MEMBERS);
+        // Helpers have no role/gear quota. Where a spare learned buffer is
+        // available, let each helper party trade one damage slot for its buffs.
+        if (!coreMemberIds) for (let offset = 0; offset < helpers.length; offset += MAX_MEMBERS) {
+            const group = helpers.slice(offset, offset + MAX_MEMBERS);
+            const capable = member => raidRole(member) === 'buffer'
+                && require('./ClanCandidateCapabilities').contextualCapability(member, 'mainBuffer', { beneficiaries: group });
+            if (group.length < 2 || group.some(capable)) continue;
+            const buffer = helperCandidates.find(member => capable(member)
+                && (helpers.indexOf(member) < 0 || helpers.indexOf(member) >= offset + group.length));
+            if (buffer) {
+                const previous = helpers.indexOf(buffer), slot = offset + group.length - 1;
+                if (previous >= 0) helpers[previous] = helpers[slot];
+                helpers[slot] = buffer;
+            }
+        }
         if (helpers.length) {
             coreMemberIds = mainIds;
             eligible.push(...helpers);
@@ -379,7 +396,7 @@ function assessment(clan = {}, profile = {}, previousGoal = null, options = {}) 
             gear: 0, power: !power.ready || forecast?.assessment.reasons?.some(reason =>
                 ['raid_damage_below_regeneration', 'raid_fight_too_long'].includes(reason)) ? 1 : 0 },
         minMembers: desiredMembers,
-        maxMembers: coreMemberIds ? 18 : MAX_MEMBERS
+        maxMembers: coreMemberIds ? Expedition.MAX_MEMBERS : MAX_MEMBERS
     };
 }
 

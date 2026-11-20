@@ -1,6 +1,7 @@
 const Runtime = require('./Runtime');
 const Services = require('./Services');
 const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
+const TownNpcBodies = invoke('GameServer/Bot/AI/TownNpcBodies');
 const Navigation = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const VisitPolicy = require('./VisitPolicy');
 const { local } = require('./VisitNeed');
@@ -110,8 +111,7 @@ function tick(session, actor, timestamp = Date.now()) {
             name: npc.fetchName?.() || 'Clan Hall Manager',
             town: hall.town
         };
-        const approach = Approach.plan(session, actor, target, 'clan_hall');
-        if (approach?.waiting) return true;
+        const approach = Approach.plan(session, actor, target, 'clan_hall', { bodiesNear: TownNpcBodies.seenBy(actor) });
         const route = Navigation.move(session, actor, approach?.destination || target, 'clan_hall', {
             targetActor: null,
             arrivalRadius: approach?.arrivalRadius ?? 100

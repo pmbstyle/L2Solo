@@ -129,7 +129,18 @@ function authoredKitInputs(actor, session) {
     // without one): the fixture holds no earning answer (EquipmentIncomeRoute.spotUseOf); the shot verdict is the hunt's.
     const useRow = (state.spotId && Table.value(state.spotId, Table.roleFor(state), state.level, true))
         || Hunt.incomeRow(state);
-    const shotUse = roundRate(benefit < rawShots * shotPrice / hourAdena ? 0 : plan.perAction > 0 ? positive(useRow.shots) : 0);
+    // Shots pay while the exp they add (the role and level's best spot with
+    // them against the best without) covers what they cost against the hour
+    // before them: their NPC buy-back for paid shots (a bought shot resells
+    // there), nothing for beginner shots held.
+    const Shots = invoke('GameServer/Inventory/ShotStock');
+    const farm = Math.max(0, 1 - positive(Table.best(tableRole, state.level, false)?.exp)
+        / Math.max(1, positive(Table.best(tableRole, state.level, Shots.shotRows(plan))?.exp)));
+    const datapackPrice = Number(DataCache.items.find(row => row.selfId === plan.selfId)?.template?.price || 0);
+    const shotCost = Shots.beginnerAmount(state, plan) >= plan.perAction ? 0
+        : invoke('GameServer/Items/NpcSellRules').npcBuyPrice(datapackPrice);
+    const grossHour = hourAdena + rawShots * invoke('GameServer/Bot/Economy/StaticMerchantPricing').botBuyPrice(plan.selfId);
+    const shotUse = roundRate(rawShots > 0 && grossHour > 0 && farm >= rawShots * shotCost / grossHour ? positive(useRow.shots) : 0);
     const potionId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
     const potionUse = roundRate(positive(useRow.potions));
     const potionPrice = price(potionId);
@@ -143,10 +154,12 @@ function authoredKitInputs(actor, session) {
     // the NPC's list price (the bot's estimate where no NPC sells it).
     const listPrice = id => { const list = invoke('GameServer/Bot/Economy/StaticMerchantPricing').botNpcListPrice(id);
         return Number.isFinite(list) && list > 0 ? list : price(id); };
-    // The reserve holds one outing's refill of each kind used (whole units, never
-    // under one hour of use), whatever the bag holds; no Scroll of Escape in it.
-    const outingHours = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions').targetHours;
-    const refillOf = use => use > 0 ? Math.max(Math.ceil(use), Math.ceil(use * outingHours)) : 0;
+    // The reserve holds a full bag's refill of each kind used plus the reserve
+    // share (ConsumableTarget; whole units, never under one hour of use),
+    // whatever the bag holds; no Scroll of Escape in it.
+    const bagHours = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions').targetHours;
+    const refillOf = use => use > 0
+        ? Math.max(Math.ceil(use), invoke('GameServer/Bot/Economy/ConsumableTarget').target(use, bagHours)) : 0;
     const refillReserve = refillOf(shotUse) * listPrice(plan.selfId) + refillOf(potionUse) * listPrice(potionId);
     const potionUnitPrice = invoke('GameServer/Bot/Economy/StaticMerchantPricing').cheapestPurchase(potionId);
     const potionReserve = Math.max(0, Math.ceil(potionUse) - potionHeld) * potionUnitPrice;
@@ -983,6 +996,7 @@ try {
 
     FollowingState.tick(selectedTargetRefreshSession, selectedTargetRefreshBot, {}, {
         getClosestNewbieGuide: () => ({ locX: 0, locY: 0 }),
+        getClosestTown: () => ({ name: 'Test', x: 0, y: 0 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
 
@@ -2387,6 +2401,23 @@ try {
     assert.notStrictEqual(fieldRefreshSession.plan, 'getting_buffed', 'companion should keep following until the player reaches a Newbie Guide town');
     assert.strictEqual(fieldRefreshSession.roleDecision.reason, 'wait_for_newbie_guide_town', 'field companion should explain why it did not leave for a distant Newbie Guide');
 
+    // The guide lies within reach of the leader but the leader is in the field
+    // (3000 from the guide, no town): the buffs wait for the party to reach town.
+    const nearGuideBot = fakeActor(2000096, { locX: 80, locY: 0, level: 10 });
+    Object.keys(nearGuideBot.activeBuffs).forEach((key) => { nearGuideBot.activeBuffs[key] = 0; });
+    const nearGuideSession = fakeSession('bot_field_near_guide_party', nearGuideBot);
+    nearGuideSession.followPlayerSession = fieldRefreshLeaderSession;
+    nearGuideSession.partyCompanion = true;
+    nearGuideSession.plan = 'following';
+    publishSessions([fieldRefreshLeaderSession, nearGuideSession]);
+    FollowingState.tick(nearGuideSession, nearGuideBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: 3000, locY: 0, locZ: 0 }),
+        getClosestTown: () => ({ name: 'Test', x: 3000, y: 0 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.notStrictEqual(nearGuideSession.plan, 'getting_buffed', 'a field companion must not leave for a guide near the party');
+    assert.strictEqual(nearGuideSession.roleDecision.reason, 'wait_for_newbie_guide_town', 'it says it waits for town');
+
     const overleveledRefreshBot = fakeActor(2000046, { locX: 80, locY: 0, level: 26 });
     Object.keys(overleveledRefreshBot.activeBuffs).forEach((key) => { overleveledRefreshBot.activeBuffs[key] = 0; });
     const overleveledRefreshSession = fakeSession('bot_overleveled_refresh_party', overleveledRefreshBot);
@@ -2548,6 +2579,66 @@ try {
     assert(errandLines.some((line) => line.includes('returning') || line.includes('back to camp')), 'companion should announce its return before shopping');
     assert.strictEqual(errandBot.fetchPrivateStore?.(), undefined, 'companion errand must never create a private sale store');
     assertFundedStockKitUnchanged();
+
+    // The panel Regroup recalls a companion on a town errand: it follows again
+    // under the regroup order instead of walking on to the merchant.
+    assert.strictEqual(errandSession.plan, 'shopping');
+    BotManager.sessions = [errandSession];
+    errandBot.clearDestId ??= () => {};
+    const realTimeoutRegroup = global.setTimeout;
+    global.setTimeout = () => 0;
+    try {
+        CompanionControl(errandLeaderSession, ['companion-control', 'regroup']);
+    } finally { global.setTimeout = realTimeoutRegroup; }
+    assert.strictEqual(errandSession.plan, 'following', 'the panel Regroup must end the companion town errand');
+    assert.strictEqual(errandSession.companionShopping, undefined, 'the recalled companion drops its errand');
+    assert.strictEqual(errandLeaderSession.partyRegroupDirective?.active, true, 'the panel Regroup sets the regroup formation');
+    // In town, a recalled companion whose errand cooldown expired stays following
+    // while the formation holds (it does not restart the errand).
+    errandSession.lastCompanionTownErrandAt = 0;
+    const recalledX = errandBot.locX;
+    errandBot.locX = recalledX + 300;
+    FollowingState.tick(errandSession, errandBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(errandSession.plan, 'following', 'a recalled companion must not restart its town errand during the Regroup');
+    errandBot.locX = recalledX;
+    BotManager.sessions = [];
+    delete errandLeaderSession.partyRegroupDirective;
+
+    // The same short-of-shots companion keeps following while the party hunts
+    // in the field near the town (the leader outside it): no town errand.
+    {
+        const TownPathfinderField = invoke('GameServer/Bot/AI/TownPathfinder');
+        let field = null;
+        for (const r of [3000, 4000, 5000, 6000, 7000]) for (let a = 0; a < 16 && !field; a++) {
+            const c = { locX: Math.round(83396 + Math.cos(a * Math.PI / 8) * r), locY: Math.round(147904 + Math.sin(a * Math.PI / 8) * r), locZ: -3404 };
+            if (!TownPathfinderField.isInsideTown(c)) field = c;
+        }
+        assert(field, 'the scene needs a field point near Giran');
+        const townLeaderLoc = { locX: errandLeader.locX, locY: errandLeader.locY, locZ: errandLeader.locZ };
+        const townBotLoc = { locX: errandBot.locX, locY: errandBot.locY, locZ: errandBot.locZ };
+        Object.assign(errandLeader, field);
+        Object.assign(errandBot, { ...field, locX: field.locX + 40 });
+        Object.assign(errandSession, { plan: 'following', companionShopping: undefined, shoppingTarget: undefined,
+            resumeAfterShopping: undefined, shoppingDoneAnnounced: false, lastCompanionTownErrandAt: 0 });
+        publishSessions([errandLeaderSession, errandSession, fakeSession('bot_shot_seller', shotSeller)]);
+        deliverNearDecision(errandSession);
+        assert(invoke('GameServer/Inventory/ShotStock').needsActorRestock(errandBot), 'the field scene keeps the companion short of shots');
+        FollowingState.tick(errandSession, errandBot, {}, {
+            getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+            getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
+            say() {}, executeCombat() {}, executePvPCombat() {}
+        });
+        assert.strictEqual(errandSession.plan, 'following', 'a companion short of shots keeps following while the party hunts in the field');
+        assert.strictEqual(errandSession.companionShopping, undefined, 'no town errand is started from the field');
+        Object.assign(errandLeader, townLeaderLoc);
+        Object.assign(errandBot, townBotLoc);
+        Object.assign(errandSession, { lastCompanionTownErrandAt: 0 });
+        publishSessions([errandLeaderSession, errandSession]);
+    }
 
     let marketSeller = fakeActor(2000039, { locX: 83500, locY: 147904, locZ: -3404 });
     const marketBot = fakeActor(2000040, { locX: 83456, locY: 147904, locZ: -3404 });

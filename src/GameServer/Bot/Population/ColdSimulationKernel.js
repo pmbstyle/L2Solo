@@ -2,7 +2,7 @@ const { isDeepStrictEqual } = require('node:util');
 const PveEncounter = require('./ColdPveEncounter');
 const ColdEconomyPlan = require('./ColdEconomyPlan');
 const ColdSoloWindow = require('./ColdSoloWindow');
-const { ownClock, livedClock, stepElapsedMs } = ColdSoloWindow;
+const ColdClock = require('./ColdClock');
 const DiagnosticConfig = require('./PopulationConfig');
 const CharacterStateSources = require('../../World/CharacterStateSources');
 const SparseNumericStorage = require('./SparseNumericStorage');
@@ -1414,8 +1414,9 @@ class ColdSimulationKernel {
                 const atomicPartyLimit = marker && require('../../Clan/ClanRaidRoster').valid(marker)
                     ? Math.max(this.maxAtomicPartySize, marker.memberIds.length) : this.maxAtomicPartySize;
                 const occupiedOwnership = this.inFlight.size + this.commanding.size;
-                const atomicCapacityBurst = candidateMemberIds.length > this.maxInFlight
+                const atomicCapacityBurst = candidateMemberIds.length > Math.min(this.maxInFlight, this.maxBatch)
                     && candidateMemberIds.length <= atomicPartyLimit
+                    && candidateMemberIds.length <= Protocol.MAX_BATCH
                     && occupiedOwnership === 0;
                 if (candidateMemberIds.length > this.maxInFlight && !atomicCapacityBurst) {
                     this.partyCapacityBlocked = true;
@@ -1681,9 +1682,10 @@ class ColdSimulationKernel {
         const id = Number(characterId);
         const current = this.states.get(id);
         if (!this.currentCommand(id, attempt)) return;
-        const timestamp = this.now();
+        // At the bot's clock when that lies ahead: a command woken inside a round's
+        // run-past goes on from its end, it lives that time once.
+        const { timestamp, elapsedMs } = ColdClock.step(current.state, this.now());
         try {
-            const elapsedMs = stepElapsedMs(current.state, timestamp);
             const raidPreparing = require('./RaidSupplyPolicy').held(current.state, timestamp);
             const hallVisit = !raidPreparing && mainVisit(current.state, this);
             const guide = !hallVisit && !raidPreparing && guideRound(current.state, timestamp);
@@ -2169,8 +2171,10 @@ class ColdSimulationKernel {
             }
 
             if (!this.resolveParty) throw new Error('party_resolver_unavailable');
-            // A member that held for an event (livedClock) lived its wait.
-            const lastResolvedAt = Math.min(...run.members.map((member) => livedClock(member, startedAt) || startedAt - 60000));
+            // The round starts no earlier than its members' clocks (a round's last
+            // action may end past its step) and credits the time since the earliest
+            // member's (a member that held for an event lived its wait).
+            const roundAt = Math.max(...run.members.map(member => ColdClock.step(member, startedAt).timestamp));
             const resolveOptions = {
                 episodeId: stepProposalId(run.party.leaderId, run.startedAt),
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
@@ -2181,9 +2185,9 @@ class ColdSimulationKernel {
                 spotHunters: this.spotHunters(run.spot),
                 targetNpcId: run.targetNpcId,
                 lastFight: fightHoldsTrip,
-                elapsedMs: Math.max(1000, startedAt - lastResolvedAt),
+                elapsedMs: Math.max(...run.members.map(member => ColdClock.step(member, roundAt).elapsedMs)),
                 rng: deterministicRandom(run.members[0] || {}),
-                timestamp: startedAt
+                timestamp: roundAt
             };
             const raids = require('./ColdRaidEncounter');
             const raid = !meetingPending && run.spot?.raidBoss === true;
@@ -2437,8 +2441,7 @@ class ColdSimulationKernel {
             // the stats can hold a fraction, and every clock of the step comes from here.
             // Never before the bot's own clock: a step woken inside a hunt window
             // goes on from its end, it lives that time once.
-            const timestamp = Math.ceil(Math.max(startedAt, active.dueAt || 0, ownClock(active.state)));
-            const elapsedMs = stepElapsedMs(active.state, timestamp);
+            const { timestamp, elapsedMs } = ColdClock.step(active.state, Math.max(startedAt, active.dueAt || 0));
             const raidPreparing = require('./RaidSupplyPolicy').held(active.state, timestamp);
             const guide = !raidPreparing && guideRound(active.state, timestamp);
             const lifecyclePlan = !raidPreparing && !guide && this.planLifecycle
@@ -2556,10 +2559,10 @@ class ColdSimulationKernel {
         };
         add(first.result);
         for (;;) {
-            // huntedThrough (ColdSoloWindow): the round's start, the end of the credited hunt
-            // when it is the last; a round's own clock (lastResolvedAt) is the same.
+            // huntedThrough (ColdSoloWindow): the end of the round's last action, the end of the
+            // credited hunt when it is the last; a round's own clock (lastResolvedAt) is the same.
             const stamped = { ...round.result, patch: { ...round.result.patch,
-                stats: { ...round.result.patch?.stats, huntedThrough: round.timestamp } } };
+                stats: { ...round.result.patch?.stats, huntedThrough: ColdClock.doneAt(round.result) ?? round.timestamp } } };
             // A round's projection is its own turn, as its fight is (resolveStep: phases).
             await nextTurn();
             if (!this.resolverSourceCurrent(source)) return null;
@@ -2567,22 +2570,25 @@ class ColdSimulationKernel {
             if (!this.resolverSourceCurrent(source)) return null;
             // Three guards bound the loop whatever endOf decides: a round cap, the
             // look-ahead (the next round due past the step's clock + WINDOW_LEAD_MS:
-            // huntedThrough stays inside it) and a round that does not move the
-            // clock (counted in windowEnd).
+            // huntedThrough stays inside it) and a round that does not move the bot's
+            // clock (ColdClock.own; counted in windowEnd).
             const ended = ColdSoloWindow.endOf(round.state, after, round.result, readers)
                 || (rounds >= MAX_WINDOW_ROUNDS ? 'round_cap' : '')
                 || (Math.ceil(Number(after.timing?.nextResolveAt)) >= first.timestamp + WINDOW_LEAD_MS ? 'lead' : '')
-                || (Math.ceil(Number(after.timing?.nextResolveAt)) > round.timestamp ? '' : 'stalled');
+                || (ColdClock.own(after) > ColdClock.own(round.state) ? '' : 'stalled');
             if (ended) {
                 // projected: the last round's projection, the step's own (its situations raised
                 // once): the step's projection goes on from it, it does not project the round again.
+                // Its due is the window's (ColdSoloWindow.dueAt).
                 const result = { ...stamped, ...(soulCrystals.length ? { soulCrystals } : {}) };
-                return { ...round, result, projected: after, ended, rounds, loot: { ...result, materialize: { items } }, posted: { events, debug } };
+                const due = ColdSoloWindow.dueAt(ended, after);
+                const projected = due === after.timing?.nextResolveAt ? after : { ...after, timing: { ...after.timing, nextResolveAt: due } };
+                return { ...round, result, projected, ended, rounds, loot: { ...result, materialize: { items } }, posted: { events, debug } };
             }
             await nextTurn();
             if (!this.resolverSourceCurrent(source)) return null;
-            const timestamp = Math.ceil(Number(after.timing.nextResolveAt));
-            const result = await this.resolveSolo({ ...roundOptions, state: after, elapsedMs: stepElapsedMs(after, timestamp),
+            const { timestamp, elapsedMs } = ColdClock.step(after, Number(after.timing.nextResolveAt));
+            const result = await this.resolveSolo({ ...roundOptions, state: after, elapsedMs,
                 rng: deterministicRandom(after), timestamp });
             if (!this.resolverSourceCurrent(source)) return null;
             add(result);
@@ -2631,7 +2637,13 @@ class ColdSimulationKernel {
             if (visited.has(proposal.characterId)) continue;
             const group = proposal.atomicGroup?.id
                 ? eligible.filter(entry => entry.atomicGroup?.id === proposal.atomicGroup.id) : [proposal];
-            if (proposals.length + group.length > limit) break;
+            // The ownership window can be smaller than one marked expedition.
+            // Flush that complete group alone, as its atomic admission did;
+            // waiting for an ordinary 32-row window would strand 36/40 owners.
+            const atomicBurst = proposals.length === 0 && group.length <= Protocol.MAX_BATCH
+                && group.length <= require('../../Clan/ClanRaidExpedition').MAX_MEMBERS
+                && group[0]?.atomicGroup?.memberIds?.length === group.length;
+            if (proposals.length + group.length > limit && !atomicBurst) break;
             group.forEach(entry => { visited.add(entry.characterId); proposed.set(Number(entry.characterId), entry.nextState); });
             let transportGroup = group;
             let transportSizes = proposalSizes(group);
@@ -2648,6 +2660,10 @@ class ColdSimulationKernel {
                     return { ...transport, nextStateDelta: ColdStateDelta.create(base, nextState) };
                 });
                 transportSizes = proposalSizes(transportGroup);
+                if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                    transportGroup = Protocol.compactAtomicGroups(transportGroup);
+                    transportSizes = proposalSizes(transportGroup);
+                }
                 if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
                     oversized.push(...group);
                     continue;

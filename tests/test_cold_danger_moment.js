@@ -99,7 +99,8 @@ for (const [name, want, input] of [
     const quiet = { botReadyAt: 1050, mobReadyAt: 1e6 };
     const longRun = slice(state({ foe: { ...mob, runSpd: profile.runSpd - 10 }, timers: quiet }));
     const shortRun = slice(state({ foe: { ...mob, runSpd: 1 }, timers: quiet }));
-    assert(longRun.patch.stats.restUntil - shortRun.patch.stats.restUntil
+    // Each sits down where its run ends (its clock, doneAt): the longer run takes that much more of the hunt.
+    assert(longRun.doneAt - shortRun.doneAt
         >= DangerRule.chaseMs(profile.runSpd, profile.runSpd - 10) - DangerRule.chaseMs(profile.runSpd, 1) - 1000,
     'a chaser nearly as fast costs the longer run');
     assert(shortRun.patch.stats.restUntil - atFight >= DangerRule.chaseMs(profile.runSpd, 1), 'the run adds to the rest');

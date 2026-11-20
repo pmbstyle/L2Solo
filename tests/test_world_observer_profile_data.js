@@ -3,7 +3,9 @@ const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { project } = require('../src/WorldObserver/ActorEconomyProjection');
 const { createActorCollections } = require('../src/WorldObserver/ActorCollections');
 const UI = require('../src/WorldObserver/public/profileData');
-const itemFor = id => ({ selfId: id, name: id === 673 ? 'Avadon Shield' : `Item ${id}` });
+const itemFor = id => id === 673
+    ? { selfId: id, name: 'Avadon Shield', iconUrl: '/observer/item-icons/shield_avadon_shield_i00.png' }
+    : { selfId: id, name: `Item ${id}` };
 const network = { decisionSeq: 7, activityLeaf: 123, activity: {
     rootKey: 'power:673:8', nodeKey: 'item:1872', activity: 'hunting', kind: 'drop', itemId: 1872,
     amount: 3, npcId: 1001, spotId: 'field', price: 100, effort: .5, requirements: new Array(1000).fill({ cost: 2 })
@@ -71,6 +73,7 @@ assert.match(UI.renderEconomy(economy), /Amounts are priorities only/);
     const html = UI.renderCollection('skills', skills);
     assert.ok(!html.includes('<img onerror=x>')); assert.match(html, /&lt;img/);
     assert.match(UI.renderCollection('warehouse', warehouse), /Next|Previous/);
+    assert.match(UI.renderCollection('warehouse', warehouse), /<img src="\/observer\/item-icons\/shield_avadon_shield_i00\.png"/);
 
     const fs = require('node:fs'), vm = require('node:vm');
     const app = fs.readFileSync(require.resolve('../src/WorldObserver/public/app.js'), 'utf8');

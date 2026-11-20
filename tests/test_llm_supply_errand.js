@@ -114,6 +114,11 @@ async function main() {
         assert.strictEqual((await BotSupplyErrand.purchaseAtDestination(bot, acceptedErrand)).reason, 'supply_meeting_cancelled',
             'a cancelled obligation cannot become a second purchase');
         Meetings.receipt = originals.meetingReceipt;
+        // The gear reserve sells a bot's own plan only: a player's fetch of a C weapon
+        // the Giran reserve store lists (Flamberge) finds no supply, as before the reserve.
+        DataCache.init();
+        assert.strictEqual(BotSupplyErrand.request(session, player, 71, 1).reason, 'supply_not_available',
+            'a companion fetching a reserve gear piece for the player is refused');
         DataCache.items = [{ selfId: 1463, template: { name: 'Soulshot: D-grade' }, etc: { stackable: true } }];
         assert.strictEqual(MarketOpportunity.resolveSupplyItem('Soulshots D grade').selfId, 1463);
         assert.strictEqual(MarketOpportunity.normalizeItemLookup('D-grade soulshots'), 'soulshot_d_grade');
@@ -134,6 +139,7 @@ async function main() {
         BotTownTravel.request = (_session, _bot, _ai, _reason, options) => {
             assert.strictEqual(options.allowCompanion, true);
             assert.strictEqual(options.forceScrollOfEscape, true);
+            _session.plan = 'shopping';
             arrivalCallback = options.onArrival;
             return travelMode;
         };

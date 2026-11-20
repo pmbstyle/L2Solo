@@ -6,6 +6,7 @@ const NpcDecay = invoke('GameServer/World/Generics/NpcDecay');
 const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 const RemoveNpc = invoke('GameServer/World/Generics/RemoveNpc');
 const NpcDie = invoke('GameServer/Npc/Generics/Die');
+const FailureLog = require('../src/FailureLog');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 
@@ -165,6 +166,7 @@ function wait(ms) {
         0,
         'a reward exception must not strand the corpse before decay is registered'
     );
+    assert.strictEqual(FailureLog.snapshot()?.['kill.drops'], 1, 'and the failed drop is counted');
 
     const effectViewer = viewer();
     effectViewer.dataSendToMeAndOthers = function dataSendToMeAndOthers(packet) {

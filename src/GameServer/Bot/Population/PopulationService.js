@@ -1,7 +1,7 @@
 const FailureLog = require('../../../FailureLog');
 const PartyMarketBreak = require('./PartyMarketBreak');
 const Situations = require('../Situations');
-const { stepElapsedMs } = require('./ColdSoloWindow');
+const ColdClock = require('./ColdClock');
 const { WorkerCommandAdmissionRefusal, checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
 const { PartyAdmission, limit: partyLimit, priority: admissionPriority } = require('./PartyAdmission');
 // A roster the party bound refuses is counted (situations party:cap:hit): a reservation, a
@@ -971,6 +971,9 @@ const PopulationService = {
         this.startBackgroundJobRegistry();
         this.startLifecycleSafetySweep();
         this.startPartyAssemblyEvents();
+        Promise.resolve(this.lifeReadyPromise).then(() => {
+            if (this.started) require('./GrandBossRaidLifecycle').start();
+        }).catch(error => utils.infoWarn('GrandBoss', 'startup: %s', error.message));
         Promise.resolve(this.lifeReadyPromise).then(() => this.startOpportunisticRaids())
             .catch(error => utils.infoWarn('BotRaid', 'startup failed: %s', error.message));
         Promise.resolve(this.lifeReadyPromise).then(() => this.startClanWars())
@@ -1009,6 +1012,7 @@ const PopulationService = {
     },
 
     stop() {
+        require('./GrandBossRaidLifecycle').stop();
         this.opportunisticRaids?.stop();
         this.clanWars?.stop();
         this.clanWars = null;
@@ -1407,7 +1411,7 @@ const PopulationService = {
                 if (!this.started || this.partyFormationRunning || !bossFree(Catalog.findById(objective.spotId))) return null;
                 const current = await LifeState.statesByIds(members.map(s => s.characterId));
                 if (current.length !== 9 || current.some(s => !Policy.available(s, Date.now(), objective.preparationId))
-                    || !current.every(s => Policy.recruitLevelAllowed(s, objective.sourceLevel))
+                    || !current.every(s => Policy.recruitLevelAllowed(s, objective.sourceLevel, objective))
                     || !Policy.composition(current).ready) return null;
                 const checked = await assess(current, Catalog.findById(objective.spotId));
                 if (!checked.ready || !current.every((s, i) => current.slice(i + 1).every(peer =>
@@ -1892,6 +1896,8 @@ const PopulationService = {
                 // continue hunting and washing karma in the cold simulation.
                 if (session.pkProfile || session.plan === 'pk_hunting') return false;
                 if (session.clanAllianceQuest || session.partyCompanion === true || session.followPlayerSession) return false;
+                if (session.hotBackgroundPartyId && require('./GrandBossRaidLifecycle')
+                    .keepHot(BackgroundPartyState.find(session.hotBackgroundPartyId))) return false;
                 let distance = Infinity;
                 for (const playerSession of players) distance = Math.min(distance, distance2d(session.actor, playerSession.actor));
                 nearest.set(session, distance);
@@ -2637,12 +2643,13 @@ const PopulationService = {
             && !!inventoryCleanupGoal(state);
         const cleanupState = precomputedResult ? null : inventoryCleanupTravelState(state, startedAt);
         if (cleanupState) return this.resolveColdCleanupTravel(state, cleanupState, startedAt);
-        const elapsedMs = stepElapsedMs(state, startedAt);
+        // At the bot's clock when that lies ahead (a round's run-past): the step lives that time once.
+        const { timestamp, elapsedMs } = ColdClock.step(state, startedAt);
         // These transitions have no planning, market search, or inventory work
         // between their persisted deadline and the next state change.
         if (cleanupAfterFight || state.activity === 'traveling'
             || (state.activity === 'resting' && Number(state.stats?.restUntil || 0) > 0)) {
-            return this.resolveColdTransition(state, workerRequest, options, precomputedResult, cleanupAfterFight, elapsedMs, startedAt);
+            return this.resolveColdTransition(state, workerRequest, options, precomputedResult, cleanupAfterFight, elapsedMs, timestamp);
         }
         const serviceResult = this.resolveColdServiceBranch(state, startedAt, workerRequest?.precomputedPlan?.buildTaken === true);
         if (serviceResult !== COLD_RESOLVE_NEXT) return serviceResult;
@@ -2727,10 +2734,10 @@ const PopulationService = {
         const karmaPolicy = invoke('GameServer/Bot/Population/ColdKarmaPolicy');
         const karmaPlan = karmaPolicy.active(state) ? karmaPolicy.plan(state, SpotProfiles.ensure(), startedAt) : null;
         if (karmaPlan && !joinedBackgroundParty(state)) {
+            const { timestamp, elapsedMs } = ColdClock.step(state, startedAt);
             const result = BackgroundResolver.resolveSolo({ state: karmaPlan.plannedState,
                 spot: karmaPlan.spot, spotHunters: SpotProfiles.spotHunters(karmaPlan.spot),
-                targetNpcId: karmaPlan.targetNpcId, timestamp: startedAt,
-                elapsedMs: stepElapsedMs(state, startedAt) });
+                targetNpcId: karmaPlan.targetNpcId, timestamp, elapsedMs });
             return LifeState.applyResolve(karmaPlan.plannedState, result, options)
                 .then(saved => ({ ok: !!saved, state: saved || state, debug: result.debug }));
         }

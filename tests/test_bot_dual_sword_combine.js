@@ -200,13 +200,16 @@ async function run() {
             target: { actorId: 77 }
         }
     };
-    await ShoppingState.sellAndRestock(hotPurchaseSession, {
+    const hotBuyer = {
         fetchId: () => 42,
         fetchName: () => 'DualProbe',
         backpack: {
             fetchItemFromSelfId: (selfId) => Number(selfId) === 57 ? { fetchAmount: () => 19900000 } : null
         }
-    }, null, { say() {} });
+    };
+    hotPurchaseSession.actor = hotBuyer;
+    hotPurchaseSession.plan = 'shopping';
+    await ShoppingState.sellAndRestock(hotPurchaseSession, hotBuyer, null, { say() {} });
     assert.strictEqual(hotPurchaseSession.coldLifeState.stats.equipmentPlan.combine.resultId, 2523,
         'a hot private-store component purchase must retain the final dual-sword plan');
     console.log('Bot dual-sword combine checks passed');

@@ -153,6 +153,8 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - Bots create clans, level clans up, form clan farm parties
 - Bots will fight over mobs on a farm spot
 - Bot clans can form raid boss farm parties
+- Queen Ant, Core and Orfen have C4 stats, scripted guards/healers, Orfen's retreat and pull, and epic jewelry drops. Player parties and autonomous clans fight them through native actors, including without a nearby player. These three bosses have no +8 Raid Curse limit; C4 deep-blue drop penalties still apply. The server's shared raid stat reduction and ordinary loot rates also apply. Epic jewelry keeps its 30% single-item roll independently of the leveling preset (`General.epicDropChanceRate`, default 1).
+- Their C4 respawn windows are 36 ± 17, 60 ± 23 and 48 ± 20 hours respectively. Queen Ant's ring, Core's ring and Orfen's earring are available in the admin shop; wearing two copies grants the passive once.
 - Players can join bot parties
 - Clan wars, including autonomous clan wars
 
@@ -226,27 +228,84 @@ Private local overrides go to `config/local.ini`. This is where API keys and a m
 
 ## In-Game Commands
 
-- `.admin` - open the admin menu.
-- `.sell` - sell all unequipped non-Adena items for 50% item value.
-- `.afksell` - open the native private-sale window and leave a persistent AFK shop at the current peace-zone location.
-- `.afkbuy` - open the native private-purchase window and reserve its Adena budget in a persistent AFK shop.
-- `.afkstop` - close the active AFK shop remotely and return all remaining reserved items or Adena.
-- `.bot` / `.b` - open companion controls.
-- `.botparty` / `.bp` - search active bots to join the player party; distant companions catch up after joining.
-- `.joinparty [name]` - ask to take over the named bot's autonomous party, or the nearest eligible bot party when no name is given; if accepted, the player becomes leader and the bots resume their autonomous party after the player leaves.
-- `.botfriends` / `.bf` - friend list and const party management.
-- `.botstatus` / `.bs` - show a bot overview panel.
-- `.botstatus <name>` / `.bs <name>` - show detailed status for a specific bot.
-- `.botpath` / `.bpath` (optionally with `<name>`) - inspect bot movement, town-route waypoints, and geodata path diagnostics.
-- `.trade` or `/trade` - open the bot trade window with the targeted SimPlayer, useful as a fallback to the native client trade action.
-- `.leave` - dismiss all companion bots.
-- `.kick <name>` - dismiss one companion bot.
-- `/invite` while targeting a bot - recruit that bot as a companion.
-- `/dismiss <name>` and `/leave` also work through the party request path.
-- `.go` to start arena PvP
-- `.buff` target a bot to ask for a paid buff service
+Enter dot commands in local chat. Replace `<name>` with a character's name; square brackets such as `[name]` mark an optional argument.
+
+[Party and companions](#party-and-companions) · [Clan multi-party](#clan-multi-party) · [Save and restore parties](#save-and-restore-parties) · [Trade and services](#trade-and-services) · [Bot diagnostics](#bot-diagnostics) · [Menus and arena](#menus-and-arena)
+
+### Party and companions
+
+Your main party holds you and up to eight bots. Bots outside your clan can join under the normal invitation rules.
+
+| Command | What it does |
+| --- | --- |
+| `.bot` / `.b` | Open companion controls, including loot pickup settings. |
+| `.botparty` / `.bp` | Find bots to invite; distant companions catch up after joining. |
+| `.invite <name>` / `/invite <name>` | Invite a bot into your main party. The native `/invite` action also works with a targeted bot. |
+| `.joinparty [name]` | Ask to take over the named autonomous bot party, or the nearest eligible party if no name is given. Bots resume their autonomous party when you leave. |
+| `.botfriends` / `.bf` | Open the friend list and const party management. |
+| `.kick <name>` / `/dismiss <name>` | Dismiss one companion from the main party. |
+| `.leave` / `/leave` | Dismiss your main companion party and all additional parties. |
 
 Nearby bots also react to plain chat lines such as `hi`, `follow`, `wait`, `hunt`, `heal`, and `buff`.
+
+### Clan multi-party
+
+Clan leaders with an existing main party can assemble additional parties from their own clan's bots. Each additional party holds up to nine bots, including its leader. There is no separate limit on the number of additional parties.
+
+| Command | What it does |
+| --- | --- |
+| `.createparty <leader>` | Create the next additional party with the named clan bot as its leader. |
+| `.invite-p1 <name>` | Invite a clan bot into p1. |
+| `.kick-p1 <name>` | Dismiss one member of p1. |
+| `.leader-p1 <name>` | Promote an existing member to leader of p1. |
+| `.dismiss-p1` | Dismiss all members of p1. |
+| `.parties` | List additional parties, their leaders, members and movement orders. |
+| `.p1 hold` | Hold current positions and defend nearby. |
+| `.p1 follow` | Resume following the player. |
+| `.p1 regroup` | Gather in formation, then resume the previous movement order. |
+| `.main hold` / `.main follow` / `.main regroup` | Give a movement order to the main party. |
+| `.all hold` / `.all follow` / `.all regroup` | Give a movement order to the main party and every additional party. |
+
+Replace `p1` with `p2`, `p3`, and so on to address another party. Dismissing p1 does not renumber the others. Remove a bot from the main party before inviting it into an additional party.
+
+Parties share combat targets and threats, while buffs, healing and resurrection stay inside each party. The main party's loot pickup toggle and client loot distribution apply to all additional parties. Leaving the main party or disconnecting dismisses the additional parties too.
+
+### Save and restore parties
+
+For clan leaders: keep one saved composition per character, including the main party, every additional party and their designated leaders. The save survives logout and server restarts.
+
+| Command | What it does |
+| --- | --- |
+| `.partysave` | Save the current composition, replacing the previous save. |
+| `.partyrestore` | Assemble the saved main party first, then all saved additional parties. Works when you are alone too. |
+
+Already assembled members are skipped. Unavailable characters are reported in chat; repeat `.partyrestore` to retry them. If current parties conflict with the saved assignments, adjust those parties first.
+
+### Trade and services
+
+| Command | What it does |
+| --- | --- |
+| `.trade` / `/trade` | Open the trade window with the targeted bot; also works as a fallback to the native client trade action. |
+| `.sell` | Sell all unequipped non-Adena items for 50% item value. |
+| `.afksell` | Open the native private-sale window and leave a persistent AFK shop at the current peace-zone location. |
+| `.afkbuy` | Open the native private-purchase window and reserve its Adena budget in a persistent AFK shop. |
+| `.afkstop` | Close the active AFK shop remotely and return remaining reserved items or Adena. |
+| `.buff` | Ask the targeted bot for a paid buff service. |
+
+### Bot diagnostics
+
+| Command | What it does |
+| --- | --- |
+| `.botstatus [name]` / `.bs [name]` | Show the bot overview panel, or detailed status for the named bot. |
+| `.botpath [name]` / `.bpath [name]` | Inspect bot movement, town-route waypoints and geodata path diagnostics. |
+
+### Menus and arena
+
+| Command | What it does |
+| --- | --- |
+| `.menu` | Open the main in-game menu. |
+| `.admin` | Open the admin menu. |
+| `.go` | Start arena PvP. |
 
 ## Credits
 

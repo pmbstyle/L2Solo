@@ -72,14 +72,14 @@ function washSpot(state, spots, timestamp = Date.now(), accept = null) {
 }
 
 // The earning decision taken in a karma step (plan): the search's answer held on
-// stats (the planned state's copy: written), its bit cleared through Situations.decided,
-// as the build's decided path does (the spot marks stay: they last the outing).
+// stats (the planned state's copy: written), its bit cleared and a moved answer raised
+// through Situations.earningTaken, as the far step's lone decision does (the spot marks stay:
+// they last the outing).
 function decideEarning(state, stats, spots, timestamp) {
     const IncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute'); // lazy: cycle its search reads this module
     const found = IncomeRoute.search(state, { spots, timestamp, required: true });
     const earning = Situations.withOwnFacts(state, IncomeRoute.answerOf(found.route, timestamp, found.error));
-    stats.woken = Situations.decided(stats, 'earning_spot', { caller: 'karma_step', subject: state.characterId,
-        answer: earning.spotId ?? 'none', was: state.stats?.earning?.spotId ?? 'none' });
+    Object.assign(stats, Situations.earningTaken({ ...state, stats }, earning, 'karma_step'));
     stats.earning = earning;
     return earning;
 }

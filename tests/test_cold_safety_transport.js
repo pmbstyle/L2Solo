@@ -220,6 +220,26 @@ async function deadlinesAndLifecycle() {
     console.log('Pulse-only deadline / late ACK / replacement / exact disposal PASS');
 }
 
+async function workerRefusal() {
+    const f = fixture();
+    try {
+        const pending = f.transport.request('presence', [checkpoint(1)]);
+        let settled;
+        pending.then(result => { settled = result; });
+        const msgId = f.sent.at(-1).msgId;
+        f.worker.emit('message', Protocol.envelope('fault', 'other-epoch', { reason: 'x', msgId }));
+        f.worker.emit('message', Protocol.envelope('fault', epoch, { reason: 'x', msgId: 'other' }));
+        await null; await null;
+        assert.strictEqual(settled, undefined, 'a fault of another epoch or request leaves the request pending');
+        f.worker.emit('message', Protocol.envelope('fault', epoch,
+            { reason: 'out_worker_presence_ack_invalid_safety_receipt', bytes: 0, msgId }));
+        await null; await null;
+        assert.deepStrictEqual(settled, { ok: false, results: [], reason: 'worker_refused' });
+        f.ack();
+        assert.strictEqual(f.totals.length, 0, 'a late receipt forwards no totals');
+    } finally { f.transport.dispose(); }
+}
+
 async function postAndCallbackFailures() {
     for (const post of [() => false, () => 'unknown-message-id', () => { throw Error('generated post refusal'); }]) {
         const f = fixture(post);
@@ -259,6 +279,7 @@ async function postAndCallbackFailures() {
         await malformedReceipts();
         await deadlinesAndLifecycle();
         await postAndCallbackFailures();
+        await workerRefusal();
     } finally { Object.assign(global, originalTimers); }
     assert.strictEqual(Object.keys(require.cache).some(file => /[\\/]src[\\/]Database\.js$/.test(file)), false);
     console.log('ColdSafetyTransport: PASS; no timers/DB/Global/worker process');

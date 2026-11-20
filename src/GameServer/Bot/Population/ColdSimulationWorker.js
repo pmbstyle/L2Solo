@@ -1707,10 +1707,13 @@ function send(type, payload = {}, msgId = null, payloadBytes = null, meetingFall
         valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch });
     }
     if (!valid.ok) {
+        // A refused reply still ends its request: the fault names it (msgId) and main
+        // ends the waiter for it at once (no second answer of the reply's type).
         if (type !== 'fault') {
             parentPort.postMessage(Protocol.envelope('fault', epoch, {
                 reason: `out_${type}_${valid.reason}`,
-                bytes: Number(valid.bytes || 0)
+                bytes: Number(valid.bytes || 0),
+                msgId
             }));
         }
         return false;

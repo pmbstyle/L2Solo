@@ -6,6 +6,7 @@ const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const EconomyContext = invoke('GameServer/Bot/Economy/EconomyContext');
 const EconomicValuation = invoke('GameServer/Bot/Economy/EconomicValuation');
 const Packet = require('../../Bot/Economy/StatsPacket');
+const { killEffect } = require('../../World/KillEffect');
 
 function clearEffectsOnDeath(session, actor) {
     const silentMoving = Object.values(actor.effects || {}).find((effect) => effect?.stats?.silentMoving);
@@ -33,9 +34,12 @@ function die(session, actor, context = {}) {
     const killer = context.killer ?? context.source;
     const killerPlayable = !!killer && killer !== actor && !killer.fetchKind;
     const ArenaDuelService = invoke('GameServer/World/ArenaDuelService');
-    if (!ArenaDuelService.duelForActor?.(actor)) require('./PkDeathDrop').drop(victimSession, actor);
+    // The death's consequences (killEffect: `death.<what>`) run before and after the death itself
+    // (the actor's timers, charges and effects cleared, dead state, the die packet), which is not
+    // guarded: a failed PK drop or EXP loss still leaves a dead body, not one alive at 0 HP.
+    if (!ArenaDuelService.duelForActor?.(actor)) killEffect('death.pk_drop', () => require('./PkDeathDrop').drop(victimSession, actor));
     if (typeof actor.fetchExp === 'function' && typeof actor.setExpSp === 'function' && !actor.fetchKind) {
-        invoke('GameServer/Progression/DeathExperience').applyDeathPenalty(victimSession, actor, {
+        killEffect('death.exp_penalty', () => invoke('GameServer/Progression/DeathExperience').applyDeathPenalty(victimSession, actor, {
             timestamp: context.timestamp,
             arena: victimSession?.arenaEphemeral === true || !!victimSession?.arenaDuelId
                 || !!ArenaDuelService.duelForActor?.(actor),
@@ -49,10 +53,12 @@ function die(session, actor, context = {}) {
             siegeZone: context.siegeZone === true,
             siegeParticipant: context.siegeParticipant === true,
             killerSiegeNpc: context.killerSiegeNpc === true
-        });
+        }));
     }
 
-    if ((actor.fetchMounted?.() || actor.mounted) && actor.pet?.petData) invoke('GameServer/Pets/PetRuntime').die(actor.pet);
+    if ((actor.fetchMounted?.() || actor.mounted) && actor.pet?.petData) {
+        killEffect('death.mount', () => invoke('GameServer/Pets/PetRuntime').die(actor.pet));
+    }
     actor.destructor();
     ChargeLifecycle.clear(session, actor);
     clearEffectsOnDeath(session, actor);
@@ -63,16 +69,18 @@ function die(session, actor, context = {}) {
     actor.state.destructor();
     actor.state.setDead(true);
     session.dataSendToMeAndOthers(ServerResponse.die(actor.fetchId(), false, !!require('../../ClanHall/Runtime').destination(actor)), actor);
-    invoke('GameServer/Clan/ClanAllianceService').onDeath(victimSession);
+    killEffect('death.alliance', () => invoke('GameServer/Clan/ClanAllianceService').onDeath(victimSession));
     // ReceivedHit is invoked with the attacker's session, while the actor
     // being killed owns the authoritative victim session. Arena death must
     // therefore be routed through actor.session or the player death branch
     // is missed whenever the ephemeral clone lands the final hit.
-    if (ArenaDuelService.onPlayerDeath?.(victimSession)) return;
+    let arenaDeath = false;
+    killEffect('death.arena', () => { arenaDeath = ArenaDuelService.onPlayerDeath?.(victimSession); });
+    if (arenaDeath) return;
     if (victimSession?.accountId?.startsWith?.('bot_') && victimSession.arenaEphemeral !== true) {
         const Life = invoke('GameServer/Bot/Population/BotLifeState');
         const prior = victimSession.coldLifeState || Life.cachedState(actor.fetchId());
-        if (prior) {
+        if (prior) killEffect('death.life_row', () => {
             const timestamp = Number(context.timestamp || Date.now());
             // The death price its build published (stats.dangerPrice), the persona
             // from the personal reads; the basics only for a bot with no packet.
@@ -89,10 +97,11 @@ function die(session, actor, context = {}) {
             // re-decides its spot on the row that carries it.
             const recorded = Life.recordNearFight(victimSession, prior, { died: true, timestamp, pvp: killerPlayable });
             victimSession.coldLifeState = { ...recorded, stats: { ...recorded.stats, ...progress } };
-        }
-        Life.notifyNearFacts(victimSession, 'death');
+        });
+        // The died situation reaches the worker even when the row above failed.
+        killEffect('death.near_post', () => Life.notifyNearFacts(victimSession, 'death'));
         const Trace = invoke('GameServer/Bot/DecisionTrace');
-        if (Trace.on()) {
+        if (Trace.on()) killEffect('death.trace', () => {
             // Where and how the body died: the spot it hunts (the row's may be the one it left), what it was
             // doing, the mobs still on it and its time since it went hot (near and far deaths compared).
             const hotAt = Number(victimSession.populationHotAt) || 0;
@@ -112,15 +121,15 @@ function die(session, actor, context = {}) {
                     : `char:${killer.fetchId?.()}`,
                 ...(fight ? { opener: fight.openerId ? `char:${fight.openerId}` : 'unknown', role: fight.responsibility,
                     why: fight.why || 'unknown' } : {}) });
-        }
-        invoke('GameServer/Bot/AI/BotEventJournal').record({
+        });
+        killEffect('death.journal', () => invoke('GameServer/Bot/AI/BotEventJournal').record({
             botId: actor.fetchId(),
             eventType: 'death',
             summary: `${actor.fetchName?.() || 'Bot'} died.`,
             weight: 5,
             dedupeKey: `death:${actor.fetchId()}`,
             coalesceWindowMs: 5000
-        });
+        }));
     }
 }
 

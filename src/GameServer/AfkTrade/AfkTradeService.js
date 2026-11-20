@@ -547,9 +547,11 @@ function tradeMessage(event) {
 }
 
 async function deliverNotifications(session) {
-    const ownerId = Number(session?.actor?.fetchId?.() || 0);
+    const actor = session?.actor;
+    const ownerId = Number(actor?.fetchId?.() || 0);
     if (!ownerId || isBotSession(session)) return 0;
     const events = await Database.fetchAfkTradeNotifications(ownerId, 50);
+    if (session.actor !== actor || session.characterLeaving || session.socket?.destroyed) return 0;
     if (!events.length) return 0;
     events.forEach((event) => commandMessage(session, tradeMessage(event)));
     // A login backlog gets one sound, not one overlapping sound per trade.
@@ -1142,8 +1144,9 @@ async function init() {
     // The market counters learn the board's last deals again.
     MarketCounters.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
     MarketCounters.reset();
-    MarketCounters.load(await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS }),
-        await Database.fetchRecentFixedStoreDeals());
+    const rangeMs = invoke('GameServer/Bot/Economy/MarketTradeDemand').replayMs();
+    MarketCounters.load(await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS, rangeMs }),
+        await Database.fetchRecentFixedStoreDeals({ rangeMs }));
     boardReady = true;
     await require('./TradeMeetingService').init();
     notifyBoardChange({ ready: true });

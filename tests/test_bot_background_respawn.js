@@ -17,12 +17,14 @@ const state = {
     party: { role: 'dps' }
 };
 
-const result = BackgroundResolver.resolveSolo({ state, spot: null, elapsedMs: 60000 });
+// The step comes 60 s after the death (the bot's clock stays at it).
+const timestamp = Date.now();
+const result = BackgroundResolver.resolveSolo({ state, spot: null, elapsedMs: 60000, timestamp });
 
 assert.strictEqual(result.patch.activity, 'resting', 'a dead cold bot must recover before returning to the hunt');
 assert.strictEqual(result.patch.vitals.hp, Math.round(result.patch.vitals.maxHp * 0.7), 'C4 doRevive: a respawn gives 70% of max HP');
 assert.strictEqual(result.patch.vitals.mp, 0, 'C4 doRevive: a respawn does not restore MP');
-assert(result.nextResolveAt >= Date.now() + 85000, 'background respawn includes a recovery delay');
+assert.strictEqual(result.nextResolveAt, timestamp - 60000 + 90000, 'background respawn includes a recovery delay: 90 s from the death');
 assert.strictEqual(result.events[0].type, 'respawn');
 assert.strictEqual(result.materialize.exp, 0, 'recovery must not award combat XP');
 

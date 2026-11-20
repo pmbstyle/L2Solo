@@ -17,7 +17,7 @@ const hiddenFields = {
     GameServer: new Set(['maxOnline', 'pvp', 'id']),
     AuthServer: new Set(['protocol', 'blowfishKey']),
     Enchant: new Set(['crystalWeaponChance', 'crystalArmorChance', 'crystalAccessoryChance']),
-    ClanSimulation: new Set(['maxBotMemberShare', 'bloodMarkItemId', 'bloodMarkSourceNpcId', 'strategyRetryMs', 'actionBatchSize', 'actionLeaseMs', 'actionRetryMs']),
+    ClanSimulation: new Set(['llmGoalManagementEnabled', 'llmTitleManagementEnabled', 'localCrestGenerationEnabled', 'maxBotMemberShare', 'bloodMarkItemId', 'bloodMarkSourceNpcId', 'strategyRetryMs', 'actionBatchSize', 'actionLeaseMs', 'actionRetryMs']),
     ClanWars: new Set(['reviewMs', 'intelTtlMs'])
 };
 
@@ -26,7 +26,7 @@ const groups = {
     General: [
         ['Progression', ['maxLevel', 'progressionPreset']],
         ['Experience & skills', ['expRate', 'spRate', 'questExpRate', 'questSpRate']],
-        ['Economy & drops', ['adenaRate', 'dropChanceRate', 'spoilRate', 'questRewardRate', 'questAdenaRate']],
+        ['Economy & drops', ['adenaRate', 'dropChanceRate', 'epicDropChanceRate', 'spoilRate', 'questRewardRate', 'questAdenaRate']],
         ['Character rules & display', ['newbieRewardPolicy', 'pkDeathDropChance', 'showMonsterLevel']]
     ],
     Enchant: [
@@ -45,7 +45,7 @@ const groups = {
         ['Clans & recruitment', ['enabled', 'maxBotClans', 'founderMinLevel', 'founderTopShare', 'founderQuorum', 'founderMinPartyHistory', 'existingClanSuitabilityThreshold']],
         ['Treasury & contributions', ['levelOneAdenaBase', 'levelTwoAdenaBase', 'adenaRateExponent', 'personalAdenaReserveMultiplier', 'contributionMaxFraction']],
         ['Warehouse & market', ['warehouseDepositBatchSize', 'bloodMarkMaxPrice']],
-        ['Strategy & goals', ['strategicManagementEnabled', 'llmGoalManagementEnabled', 'llmTitleManagementEnabled', 'catastrophicFailureThreshold', 'strategyMinHoldMs', 'strategyStallMs', 'goalReviewMs']],
+        ['Strategy & goals', ['strategicManagementEnabled', 'catastrophicFailureThreshold', 'strategyMinHoldMs', 'strategyStallMs', 'goalReviewMs']],
         ['Equipment planning', ['equipmentReviewMs', 'equipmentPartyStallMs', 'equipmentHardStallMs', 'equipmentMaxExpectedKills']],
         ['Clan operations', ['operationMinMembers', 'operationMaxMembers', 'operationMaxTargetLevelGap']],
         ['Processing budgets', ['resolveIntervalMs', 'resolveBatchSize', 'resolveBudgetMs', 'actionPlayerBudgetMs', 'founderResolveBudgetMs', 'founderPlayerBudgetMs']]
@@ -58,6 +58,7 @@ const groups = {
     AI: [
         ['Provider connection', ['enabled', 'apiUrl', 'apiKey']],
         ['Models', ['model', 'partyRouterModel']],
+        ['Clan AI features', ['llmGoalManagementEnabled', 'llmTitleManagementEnabled', 'localCrestGenerationEnabled']],
         ['Model responses', ['temperature', 'reasoningEffort', 'completionLimitParam', 'strictSchema']],
         ['Request limits', ['maxConcurrentRequests']]
     ],
