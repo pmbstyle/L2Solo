@@ -25,7 +25,8 @@ function member(id, classId, level, weapon, healer = false) {
         slot: i + 1, name: Data.items.find(t => t.selfId === selfId).template.name }));
     items.push({ selfId: weapon === 3 ? 1835 : 1463, amount: 2500, slot: 0, equipped: 0 });
     const s = { characterId: id, name: `adventurer_${id}`, accountName: `bot_${id}`, level, classId,
-        adena: 100000, phase: 'cold', activity: 'hunting', party: { partyId: null }, updatedAt: at,
+        // Above each member's kit reserve (the dwarf's D shots for 5.1 h to a full bag: ~219k).
+        adena: 300000, phase: 'cold', activity: 'hunting', party: { partyId: null }, updatedAt: at,
         stats: { classId, coldCombat: { classId, skills: Combat.skillsFor({ classId, level }) } },
         inventory: Life.inventorySummaryFromItems(items) };
     const p = Combat.profileFor(s); s.vitals = { hp: p.maxHp, maxHp: p.maxHp, mp: p.maxMp, maxMp: p.maxMp };

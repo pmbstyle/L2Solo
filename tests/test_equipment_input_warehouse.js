@@ -102,7 +102,9 @@ async function run() {
         // The real shared graph may keep equipment out of the spending queue
         // while survival shots own the action. Its admitted gear roots still
         // justify retaining the next project, including crystal preparation.
-        const native = { ...state, characterId: id + 1, stats: { classId: 40 }, inventory: {
+        // A bot without money: with it the city reserve store sells it the C
+        // robe and stockings, and that purchase takes the action instead.
+        const native = { ...state, adena: 0, characterId: id + 1, stats: { classId: 40 }, inventory: {
             1458: { selfId: 1458, amount: 855 }, 178: { selfId: 178, amount: 1 }
         } };
         for (const [selfId, slot] of [[45, 6], [62, 12], [200, 14], [436, 10], [471, 11], [608, 9],
@@ -191,6 +193,10 @@ async function run() {
             persona: { primaryDrive: 'progression', understanding: 1,
                 traits: { ambition: 0, commitment: 0, caution: 0, empathy: 0, sociability: 0 } } } };
         delete sated.inventory[1458]; delete sated.inventory[178];
+        // With no seller of C gear (the city reserve store off): a funded bot
+        // would otherwise buy the next C robe there and that purchase is a leaf.
+        const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+        PopulationConfig.staticShotsDisabled = true;
         const satedContext = Economy.forState(sated, { timestamp: 1800000000000, board: new BoardIndex(), spots: [],
             routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
             rememberContext: false, withNodes: true, knowledgeEnabled: false });
@@ -204,6 +210,7 @@ async function run() {
         const cancelled = Selection.deferredAcquisitionPlan(sated, { ...plan, reason: 'cancelled' }, { network: { activity: null } });
         assert.equal(cancelled.strategy, 'none');
         assert.equal(cancelled.reason, 'cancelled', 'warehouse readiness cannot revive an explicitly cancelled project');
+        PopulationConfig.staticShotsDisabled = false;
 
         // The physical withdrawal still takes only what is missing from the bag.
         Market.saleDecision = () => ({ listings: [], npc: [], answers: [] });

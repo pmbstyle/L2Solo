@@ -136,6 +136,14 @@ const SITUATIONS = Object.freeze({
     // Its own income on its spot below what its held earning answer expects, beyond its error: weighed at a rest,
     // once a stay (BotHuntEfficiency.disappoints). Wakes the earning spot only.
     spot_disappoints: link(STOP),
+    // Its earning answer taken alone moved: another spot or another hour there (earningTaken).
+    // The money packet the build publishes prices every purchase, potion and trip in that
+    // hour, so the build hears its hour move at once.
+    earning_moved: link(NOW),
+    // The world booted at another progression rate than the one it last ran at (the rate
+    // recorded in world_meta, BotLifeState's boot): every spot's hour moved, so every bot's
+    // earning answer and the build that prices in it are taken again, once.
+    rate_changed: link(NOW),
     // What its clan asks of it moved (the stores fact: its material demand, the clan
     // supply, the crystals): heard at its next stop (temporary: until
     // the clan's planners raise it themselves).
@@ -197,7 +205,8 @@ const SITUATIONS = Object.freeze({
 // as well as the earning spot; the earning answer alone would retire the mark and send
 // the body back to the same leaf spot), goal_done:visit / goal_failed:visit (a visit
 // whose held plan has no stop left: the next leaf). A death wakes
-// the earning spot alone (EconomyContext.decideEarning: no build). Low potions wake the build
+// the earning spot alone (EconomyContext.decideEarning); its answer wakes the build only
+// when it moved (earning_moved: the hour the build prices in). Low potions wake the build
 // only: a bot buys them; a broke one moves on at a death or a dangerous spot.
 // gear_plan: the gear plan's full review, every gear candidate weighed and the
 // native plan judged afresh (GearPlanSelection); a build it does not wake keeps the
@@ -229,8 +238,8 @@ const SITUATIONS = Object.freeze({
 const DECISIONS = Object.freeze({
     earning_spot: Object.freeze(['grade_changed', 'spot_outleveled', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
         'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'goal_affordable:potions',
-        'karma_changed']),
-    build: Object.freeze(['arrived_town', 'grade_changed', 'gear_changed', 'recipe_learned', 'party_left',
+        'karma_changed', 'rate_changed']),
+    build: Object.freeze(['arrived_town', 'grade_changed', 'gear_changed', 'recipe_learned', 'party_left', 'earning_moved', 'rate_changed',
         'goal_affordable:potions', 'goal_affordable:focus', 'out_of_money', 'goal_done:goal', 'goal_failed',
         'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
         'clan_changed', 'spot_empty', 'player_command', 'spot_unreachable', 'offer_posted']),
@@ -734,6 +743,22 @@ function withOwnFacts(state, earning) {
     for (const key of EARNING_FACTS) facts[key] = now[key];
     return { ...earning, facts };
 }
+// The earning answer taken alone (EconomyContext.decideEarning, ColdKarmaPolicy's): its bit
+// cleared (decided) and, when the answer moved from the held one (another spot or another hour
+// there), earning_moved raised where the bot stands. Returns the mind keys it writes beside the
+// answer: { woken, waiting, situationSeq }.
+function earningTaken(state, earning, caller) {
+    const was = state.stats?.earning;
+    const stats = { ...state.stats, woken: decided(state.stats, 'earning_spot', { caller, subject: state.characterId,
+        answer: earning.spotId ?? 'none', was: was?.spotId ?? 'none' }) };
+    // The hour at the kit rates' rounding (StatsPacket.roundRate, three digits): a
+    // re-estimate that moves no rounded rate wakes no build.
+    const hour = value => require('./Economy/StatsPacket').roundRate(Number(value));
+    if ((was?.spotId ?? null) !== (earning.spotId ?? null) || hour(was?.earning) !== hour(earning.earning)) {
+        raise(stats, 'earning_moved', null, place(state), state.characterId);
+    }
+    return { woken: stats.woken, waiting: stats.waiting, situationSeq: stats.situationSeq };
+}
 // A need that opened in this step, one raise: one that stays open raises nothing more.
 // bagMoved: the bag fact moved since the decision's baseline (a bag that did not move
 // opened no need); now: the step's view of after (stateView); was: a body's previous
@@ -745,6 +770,30 @@ function needsOpened(before, bagMoved, now, was = null) {
         if (now.bagNeed > (Number(was.bagNeed) || 0)) opened.push('bag_full');
     }
     return opened;
+}
+// The facts a far solo round's fights move, read on its running state after a fight
+// (BackgroundResolver.resolveSolo): its view's (DecisionSections.roundView), the lines
+// fact and the wallet (PurchaseFunding.budget, without the buy orders' escrow). was: the
+// round's previous facts, whose parts an input that did not move keeps (moved: { supply,
+// bag, money }); none: all read.
+function roundFacts(state, was = null, moved = null) {
+    const S = readers(), view = S.roundView(state, null, was, moved);
+    return { grade: view.grade, outleveled: view.outleveled, kills: view.kills, stall: view.stall,
+        supply: view.supply, lines: S.linesOf(view.supply), bagNeed: view.bagNeed,
+        wallet: was && !moved?.money ? was.wallet : invoke('GameServer/Bot/Economy/PurchaseFunding').budget(state) };
+}
+// The situation a round crossed since its start (start, now: roundFacts), by the step's
+// own rules (factNames, needsOpened, moneyCrossings against the build's thresholds,
+// stats.wishSections): the first one heard NOW that wakes a decision the bot hears
+// (stats: the bot's), else null. Against the round's start, not the decision's baseline:
+// a raise already standing when the round began ends no round (the step's diff raises
+// it). grade_changed is heard at a stop: a level up waits for the rest.
+function roundCrossing(stats, start, now) {
+    const S = readers(), baseline = stats?.wishSections, heard = heardBy(stats);
+    const had = S.moneyCrossings(start.wallet, baseline);
+    const names = factNames(key => start[key], now).concat(needsOpened(null, start.bagNeed !== now.bagNeed, now, start),
+        S.moneyCrossings(now.wallet, baseline).filter(name => !had.includes(name)));
+    return names.find(name => SITUATIONS[name]?.heard === NOW && (WAKES[name] & heard)) || null;
 }
 // The party's decisions (subject: the party, decided on the worker at its step, hot
 // parties at their first cold step): one bit each in party.stats.woken, heard at the
@@ -832,5 +881,5 @@ function detectParty(party, held, { deaths = 0, leaderLevel = 1, marks = [] } = 
 module.exports = {
     PARTY_DECISIONS, partyHeld, partyWoken, raiseParty, partyDecided, partySpotAnswer, detectParty, outleveledSpot,
     buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, arrivesInTown,
-    DECISIONS, ALL, FIRST, raise, offerWoke, stepMind, landMind, delta, forgets, withOwnFacts, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, raised, anyWoken, decided, counts, COUNT_KEYS,
-    placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames, movesSpot };
+    DECISIONS, ALL, FIRST, raise, offerWoke, stepMind, landMind, delta, forgets, withOwnFacts, earningTaken, planes, took, leftParty, applyFacts, spotAsk, counted, note, stop, woken, raised, anyWoken, decided, counts, COUNT_KEYS,
+    placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames, roundFacts, roundCrossing, movesSpot };

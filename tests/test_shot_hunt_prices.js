@@ -34,7 +34,9 @@ async function workerPrices() {
             const prices = message.ids.map(id => invoke('GameServer/Bot/Economy/StaticMerchantPricing').botBuyPrice(id));
             parentPort.postMessage({ probePrices: prices, forbidden: Object.keys(require.cache).filter(key =>
                 /\/src\/Database\.js$|\/Network\/|\/World\/World\.js$/.test(key)) });
-        });`, { eval: true, workerData: { workerEpoch: 'shot-hunt-prices', sharedGeodata: Geodata.sharedDescriptor(),
+        });`, { eval: true,
+        // The worker runs with main's switch: no store sells graded shots, so both price the board.
+        env: { ...process.env, BOT_STATIC_SHOTS_DISABLED: 'true' }, workerData: { workerEpoch: 'shot-hunt-prices', sharedGeodata: Geodata.sharedDescriptor(),
         workerPath: path.resolve(__dirname, '../src/GameServer/Bot/Population/ColdSimulationWorker.js') } });
     try {
         return await new Promise((resolve, reject) => {

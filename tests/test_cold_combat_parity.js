@@ -142,7 +142,8 @@ function soloOutcome(state, npcId, seed, fightLimitMs = 60000, maxActions = 400)
     const r = withSeed(seed, (rng) => resolveFight({ state: engaged, spot, pressure: {}, targetNpcId: npcId,
         rng, timestamp: TS, fightLimitMs, maxActions }));
     if (r.avoided) return { avoided: r.reason };
-    return { won: r.won, died: r.died, hp: r.hp, mp: r.mp, charges: r.charges,
+    // HP and MP recorded whole, as the fight's other measures: the result keeps the fight's fractions.
+    return { won: r.won, died: r.died, hp: Math.round(r.hp), mp: Math.round(r.mp), charges: r.charges,
         actions: r.debug.actions, durationMs: Math.round(r.debug.durationMs), skillUses: r.debug.skillUses,
         shotActions: r.debug.shotActions, heals: r.debug.heals, musicUses: r.debug.musicUses,
         summonUses: r.debug.summonUses, summonActions: r.debug.summonActions, potionsUsed: r.debug.potionsUsed,
@@ -343,7 +344,7 @@ for (const [name, state, npcId, seed] of SOLO) {
     const party = withSeed(seed, (rng) => Resolver.resolvePartyFight({ members: [member], spot: spotFor(npcId), targetNpcId: npcId, rng, timestamp: TS }));
     const m = party.members[0];
     assert.deepStrictEqual({
-        won: party.won, died: m.vitals.hp <= 0, hp: Math.max(0, Math.round(m.vitals.hp)), mp: Math.max(0, Math.round(m.vitals.mp)),
+        won: party.won, died: m.vitals.hp <= 0, hp: Math.max(0, m.vitals.hp), mp: Math.max(0, m.vitals.mp),
         actions: party.debug.actions, skillUses: m.skillUses, shotActions: m.shotActions, heals: m.heals, musicUses: m.musicUses,
         summonUses: m.summonUses, summonActions: m.summonActions, potionsUsed: m.potionsUsed,
         mobHp: m.vitals.hp <= 0 ? null : Math.round(party.debug.remainingHp)
@@ -363,7 +364,7 @@ const overfull = { ...gladiator, vitals: { hp: 999999, mp: 999999 } };
 const overfullFight = withSeed(2, (rng) => resolveFight({ state: overfull, spot: spotFor(573), pressure: {}, targetNpcId: 573,
     rng, timestamp: TS, fightLimitMs: 60000, maxActions: 400 }));
 assert.ok(overfullFight.hp <= overfullFight.maxHp && overfullFight.mp <= overfullFight.maxMp, 'solo start HP and MP are clamped to the maximum');
-assert.deepStrictEqual(overfullFight.hp, soloOutcome(gladiator, 573, 2).hp, 'an overfull bot fights like a bot at full HP');
+assert.deepStrictEqual(Math.round(overfullFight.hp), soloOutcome(gladiator, 573, 2).hp, 'an overfull bot fights like a bot at full HP');
 // Every damage roll of a cold fight draws from the fight rng: Math.random does not change the outcome.
 const fightWith = (randomSeed) => {
     const realRandom = Math.random;

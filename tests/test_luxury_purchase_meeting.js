@@ -3,6 +3,10 @@ const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
 process.env.L2NODE_CONFIG_FILE = 'config/default.ini';
 process.env.L2NODE_PROGRESSION_RATE = 'x50';
+// The reserve store sells a bot every C jewel (the gear reserve), which these
+// buyers then take over the crafted piece: closed here (with the store shots,
+// one switch), the crystal meeting of the craft root is what is tested.
+process.env.BOT_STATIC_SHOTS_DISABLED = 'true';
 delete process.env.L2NODE_SHARED_CONFIG_FILE;
 require('../src/Global');
 invoke('GameServer/DataCache').init();

@@ -391,7 +391,7 @@ const huntSpot = { id: 'starter_gremlin', name: 'Gremlin field', avgLevel: 1, de
 const hunt = (share) => BackgroundResolver.resolveSolo({ state: { ...loadedBag(share, retryUntil), level: 3, levelBand: '1-3',
     currentRegion: undefined, loc: undefined, party: { role: 'dps' } }, spot: huntSpot, elapsedMs: 60000, timestamp: now, rng: () => 0 });
 const slowHunt = hunt(0.55);
-assert(slowHunt.debug?.reason !== 'survival_overweight' && slowHunt.debug?.fights > 0,
+assert(slowHunt.debug?.reason !== 'survival_overweight' && slowHunt.debug?.attemptedFights > 0,
     `a weight penalty 1 bot hunts during the sale retry: ${JSON.stringify(slowHunt.debug)}`);
 assert.strictEqual(hunt(0.7).debug?.reason, 'survival_overweight',
     'a weight penalty 2 bot still stops to unload');

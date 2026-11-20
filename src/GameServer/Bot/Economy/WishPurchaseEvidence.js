@@ -21,7 +21,7 @@ function reader(state, ctx, deps, { npcOnly = false, town = null } = {}) {
         if (typeof cost !== 'function' || typeof cost.details !== 'function') return null;
         const others = Production.allowsNpcShot(id) ? (deps.npcOffersFor?.(id) || [])
             .filter(offer => (!npcOnly || offer.sourceType === 'npc') && (!town || offer.town === town)).slice(0, 17) : [];
-        if (!npcOnly && Production.allowsFixedShot(id)) others.push(...FixedShots.offers(id));
+        if (!npcOnly) others.push(...FixedShots.offers(id));
         // The context's watched board records an absent item as an input too.
         const board = npcOnly ? null : ctx.board || deps.board;
         // A plain item with a known trip, that this bot's buyer takes (OfferQuery.admits).

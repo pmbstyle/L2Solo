@@ -179,7 +179,8 @@ async function images(ids) {
         assert.equal(held(actual, 1458), 49); assert.equal(result.inventory[1458].amount, 49);
         assert.equal(held(actual, 45), 0); assert.equal(held(actual, 1785), 0);
         assert.equal(Number(result.inventory[45]?.amount || 0), 0); assert.equal(Number(result.inventory[1785]?.amount || 0), 0);
-        assert.equal(result.adena, 1000000 - 1000 - 21 * 550); assert.equal(held(actual, 57), result.adena);
+        // The NPC sells Soul Ore at its datapack 275 at every rate preset (x10 here).
+        assert.equal(result.adena, 1000000 - 1000 - 21 * 275); assert.equal(held(actual, 57), result.adena);
         assert.equal(await owned(supplier.characterId, 57), 1001000);
         assert.equal(Number((await images([crafter.characterId]))[0].character.mp), 1000 - 7 * recipe.mpCost);
         console.log('PASS native funded demand, strict original quote refusal and physical four-step conservation');

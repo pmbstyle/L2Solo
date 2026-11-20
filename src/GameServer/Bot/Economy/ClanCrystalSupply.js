@@ -26,8 +26,13 @@ function requirement(state) {
         && Number(row.amount) > Number(state.inventory?.[row.selfId]?.amount || 0));
     const delivery = !material && plan.strategy === 'luxury_exchange' && plan.exchange?.materials?.length
         && plan.exchange.materials.every(row => Number(state.inventory?.[row.selfId]?.amount || 0) >= Number(row.amount));
-    return material || delivery ? { plan, selfId: material ? Number(material.selfId) : Number(plan.target.selfId),
-        amount: material ? Number(material.amount) : 1,
+    // An exchange goal is the worn target, its crystals only one way to it: the
+    // root asks for the target, whose node weighs a direct offer against the
+    // exchange and its crystal inputs. A craft goal's crystals are the
+    // beneficiary's share of the clan recipe, so its root stays the crystals.
+    const crystals = material && plan.strategy !== 'luxury_exchange';
+    return material || delivery ? { plan, selfId: crystals ? Number(material.selfId) : Number(plan.target.selfId),
+        amount: crystals ? Number(material.amount) : 1,
         key: `power:${plan.target.selfId}:${plan.target.slot}` } : null;
 }
 

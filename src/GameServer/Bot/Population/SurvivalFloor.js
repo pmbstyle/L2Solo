@@ -8,10 +8,24 @@ const actorBags = new WeakMap();
 // These are C4 limits, not a desired stock or a reason to recover at low HP.
 const inventoryLimit = InventoryLimits.capacity;
 
+// The first weight step: the share of maxLoad at which the first weight
+// penalty starts (C4 threshold not verified; the game sends no penalty yet).
+const FIRST_WEIGHT_STEP = 0.5;
+
+// A half-full bag sends a solo bot to sell, as a player would (our choice, the
+// sale trip's slots): the bag a solo hunter fills between two sales.
+const SOLO_BAG_SLOTS = 40;
+
 function weightPenalty(load, maximum) {
     if (!(maximum > 0)) return 0;
     const share = load / maximum;
-    return share >= 1 ? 4 : share >= 0.8 ? 3 : share >= 2 / 3 ? 2 : share >= 0.5 ? 1 : 0;
+    return share >= 1 ? 4 : share >= 0.8 ? 3 : share >= 2 / 3 ? 2 : share >= FIRST_WEIGHT_STEP ? 1 : 0;
+}
+
+// The most a bag may weigh and stay below the first weight step (whole load
+// units; 0 without a limit): what a bot keeps below the penalty fits under it.
+function loadLimit(maximum) {
+    return maximum > 0 ? Math.ceil(maximum * FIRST_WEIGHT_STEP) - 1 : 0;
 }
 
 function evaluate({ dead = false, hp, mp, manaRequired = false, castCosts = [], slots = 0,
@@ -174,4 +188,4 @@ function forActor(actor, state = null, timestamp = Date.now()) {
     () => actorRetryHolds(actor, state));
 }
 
-module.exports = { evaluate, forState, bagFor, bagFloor, forActor, bagMarks, stateInventory, inventoryLimit, weightPenalty };
+module.exports = { evaluate, forState, bagFor, bagFloor, forActor, bagMarks, stateInventory, inventoryLimit, weightPenalty, loadLimit, FIRST_WEIGHT_STEP, SOLO_BAG_SLOTS };

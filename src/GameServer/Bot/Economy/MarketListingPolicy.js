@@ -230,7 +230,7 @@ function evaluate(state, options = {}) {
     const decisions = [];
     const forBoard = [];
     const dispose = (item, canList) => {
-        const marketOnly = ItemDisposition.isGradeCrystal(item);
+        const marketOnly = ItemDisposition.isGradeCrystal(item) || !!ItemDisposition.gnomeStock(state, item.selfId);
         const town = MarketTownPolicy.targetTownForItems(state, [item], options);
         const chosen = disposition(item, {
             town, room: canList && (options.stockQuotes === true || marketOnly) ? 1
@@ -300,7 +300,7 @@ function evaluate(state, options = {}) {
         if (remaining > listingCount) dispose(saleLot(item, held + listingCount, remaining - listingCount), false);
     }
     for (const decision of forBoard) {
-        const price = decision.priced.ask.price;
+        const price = ItemDisposition.gnomeAsk(state, decision.item.selfId, decision.priced.ask.price);
         decision.item = { ...decision.item, price, marketReason: decision.reason,
             pricing: MarketPricing.lineState(decision.item.selfId, ctx, { price, storeType: BoardRules.SELL, enchant: decision.item.enchant || 0 }) };
     }
@@ -312,7 +312,8 @@ function evaluate(state, options = {}) {
         if (decision.action !== 'list' || chosen.has(decision.item)) continue;
         // Grade crystals wait for a market slot; cleanup must not turn them
         // into NPC receipts when more expensive loot fills the board.
-        decision.action = ItemDisposition.isGradeCrystal(decision.item) ? 'keep' : liquidate ? 'npc' : 'warehouse';
+        decision.action = ItemDisposition.isGradeCrystal(decision.item) || ItemDisposition.gnomeStock(state, decision.item.selfId)
+            ? 'keep' : liquidate ? 'npc' : 'warehouse';
         decision.reason = 'no_board_slot';
     }
     return {

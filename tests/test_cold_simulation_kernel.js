@@ -1854,6 +1854,50 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         assert.strictEqual(sentCommands.get(shopKernel).has(2002000), true, 'a raise that woke its build steps it at once');
     }
 
+    // A party round starts no earlier than its members' clocks: a member whose last round
+    // ran past the party's step starts the round there, and the round credits the time
+    // since the earliest member's clock.
+    {
+        const clockNow = 1_800_000_000_000, seen = [];
+        const member = (characterId, lastResolvedAt) => ({ characterId, phase: 'cold', activity: 'grouped', level: 20,
+            party: { partyId: 'clock-party' }, timing: { lastResolvedAt, nextResolveAt: clockNow }, stats: {},
+            simulation: { revision: 3 }, updatedAt: 1000 });
+        const kernel = new ColdSimulationKernel({ now: () => clockNow, spotOf: () => ({ id: 'clock-spot' }),
+            resolveSolo: () => { throw Error('the party steps together'); },
+            resolveParty: (input) => { seen.push({ timestamp: input.timestamp, elapsedMs: input.elapsedMs });
+                return { memberResults: input.members.map(state => ({ state, result: {} })), partyPatch: {}, events: [],
+                    nextResolveAt: input.timestamp + 45000 }; },
+            projectResolve: state => ({ state }), emit: () => {} });
+        kernel.upsert({ state: member(130, clockNow - 30000) });
+        kernel.upsert({ state: member(131, clockNow + 7000.5) });
+        kernel.partyPut('clock-party', { partyId: 'clock-party', status: 'active', leaderId: 130, memberIds: [130, 131],
+            stats: {}, nextResolveAt: clockNow });
+        kernel.tick();
+        await kernel.resolveChain;
+        assert.strictEqual(seen.length, 1, 'the party steps once');
+        assert.strictEqual(seen[0].timestamp, clockNow + 7001, 'the round starts at the member\'s carried clock, not at the party\'s step');
+        assert.strictEqual(seen[0].elapsedMs, 37001, 'it credits the time since the earliest member\'s clock');
+    }
+
+    // A command step woken before its bot's clock (its last round ran past now)
+    // resolves at that clock and credits nothing before it: the run-past is lived once.
+    {
+        const clockNow = 1_800_000_000_000, seen = [];
+        const kernel = recordingKernel({ now: () => clockNow,
+            resolveSolo: (input) => { seen.push({ timestamp: input.timestamp, elapsedMs: input.elapsedMs });
+                return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                    nextResolveAt: input.timestamp + 30000, debug: {} }; },
+            planLifecycle: ({ state: planned }) => ({ plannedState: planned, targetNpcId: 0,
+                activityPick: { activity: 'hunting', npcId: 20101 } }) });
+        kernel.upsert({ state: state(132, { activity: 'shopping',
+            timing: { lastResolvedAt: clockNow + 12000, nextResolveAt: clockNow - 1 } }) });
+        kernel.tick();
+        await kernel.resolveChain;
+        assert.strictEqual(seen.length, 1, 'the command step resolves once');
+        assert.strictEqual(seen[0].timestamp, clockNow + 12000, 'the command step resolves at the bot\'s clock, not at now');
+        assert.strictEqual(seen[0].elapsedMs, 0, 'it credits no time before the bot\'s clock');
+    }
+
     console.log('Cold worker protocol, deterministic kernel, scheduling, and fence checks passed');
 })().catch((error) => {
     console.error(error);

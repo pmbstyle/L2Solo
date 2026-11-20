@@ -40,11 +40,11 @@ async function run() {
     Object.assign(state.stats, require('./helpers/ratedKit')(state).stats);
     const target = HealingPotionStock.targetAmountFor(state);
     const potionStock = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions');
-    // ARCH-NOTE: bag space only bounds an outing (1a1a2adc); with no town visit
-    // history the stock horizon is the initial town-visit estimate. Keep a real
-    // full stock plus 20 surplus, then check both sales.
-    assert.strictEqual(potionStock.targetHours, invoke('GameServer/Bot/Economy/TownVisitInterval').targetHours(state.stats));
-    assert.strictEqual(target, Math.ceil(potionStock.usePerHour * potionStock.targetHours));
+    // The stock is a full bag's use plus the reserve (ConsumableTarget), never
+    // under one hour of use. Keep a real full stock plus 20 surplus, then check
+    // both sales.
+    assert.strictEqual(target, Math.max(Math.ceil(potionStock.usePerHour),
+        invoke('GameServer/Bot/Economy/ConsumableTarget').target(potionStock.usePerHour, potionStock.targetHours)));
     assert(target > 3);
     state.inventory[1061].amount = target + 20;
     assert.deepStrictEqual(HealingPotionStock.stockAmounts(state), { 1061: target },

@@ -28,7 +28,7 @@ const close = (a, b, message) => assert(Math.abs(a - b) < 1e-9 * Math.max(1, Mat
 try {
     Data.npcs = [...Data.npcs, mob(lower, 18, 'Exact Low Mob'), mob(higher, 30, 'Exact High Mob')];
     Data.npcRewards = [...Data.npcRewards, reward(lower), reward(higher)];
-    Data.items = [...Data.items, { selfId: itemId, template: { price: 4, kind: 'Other.Material' } }];
+    Data.items = [...Data.items, { selfId: itemId, template: { price: 4, mass: 30, kind: 'Other.Material' } }];
     useRate('x1');
     const emptyId = 990184, missingId = 990185;
     Data.npcs = [...Data.npcs, mob(emptyId, 18, 'Empty Drop Mob'), mob(missingId, 18, 'Missing Drop Mob')];
@@ -37,7 +37,7 @@ try {
     const missing = { ...spot('missing', [{ selfId: missingId, count: 1 }]), rewards: empty.rewards };
     for (const rate of ['x1', 'x50']) {
         useRate(rate);
-        assert.deepEqual(Rewards.value(empty, 19, { spoilSkillLevel: 1 }), { adena: 0, drop: 0, spoil: 0 },
+        assert.deepEqual(Rewards.value(empty, 19, { spoilSkillLevel: 1 }), { adena: 0, drop: 0, spoil: 0, load: 0 },
             'known empty reward data must not fabricate forecast income');
         close(Rewards.value(missing, 19).adena, 150 * Rates.profile().adena,
             'the existing fallback remains reserved for genuinely missing reward data');
@@ -151,13 +151,19 @@ try {
         useRate(rate);
         for (const gap of [8, 9, 15]) {
             const level = 18 + gap, expected = Rewards.value(blue, level, { spoilSkillLevel: 1 });
-            const sum = { adena: 0, drop: 0, spoil: 0 }, trials = 30000;
+            // load: the weight a kill puts in the bag (the drop, and the spoil when it lands).
+            const weigh = items => items.reduce((total, item) => total + Math.max(0, Number(item.amount || 0))
+                * Math.max(0, Number(Data.items.find(row => row.selfId === Number(item.selfId))?.template?.mass) || 0), 0);
+            const sum = { adena: 0, drop: 0, spoil: 0, load: 0 }, trials = 30000;
             for (let i = 0; i < trials; i++) {
                 const gained = Drops.rollRewardsForFight({ spot: blue, killerLevel: level, npcSelfId: lower, rng });
-                sum.adena += gained.adena; sum.drop += Hunt.lootValue(gained.items);
-                if (Formulas.calcSpoilSuccess({ skillId: 254, skillLevel: 1, attackerLevel: level, targetLevel: 18 }, rng))
-                    sum.spoil += Hunt.lootValue(Drops.rollSpoilForFight({ spot: blue, killerLevel: level, npcSelfId: lower, rng }));
+                sum.adena += gained.adena; sum.drop += Hunt.lootValue(gained.items); sum.load += weigh(gained.items);
+                if (Formulas.calcSpoilSuccess({ skillId: 254, skillLevel: 1, attackerLevel: level, targetLevel: 18 }, rng)) {
+                    const spoiled = Drops.rollSpoilForFight({ spot: blue, killerLevel: level, npcSelfId: lower, rng });
+                    sum.spoil += Hunt.lootValue(spoiled); sum.load += weigh(spoiled);
+                }
             }
+            assert(expected.load > 0, `${rate} gap ${gap}: a kill's drop weighs something`);
             for (const key of Object.keys(sum)) assert(Math.abs(sum[key] / trials - expected[key])
                 <= Math.max(.03, expected[key] * .045), `native ${rate} gap ${gap} ${key} differs from exact expectation`);
         }

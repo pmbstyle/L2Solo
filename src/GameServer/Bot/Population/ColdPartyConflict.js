@@ -4,6 +4,7 @@ const Episode = require('./ColdCompetitionEpisode');
 const EncounterBudget = require('./PvpEncounterBudget');
 const Journal = require('../../../PvpJournal');
 const BotErrands = require('./BotErrands');
+const ColdClock = require('./ColdClock');
 // Main-process execution of one bounded encounter (at most two C4 parties).
 // Membership alone never makes a bot an aggressor or creates a memory edge.
 const { seeded } = require('../AI/TendencyRoll');
@@ -126,7 +127,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
             ...(incrementalPvp ? { pvpEncounter: encounter } : {}), coldCompetition: Episode.begin(state.stats?.coldCompetition, { ...episode,
             peerId: sides[1 - index].principal.characterId, role: roles.get(state.characterId),
             ...(delayed ? { wait } : {}) }) }, timing: delayed ? { ...state.timing,
-                ...(pvp?.started ? { lastResolvedAt: timestamp } : {}),
+                ...(pvp?.started ? { lastResolvedAt: ColdClock.handedAt(state, timestamp) } : {}),
                 nextResolveAt: preparedParties[index]?.row.nextResolveAt
                     || (pvp?.started ? Math.max(wait.until, Number(state.timing?.nextResolveAt || 0))
                         : Math.max(timestamp, Number(state.timing?.nextResolveAt || 0)) + waitMs) } : state.timing };

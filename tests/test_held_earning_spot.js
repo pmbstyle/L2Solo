@@ -131,8 +131,10 @@ function onWorker() {
         assert.equal(read.searches, 1, `${name} wakes one search`);
         assert.equal(published(woken, read.result).stats.earning.spotId, 'poor', `${name}: the bot moves to the better spot`);
     }
-    // Woken alone (a contest lost, the recovery lifted), the decision is taken alone: one search, no build
-    // (its new answer wakes none; the hunting leaf reads the answer's spot).
+    // Woken alone (a contest lost, the recovery lifted), the decision is taken alone: one search, no
+    // wish network. Its answer moved (another spot, another hour there): the build hears it, and the money
+    // packet it publishes, which every purchase, potion and trip is priced by, carries the new answer's hour.
+    // An answer that did not move wakes no build.
     {
         const lost = raised(turned, 'contest_lost');
         assert.equal(Situations.woken(lost.stats, 'build'), false, 'fixture: the build sleeps');
@@ -141,8 +143,19 @@ function onWorker() {
         assert.equal(alone.result.earning.spotId, 'poor', 'the bot moves to the better spot');
         const after = { ...lost, stats: { ...lost.stats, ...alone.result } };
         assert.equal(Situations.woken(after.stats, 'earning_spot'), false, 'its bit cleared');
-        assert.equal(Situations.woken(after.stats, 'build'), false, 'and no build woken');
+        assert.equal(Situations.woken(after.stats, 'build'), true, 'its moved answer wakes the build');
         assert.equal(count(() => Economy.decideEarning(after, deps(8))).result, null, 'nothing left to take');
+        const heldHour = Packet.hourAdena(turned.stats.money);
+        const rebuilt = count(() => Economy.forState(after, deps(8)));
+        assert.equal(rebuilt.searches, 0, 'the build reads the answer taken: no second search');
+        const hour = Packet.hourAdena(rebuilt.result.statsPacket.money);
+        assert.notEqual(hour, heldHour, 'fixture: the two spots pay different hours');
+        assert(Math.abs(hour - alone.result.earning.earning * Hunt.onSpotShare(after)) <= 1,
+            `the money packet prices in the new answer's hour (${hour} vs ${alone.result.earning.earning})`);
+        const moved = published(after, rebuilt.result);
+        const same = count(() => Economy.decideEarning(raised(moved, 'contest_lost'), deps(9)));
+        assert.equal(same.result.earning.spotId, 'poor', 'fixture: the same answer again');
+        assert.equal(Situations.woken({ ...moved.stats, ...same.result }, 'build'), false, 'an answer that did not move wakes no build');
         // A fact of its own situations moved since the build (a death on its spot: spot_dangerous) is answered by
         // the decision taken alone: the next step does not raise it again until a build.
         const died = { ...turned, stats: { ...turned.stats, spotRisk: { ...turned.stats.spotRisk, windowDeaths: 1 } } };
@@ -158,7 +171,7 @@ function onWorker() {
         // keeps the supply lines it was taken on, so the next post does not raise it again until a build.
         const shotId = invoke('GameServer/Inventory/ShotStock').planForState(turned).selfId;
         const rates = Packet.kitRates({ shotId, shotUse: 100, shotBenefit: 1, shotsCanRestock: true, potionId: 1060,
-            potionUse: 0, potionRestUse: 0, potionBenefit: 0, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 });
+            potionUse: 0, potionRestUse: 0, potionBenefit: 0, scrollHours: 0, bagHours: 1, gapHorizonHours: 0 });
         const shots = amount => ({ ...turned, spotId: turned.stats.earning.spotId, inventory: { ...turned.inventory, [shotId]: { selfId: shotId, amount } },
             stats: { ...turned.stats, kitRates: rates, earning: { ...turned.stats.earning, shotsPerHour: 100, potionsPerHour: 0 } } });
         // The build kept its lines with the shots above their line.
@@ -181,7 +194,7 @@ function onWorker() {
         Table.cycle = (id, ...rest) => id === 'rich' ? { ...(native.cycle(id, ...rest) || {}), taken: 1000, pull: 1 } : native.cycle(id, ...rest);
         try {
             const rates = Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0, shotsCanRestock: false, potionId: 1060,
-                potionUse: 2, potionRestUse: 0, potionBenefit: 0.1, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 });
+                potionUse: 2, potionRestUse: 0, potionBenefit: 0.1, scrollHours: 0, bagHours: 1, gapHorizonHours: 0 });
             // It stands on its held spot: the line is its answer's use there (EquipmentIncomeRoute.spotUseOf).
             const kit = (adena, reserve, name = 'died') => ({ ...raised(held, name), adena, spotId: 'rich',
                 inventory: { ...held.inventory, 57: { selfId: 57, amount: adena } },
@@ -219,17 +232,17 @@ function onWorker() {
         assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS - 1, 0), answer), false, 'too few kills to tell');
         assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS, 0, true), answer), false, 'once a stay');
         assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS, 0, false, 'poor'), answer), false, 'only on the answer\'s spot');
-        // The stay lasts while the spot does (a new answer, a level up, a town trip keep it); another spot starts
+        // The stay lasts while the spot does (a new answer, a level up keep it); another spot starts
         // a new one; a party round counts into none.
         const round = { debug: { wins: 10, combatMs: 60000, fights: 10, spotId: 'rich' }, materialize: { adena: 100, items: [] },
             nextResolveAt: started + 60000, patch: {} };
         const on = (state, spotId = 'rich') => Hunt.recordRound(state, round, { spotId, timestamp: started }).stay;
-        const solo = { ...turned, stats: { ...turned.stats, earning: { ...answer, at: 1 }, visitEvery: [5, 2] } };
+        const solo = { ...turned, stats: { ...turned.stats, earning: { ...answer, at: 1 } } };
         const first = on(solo), second = on({ ...solo, stats: { ...solo.stats, stay: { ...first, judged: true } } });
         assert.equal(second.kills, 20, 'one stay counts its rounds');
         assert.equal(second.judged, true, 'and stays judged');
         for (const [what, moved] of [['a new answer', { ...solo, stats: { ...solo.stats, earning: { ...answer, at: 2 } } }],
-            ['a town trip', { ...solo, stats: { ...solo.stats, visitEvery: [6, 2] } }], ['a level up', { ...solo, level: solo.level + 1 }]]) {
+            ['a level up', { ...solo, level: solo.level + 1 }]]) {
             const kept = on({ ...moved, stats: { ...moved.stats, stay: { ...second } } });
             assert.equal(kept.kills, 30, `${what} keeps the stay on its spot`); assert.equal(kept.judged, true);
         }

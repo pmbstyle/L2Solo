@@ -104,9 +104,11 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
                 equipment: [{ selfId: 93, slot: 14, rank: 'd', kind: 'Weapon.Pole' }],
                 equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: 626, name: 'Bronze Shield', slot: 8 } },
                 marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
-            inventory: { 57: { selfId: 57, name: 'Adena', amount: 100000 },
+            // The wallet holds the kit's reserve (the hours to a full bag at its spot) and the shield,
+            // so the loadout, not the purse, refuses it.
+            inventory: { 57: { selfId: 57, name: 'Adena', amount: 1000000 },
                 93: { selfId: 93, name: 'Winged Spear', amount: 1, equipped: true, equippedCount: 1, equippedSlots: [14], slot: 14, rank: 'd', kind: 'Weapon.Pole' } },
-            adena: 100000 });
+            adena: 1000000 });
             await BotLifeState.upsertState({ ...hotBlocked, phase: 'hot' }, 'hot_activation');
             MarketOpportunity.bestOffer = () => ({ selfId: 626, price: 24090, sourceType: 'npc' });
             const blocked = await ColdMarketService.tryPurchase(hotBlocked, { type: 'upgrade_gear', status: 'active',

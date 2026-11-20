@@ -22,7 +22,7 @@ const originalBoard = AfkTrade.boardIndex;
 let world;
 
 async function run() {
-    world = await createWorld([{ id: 991, level: 10 }], 'static-buyer-sale');
+    world = await createWorld([{ id: 991, level: 20 }], 'static-buyer-sale');
     await LifeState.init();
     for (const item of [{ selfId: 57, name: 'Adena', amount: 100 },
         { selfId: 1864, name: 'Stem', amount: 10 }, { selfId: 1, name: 'Short Sword', amount: 1 }])
@@ -34,13 +34,14 @@ async function run() {
         adena: 100,
         phase: 'cold',
         activity: 'shopping',
-        level: 10,
+        level: 20,
         inventory: {
             57: { selfId: 57, name: 'Adena', amount: 100 },
             1864: { selfId: 1864, name: 'Stem', amount: 10, kind: 'Other.Material' },
             1: { selfId: 1, name: 'Short Sword', amount: 1, kind: 'Weapon.Sword', rank: 'c' }
         },
-        stats: {}
+        // A Scavenger: the fixed buyers take materials only from a gnome (classes 54-57).
+        stats: { classId: 54 }
     }, 'static_buyer_seed');
 
     const board = new BoardIndex();
@@ -50,10 +51,12 @@ async function run() {
     const buyer = Object.values(Configs).find(store => store.storeType === 3 && store.town === 'Talking Island');
     const authoredLine = buyer.items.find(line => Number(line.selfId) === 1864);
     assert.strictEqual(StaticMerchantPricing.priceFor(buyer, authoredLine), 9999, 'the player sees the board bid');
+    assert.deepStrictEqual(StaticBuyerService.candidatesFor({ ...state, stats: { classId: 1 } }, 'Talking Island'), [],
+        'the fixed buyer takes no material from a non-gnome bot');
     const preview = StaticBuyerService.candidatesFor(state, 'Talking Island');
     assert.strictEqual(preview.length, 1, 'the local buyer should accept listed materials');
     assert.strictEqual(preview[0].selfId, 1864);
-    assert.strictEqual(preview[0].npcPrice, 80, 'the bot retains its exact authored x1 Stem payout until 3.6');
+    assert.strictEqual(preview[0].npcPrice, 75, 'the bot is paid the x1 Stem line price (1.5x the NPC buy-back), not the board bid');
     assert.strictEqual(StaticBuyerService.bestTownFor(state).town, 'Talking Island', 'market travel should target a town that buys the held material');
 
     const result = await StaticBuyerService.sell(state, 'Talking Island');

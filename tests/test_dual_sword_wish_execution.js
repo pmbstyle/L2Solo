@@ -79,6 +79,9 @@ async function seed(state) {
 }
 
 async function run() {
+    // No store sells gear here (the reserve switch off): the city reserve would sell a
+    // cheaper C dual (Saber*Sword of Revolution) and the wish would buy it, not combine.
+    invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = true;
     await Database.init();
     await Life.init();
     for (const classId of [2, 34]) {

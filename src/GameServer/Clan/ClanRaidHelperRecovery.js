@@ -4,9 +4,10 @@ const RESTART_MS = 90000;
 
 // Stepped by the encounter's existing resolve, never by a new timer/job. A
 // helper can restart and recover while the main party continues fighting.
-function recover(party, members, timestamp, elapsedMs) {
+function recover(party, members, timestamp) {
     const results = new Map();
     const resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+    const ColdClock = invoke('GameServer/Bot/Population/ColdClock');
     for (const state of members) {
         if (!Expedition.helper(party, state)) continue;
         let recovery = state.stats?.raidHelperRecovery;
@@ -19,7 +20,7 @@ function recover(party, members, timestamp, elapsedMs) {
             if (result.patch.vitals) result.patch.stats.coldCombat = { ...result.patch.stats.coldCombat, effects: [] };
             results.set(state.characterId, result);
         } else if (recovery) {
-            const result = resolver.resolveRest(state, elapsedMs, timestamp, { party: true, requireMana: true });
+            const result = resolver.resolveRest(state, ColdClock.step(state, timestamp).elapsedMs, timestamp, { party: true, requireMana: true });
             if (result.patch.activity !== 'resting') {
                 const preparedState = { ...state, ...result.patch, stats: { ...result.patch.stats, raidHelperRecovery: null } };
                 const preparation = resolver.prepareRaidParty([preparedState], timestamp);

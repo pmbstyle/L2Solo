@@ -413,7 +413,9 @@ function look(state, lines, ctx) {
         }
         else {
             chosen = PriceDecision.chooseAsk(belief, market, ctx.trader, rollKey, line.price);
-            const marketOnly = invoke('GameServer/Bot/Economy/ItemDisposition').isGradeCrystal(line);
+            const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+            const stock = Disposition.gnomeStock(state, line.selfId);
+            const marketOnly = Disposition.isGradeCrystal(line) || !!stock;
             if (!chosen.known || marketOnly && chosen.npc) {
                 const quote = stockQuotePrice(belief, market,
                     (line.custodyPolicy === 1 || marketOnly) && ctx.ownStock?.known !== false,
@@ -422,6 +424,7 @@ function look(state, lines, ctx) {
                 chosen = { ...chosen, price: quote, npc: false };
             }
             if (chosen.npc) { withdrawals.push(move); continue; }
+            if (stock) chosen = { ...chosen, price: Disposition.gnomeAsk(state, line.selfId, chosen.price) };
         }
         const pricing = lineState(line.selfId, ctx, { price: chosen.price, storeType: line.storeType,
             worth, fills: line.fills, enchant: line.enchant || 0,

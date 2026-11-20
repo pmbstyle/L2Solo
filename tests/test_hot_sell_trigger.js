@@ -51,4 +51,39 @@ try {
     assert.equal(due(seller), null, 'the next decision retires the selling choice');
 } finally { Economy.forState = originalContext; }
 
+// A full bag the build chose to clear (stats.bagClear on bag_full): the body destroys those
+// slots from its live bag as a player destroys items (unworn copies only, up to the count)
+// and hunts on: no town trip starts.
+{
+    const FailureLog = require('../src/FailureLog');
+    const Events = invoke('GameServer/Bot/AI/DecisionEvents'), TownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
+    const trips = [], request = TownTravel.request, held = Events.held, huntedOn = Error('hunted_on');
+    TownTravel.request = (_session, _bot, _ai, reason) => { trips.push(reason); return 'escape'; };
+    Events.held = () => { throw huntedOn; };
+    const piece = (id, selfId, extra = {}) => ({ id, selfId, amount: 1, equipped: false, enchant: 0, ...extra });
+    const items = [...Array.from({ length: 41 }, (_, index) => piece(8810000 + index, 1864 + index)),
+        piece(8820000, 1864, { equipped: true }), piece(8820001, 1865, { enchant: 3 })];
+    const deleted = [];
+    const bot = { fetchId: () => 8101, fetchLevel: () => 40, fetchClassId: () => 0, fetchHp: () => 100, fetchMaxHp: () => 100,
+        fetchMp: () => 100, fetchMaxMp: () => 100, isDead: () => false, automation: { abortAll() {} },
+        state: { fetchCasts: () => false, fetchTowards: () => false, fetchHits: () => false },
+        backpack: { items: items.map(item => ({ fetchId: () => item.id, fetchSelfId: () => item.selfId, fetchAmount: () => item.amount,
+            fetchEquipped: () => item.equipped, fetchEnchantLevel: () => item.enchant })),
+        fetchItems() { return this.items; },
+        deleteItem(_session, id, amount) { deleted.push([id, amount]); this.items = this.items.filter(item => item.fetchId() !== id); } } };
+    const clear = { items: [{ selfId: 1864, enchant: 0, count: 1 }, { selfId: 1865, enchant: 0, count: 1 },
+        { selfId: 1866, enchant: 0, count: 1, objectIds: [8810002] }, { selfId: 9999, enchant: 0, count: 1 }], freed: 3, value: 30 };
+    const session = { actor: bot, plan: 'hunting', coldLifeState: { characterId: 8101, level: 40,
+        stats: { generatedCold: true, bagClear: clear } } };
+    try {
+        assert.throws(() => HuntingState.tick(session, bot, {}, { say() {}, getStatus: () => ({ available: true }) }),
+            error => error === huntedOn, 'the body hunts on past its bag');
+    } finally { TownTravel.request = request; Events.held = held; }
+    assert.deepStrictEqual(deleted, [[8810000, 1], [8810001, 1], [8810002, 1]],
+        'the cleared slots are destroyed: the worn copy and the enchanted one stay, a copy the bag lost is skipped');
+    assert.strictEqual(FailureLog.snapshot()?.['ai.bag_clear_missing'], 1, 'the row the bag lost is counted');
+    assert.deepStrictEqual(trips, [], 'no town trip starts');
+    assert.strictEqual(session.coldLifeState.stats.bagClear, null, 'the clearing is spent');
+}
+
 console.log('Hot sell trigger checks passed');

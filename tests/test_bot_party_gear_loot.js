@@ -85,4 +85,16 @@ try {
     GearAcquisitionPlanner.itemScore = originalItemScore;
 }
 
+// The member's running round bag (bags[index]) holds the gear kept earlier in the round:
+// a second copy of the same upgrade goes to the member who still lacks it.
+const keeper = { characterId: 104, name: 'KeeperTank', level: 20, stats: { role: 'tank', equipmentPlan: { target: { selfId: sword.selfId } } }, inventory: {} };
+const lacking = { characterId: 105, name: 'LackingTank', level: 20, stats: { role: 'tank' }, inventory: {} };
+const copy = { selfId: sword.selfId, name: sword.template.name, amount: 1, kind: sword.template.kind, rank: sword.etc.rank };
+const second = PartyLootAllocator.transferGearDrops([
+    { state: keeper, result: { patch: {}, materialize: { items: [{ ...copy }] } } },
+    { state: lacking, result: { patch: {}, materialize: { items: [] } } }
+], { bags: [{ 1: { ...copy, amount: 1 } }, {}] });
+assert.strictEqual(second.transfers.length, 1, 'the second copy must leave the member whose running bag already keeps the first');
+assert.strictEqual(second.transfers[0].to.characterId, lacking.characterId, 'the second copy must go to the member who still lacks it');
+
 console.log('Bot party gear loot checks passed');

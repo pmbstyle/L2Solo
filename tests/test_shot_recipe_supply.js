@@ -2,6 +2,11 @@
 const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
 process.env.L2NODE_CONFIG_FILE = 'config/default.ini';
+// At x1 store and dye prices a bot with money buys its shots and helmet from the
+// reserve store (closed here with the store shots, one switch) and its missing
+// symbols (the hunter below carries a full set): the recipe procurement of a
+// hunting bot is what is tested.
+process.env.BOT_STATIC_SHOTS_DISABLED = 'true';
 require('../src/Global');
 require('./helpers/progressionRate').useRate('x50');
 const Data = invoke('GameServer/DataCache'); Data.init({ validate: false });
@@ -116,7 +121,7 @@ console.log('PASS C shot recipes use authored spoils or drops, learned skills an
     state.inventory[57] = { selfId: 57, amount: state.adena, stackable: true };
     for (const id of [736, 1061]) state.inventory[id] = { selfId: id, amount: 100, stackable: true };
     state.stats = { ...state.stats, generatedCold: true, money: [500000, .000002, 0, 0],
-        shotRecipeDemand: { itemId: 1805, recipeId: 21, batches: 8, amount: 1, maxSpend: 800000,
+        hennas: [133, 37, 124], shotRecipeDemand: { itemId: 1805, recipeId: 21, batches: 8, amount: 1, maxSpend: 800000,
             inputCash: 200000, at: now },
         equipmentPlan: { status: 'deferred', strategy: 'none', reason: 'wish_focus', next: null } };
     const profile = Profile.profileFor(state);

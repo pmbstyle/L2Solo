@@ -11,8 +11,11 @@ function load(file, requireAdapter, invokeAdapter = () => { throw Error('unexpec
     return module.exports;
 }
 const item = { selfId: 101, etc: { slot: 7 }, template: { price: 100, kind: 'Armor.Chest' } };
-const recipe = { recipeId: 301, productId: 101, productCount: 1, recipeItemId: 401,
-    mpCost: 1, successRate: 100, materials: [{ selfId: 202, amount: 10 }] };
+// The material (9202) and the recipe scroll (9401) are ids no configured store
+// sells: the real store table answers the fixed offers here, and its city
+// reserve sells gear pieces (202, 401 among them) to any bot.
+const recipe = { recipeId: 301, productId: 101, productCount: 1, recipeItemId: 9401,
+    mpCost: 1, successRate: 100, materials: [{ selfId: 9202, amount: 10 }] };
 const state = { characterId: 1, level: 40, inventory: {}, stats: { recipes: [301] },
     activity: 'shopping', currentRegion: 'Giran', loc: { locX: 81100, locY: 148000, locZ: -3466 } };
 const board = new BoardIndex();
@@ -150,7 +153,7 @@ function put(id, itemId, count, price, side = 1, ownerId = 2) {
         lines: [{ lineId: id, selfId: itemId, count, price, enchant: 0 }] });
 }
 put(20, 101, 1, 100, 3);
-put(21, 202, 4, 1);
+put(21, 9202, 4, 1);
 function prepare({ wallet = 1000, reserve = 0, deps = {} } = {}) {
     const projection = provider.build(state, context, { board, knownRecipes: [301], ...deps });
     const result = new network.WishNetwork().build({ actorKey: 'producer:1', inputKey: 'producer',
@@ -183,7 +186,7 @@ assert.equal(rootWish.plan.kind, 'craft');
 assert.equal(rootWish.plan.batches, 1);
 assert.equal(rootWish.plan.repeatable, false);
 assert.equal(rootWish.plan.executable, false);
-assert.deepEqual(prepared.watch.map(row => [row.itemId, row.amount, row.recipeId]), [[202, 10, 301]],
+assert.deepEqual(prepared.watch.map(row => [row.itemId, row.amount, row.recipeId]), [[9202, 10, 301]],
     'material demand is retained; finished product never becomes preparatory BUY');
 assert.equal(prepared.result.activity.activity, 'shopping');
 assert.equal(prepared.result.activity.amount, 4, 'only finite available material supply executes');
@@ -212,51 +215,51 @@ assert(!prepare().projection.roots.includes('resale:101'), 'backed own SELL outp
 board.remove(22);
 state.acceptedIncoming = { 101: 1 };
 assert(!prepare().projection.roots.includes('resale:101'), 'actual accepted incoming output also consumes remaining demand');
-state.acceptedIncoming = { 202: 2 };
-state.inventory[202] = { selfId: 202, amount: 4, protectedAmount: 2 };
+state.acceptedIncoming = { 9202: 2 };
+state.inventory[9202] = { selfId: 9202, amount: 4, protectedAmount: 2 };
 prepared = prepare();
 assert.equal(prepared.watch[0].amount, 6, 'incoming/free materials are allocated once; protected stock is unavailable');
-delete state.inventory[202]; delete state.acceptedIncoming;
+delete state.inventory[9202]; delete state.acceptedIncoming;
 prepared = prepare({ wallet: 9, reserve: 5 });
 assert.equal(prepared.result.queue.find(row => row.key === 'resale:101').funded, false);
 assert.notEqual(prepared.result.activity?.activity, 'shopping', 'survival reserve cannot fund production purchases');
-put(23, 401, 1, 1);
+put(23, 9401, 1, 1);
 prepared = prepare({ deps: { knownRecipes: [], producerRecipes: [recipe] } });
 rootWish = prepared.result.queue.find(row => row.key === 'resale:101');
 assert(rootWish?.plan.requiresRecipeLearning, 'an unknown indexed recipe joins the preparation');
-assert(prepared.watch.some(row => row.itemId === 401 && row.amount === 1), 'physical recipe scroll gets one requirement');
+assert(prepared.watch.some(row => row.itemId === 9401 && row.amount === 1), 'physical recipe scroll gets one requirement');
 board.remove(23);
 const planner = adapters['GameServer/Bot/AI/GearAcquisitionPlanner'];
-planner.sourceIndexFor = () => new Map([[401, [{ kind: 'drop', totalCount: 1, sourceCount: 1,
+planner.sourceIndexFor = () => new Map([[9401, [{ kind: 'drop', totalCount: 1, sourceCount: 1,
     spot: { id: 'scroll-source' }, reward: { selfId: 501 } }]]]);
 planner.sourceYieldReaderFor = () => () => ({ expectedYield: 1 });
 planner.soloSafeForSource = () => true;
 context.spotValue = () => ({ kills: 1000 });
 prepared = prepare({ deps: { knownRecipes: [], producerRecipes: [recipe], spots: [{}] } });
 assert(prepared.projection.roots.includes('resale:101'), 'safe physical recipe farm supports preparation without scroll SELL');
-assert(prepared.result.demands.has('item:401'));
+assert(prepared.result.demands.has('item:9401'));
 // A belief price cannot veto cheaper native acquisition before the DAG.
 board.remove(21);
 const priorPrice = context.price;
-context.price = id => id === 202 ? 10000 : priorPrice(id);
-planner.sourceIndexFor = () => new Map([[202, [{ kind: 'drop', totalCount: 1, sourceCount: 1,
+context.price = id => id === 9202 ? 10000 : priorPrice(id);
+planner.sourceIndexFor = () => new Map([[9202, [{ kind: 'drop', totalCount: 1, sourceCount: 1,
     spot: { id: 'material-source' }, reward: { selfId: 502 } }]]]);
 prepared = prepare({ deps: { spots: [{}] } });
 assert(prepared.projection.roots.includes('resale:101'), 'negative price-proxy profit cannot erase a cheaper acquisition alternative');
 assert.equal(prepared.result.activity?.activity, 'hunting', 'the shared graph chooses the cheap physical material source');
-assert.equal(prepared.result.activity?.itemId, 202);
+assert.equal(prepared.result.activity?.itemId, 9202);
 assert.notEqual(prepared.result.activity?.activity, 'shopping', 'expensive forecast inputs cannot become an unconditional purchase');
 assert.equal(prepared.result.plans.get('resale:101').price, 0,
     'real farm acquisition has no imaginary input cash charge');
 // Positive gross receipts do not authorise an acquisition loss.
 planner.sourceIndexFor = () => new Map();
-put(21, 202, 10, 10000);
+put(21, 9202, 10, 10000);
 prepared = prepare();
 assert(prepared.projection.roots.includes('resale:101'), 'price proxy still admits graph evaluation');
 assert(!prepared.result.queue.some(row => row.key === 'resale:101'), 'whole expensive path fails the shared hour comparison');
 assert(!prepared.watch.some(row => row.key === 'resale:101'), 'a rejected production path creates no material BUY');
 board.remove(21);
-planner.sourceIndexFor = () => new Map([[202, [{ kind: 'drop', totalCount: 1, sourceCount: 1,
+planner.sourceIndexFor = () => new Map([[9202, [{ kind: 'drop', totalCount: 1, sourceCount: 1,
     spot: { id: 'material-source' }, reward: { selfId: 502 } }]]]);
 context.price = priorPrice;
 const originalTrip = context.trip;
@@ -269,7 +272,7 @@ assert.equal(salePath.price, 5, 'sale travel fees enter the same cash path once'
 assert.equal(salePath.tripEntries.length, 1);
 assert(salePath.effort >= 2, 'the future selling trip remains part of production effort');
 assert(!prepared.watch.some(row => row.key === 'resale:101'), 'an unprofitable remote sale cannot fund material acquisition');
-put(21, 202, 10, 1);
+put(21, 9202, 10, 1);
 prepared = prepare();
 assert.equal(prepared.result.plans.get('resale:101').price, 15, 'buy and sale in one town share their route fee');
 assert.equal(prepared.result.plans.get('resale:101').tripEntries.length, 1);
@@ -281,35 +284,35 @@ assert(!prepare().projection.roots.includes('resale:101'), 'withdrawn public dem
 // Ordinary gear and a producer share an item but keep their source-choice
 // contracts: immediate farm for gear, cheaper unquoted purchase for a trial.
 const plannedNodes = [
-    { key: 'item:202', object: 202, price: 1, paths: [
+    { key: 'item:9202', object: 9202, price: 1, paths: [
         { kind: 'buy', activity: 'shopping', price: 1, available: true, executable: false, availableUnits: 0 },
-        { kind: 'drop', activity: 'hunting', itemId: 202, spotId: 'expensive-farm', costHours: 100 }] },
-    { key: 'power:202:7', need: 'power', object: { itemId: 202 }, valueHours: 200,
-        paths: [{ requirements: [{ key: 'item:202', amount: 1 }] }] },
+        { kind: 'drop', activity: 'hunting', itemId: 9202, spotId: 'expensive-farm', costHours: 100 }] },
+    { key: 'power:9202:7', need: 'power', object: { itemId: 9202 }, valueHours: 200,
+        paths: [{ requirements: [{ key: 'item:9202', amount: 1 }] }] },
     { key: 'resale:501', need: 'power', object: { itemId: 501, kind: 'resale' }, valueHours: 1,
         paths: [{ kind: 'craft', activity: 'crafting', trial: true, repeatable: false, productCount: 1,
-            requirements: [{ key: 'item:202', amount: 1 }], grossRequirements: [{ key: 'item:202', amount: 1 }] }] }
+            requirements: [{ key: 'item:9202', amount: 1 }], grossRequirements: [{ key: 'item:9202', amount: 1 }] }] }
 ];
 for (const stockFor of [undefined, () => ({ owned: 0, incoming: 0 })]) {
     const preparedTrial = new network.WishNetwork().build({ actorKey: 'planned-trial', inputKey: String(!!stockFor),
-        nodes: plannedNodes, roots: ['power:202:7', 'resale:501'], wallet: 1000, hourAdena: 100,
+        nodes: plannedNodes, roots: ['power:9202:7', 'resale:501'], wallet: 1000, hourAdena: 100,
         persona, remembered: false, stockFor });
     assert(preparedTrial.queue.some(row => row.key === 'resale:501'), 'cheap intended input purchase preserves the finite trial');
     const producerPath = preparedTrial.plans.get('resale:501');
     assert.equal(producerPath.executable, false, 'the preparation cannot craft without physical ingredients');
     assert.equal(producerPath.requirements[0].plan.kind, 'buy');
     assert.equal(producerPath.requirements[0].plan.executable, false);
-    assert.equal(preparedTrial.plans.get('power:202:7').effort, 100, 'the normal root retains executable-first acquisition');
+    assert.equal(preparedTrial.plans.get('power:9202:7').effort, 100, 'the normal root retains executable-first acquisition');
     const commands = intent.project({}, preparedTrial, { nodes: plannedNodes }, () => 1);
     if (!stockFor) assert.equal(commands, null, 'a network without a stock reader defers its public intentions');
-    else assert(commands.some(row => row.itemId === 202), 'the missing material remains a public purchase intention');
+    else assert(commands.some(row => row.itemId === 9202), 'the missing material remains a public purchase intention');
     assert.notEqual(preparedTrial.activity?.rootKey, 'resale:501', 'unsupported purchase/craft leaves remain blocked');
 }
 const sharedTrialNodes = [501, 502].map((id, index) => ({ key: `resale:${id}`, need: 'power',
     object: { itemId: id, kind: 'resale' }, valueHours: index ? 0.5 : 1,
     paths: [{ kind: 'craft', activity: 'crafting', trial: true, repeatable: false, productCount: 1,
-        ownInputOpportunityValue: 10, requirements: [], grossRequirements: [{ key: 'item:202', amount: 1 }] }] }));
-sharedTrialNodes.push({ key: 'item:202', object: 202, price: 10,
+        ownInputOpportunityValue: 10, requirements: [], grossRequirements: [{ key: 'item:9202', amount: 1 }] }] }));
+sharedTrialNodes.push({ key: 'item:9202', object: 9202, price: 10,
     paths: [{ kind: 'buy', activity: 'shopping', price: 100 }] });
 const sharedTrials = new network.WishNetwork().build({ actorKey: 'shared-producer', inputKey: 'shared-producer',
     nodes: sharedTrialNodes, roots: ['resale:501', 'resale:502'], wallet: 1000, hourAdena: 100,
@@ -326,12 +329,12 @@ serviceCraft.canCraft = nativeCraft.canCraft;
 state.classId = 53; state.level = 5; state.inventory = {}; state.stats = {}; state.acceptedIncoming = {};
 adapters['GameServer/DataCache'].experience = Array.from({ length: 40 }, (_, level) => level * 100);
 recipe.level = 1;
-put(20, 101, 1, 100, 3); put(21, 202, 10, 1); put(27, 401, 1, 1);
+put(20, 101, 1, 100, 3); put(21, 9202, 10, 1); put(27, 9401, 1, 1);
 const beginnerDeps = { knownRecipes: [], producerRecipes: [recipe] };
 const beginner = prepare({ deps: beginnerDeps });
 assert(beginner.projection.roots.includes('resale:101'));
-assert(beginner.watch.some(row => row.itemId === 401), 'the native capable beginner asks for its unknown recipe scroll');
-assert(beginner.watch.some(row => row.itemId === 202), 'the same producer asks for missing physical materials');
+assert(beginner.watch.some(row => row.itemId === 9401), 'the native capable beginner asks for its unknown recipe scroll');
+assert(beginner.watch.some(row => row.itemId === 9202), 'the same producer asks for missing physical materials');
 state.level = 4;
 assert(!prepare({ deps: beginnerDeps }).projection.roots.includes('resale:101'));
 state.level = 5; state.craftLevel = 0;
@@ -345,8 +348,8 @@ const fixedBuyer = { type: 'static', price: 100, count: 999999, town: 'Giran' };
 const fixedDeps = { ...beginnerDeps, fixedProductionOffersFor: id => id === 101 ? [fixedBuyer] : [] };
 const fixed = prepare({ deps: fixedDeps });
 assert(fixed.projection.roots.includes('resale:101'), 'fixed buyer supports an unknown material recipe without a public product WTB');
-assert(fixed.watch.some(row => row.itemId === 401), 'its finite queue asks for one physical recipe scroll');
-assert(fixed.watch.some(row => row.itemId === 202), 'the same queue asks for missing ingredients');
+assert(fixed.watch.some(row => row.itemId === 9401), 'its finite queue asks for one physical recipe scroll');
+assert(fixed.watch.some(row => row.itemId === 9202), 'the same queue asks for missing ingredients');
 assert.equal(fixed.projection.nodes.find(row => row.key === 'resale:101').object.amount, 1, 'authored replenishable demand never becomes an unlimited production wish');
 assert(!prepare({ deps: { ...fixedDeps, fixedProductionOffersFor: () => [] } }).projection.roots.includes('resale:101'), 'disabled fixed buyers do not fabricate a producer root');
 state.adena = 0;

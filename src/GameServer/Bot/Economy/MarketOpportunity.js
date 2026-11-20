@@ -118,8 +118,9 @@ function npcOffersAll(selfId) {
     return held.all.map(offer => ({ ...offer }));
 }
 
-// Ordinary NPC shops stay; configured city stores provide reserve shots.
-// Execution applies the same policy, including the optional shot switch.
+// Ordinary NPC shops stay; configured city stores provide reserve shots and
+// their reserve gear lines. Execution applies the same policy, including the
+// optional reserve switch.
 function botCanBuy(offer) {
     return !!offer && OfferQuery.sourceAllowed(offer, offer.sourceType === 'configured_store' || offer.sellerKind === 'fixed'
         || (offer.sourceType === 'private_store' && !!MerchantStoreConfigs[offer.sourceName]));
@@ -177,7 +178,8 @@ function privateOffers(selfId, town) {
     });
 }
 
-// The worker and native purchase executor share the same shot-only table.
+// The worker and native purchase executor share the same reserve table (shots
+// and reserve gear).
 const fixedStoreOffers = require('./FixedShotOffers').offers;
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const PartyAdmission = require('../Population/PartyAdmission');
@@ -213,8 +215,8 @@ function hotOffers(selfId, options = {}) {
 
 // The one offer query (OfferQuery) for a buyer on the main thread: what a
 // cold bot can buy without meeting anyone (board records, NPC shops and the
-// configured shot merchants; a player's or a bot's live private store trades
-// face to face only), in `town`, in each of `towns` or in every
+// configured reserve: shots and reserve gear; a player's or a bot's live
+// private store trades face to face only), in `town`, in each of `towns` or in every
 // town (the board and the configured merchants only: an NPC shop is in a
 // town), the first in the one order within `budget` that `accept` takes.
 // The offers are the ones the bot's build quotes (OfferQuery.admits, the build's reader).
@@ -307,7 +309,8 @@ function activeBuyDemandSelfIds() {
 
 // A companion may leave the field for the city that actually sells the
 // requested item.  Checking only the geographically nearest town made a
-// valid item look impossible whenever its NPC list lived elsewhere.
+// valid item look impossible whenever its NPC list lived elsewhere. The gear
+// reserve sells a bot's own plan only: the player's errand never buys from it.
 function bestSupplyOffer(selfId, options = {}) {
     const amount = Math.max(1, Number(options.amount) || 1);
     const towns = options.towns || [...new Set([...Object.keys(TownNpcCatalog.sellersByTown()),
@@ -315,7 +318,7 @@ function bestSupplyOffer(selfId, options = {}) {
     const cost = options.cost || OfferOrder.tripCost(options.state || { loc: options.origin }, { origin: options.origin });
     return bestOffer(selfId, { ...options, towns,
         cost: cost ? (town) => cost(town) / amount : null,
-        accept: (offer) => Number(offer.count) >= amount && Number(offer.price) > 0
+        accept: (offer) => Number(offer.count) >= amount && Number(offer.price) > 0 && offer.reserve !== true
             && (!options.accept || options.accept(offer)) });
 }
 

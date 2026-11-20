@@ -14,7 +14,9 @@ const imports = {
     'GameServer/Bot/Economy/ItemDisposition': { isQuestItem: () => false },
     'GameServer/Bot/Economy/MarketListingPolicy': { traderContext: () => context },
     'GameServer/Bot/Economy/MarketTownPolicy': { targetTownForItems: () => 'Giran' },
-    'GameServer/Bot/Economy/MarketPricing': { bid: id => { priced.push(id); return { price: 3000, pricing: {} }; } }
+    'GameServer/Bot/Economy/MarketPricing': { bid: id => { priced.push(id); return { price: 3000, pricing: {} }; } },
+    // A non-crafter posts no standing material bids.
+    'GameServer/Bot/Economy/CrafterStock': { materialBids: () => [] }
 };
 new Function('invoke', 'require', 'module', fs.readFileSync(filename, 'utf8'))(
     name => imports[name] || {}, require('node:module').createRequire(filename), loaded);

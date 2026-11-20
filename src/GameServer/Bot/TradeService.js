@@ -2,7 +2,6 @@ const BeginnerShots = require('../Items/C4BeginnerShots');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Database  = invoke('Database');
-const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const World = invoke('GameServer/World/World');
@@ -50,21 +49,22 @@ function refreshStorePrices(store, actor = null) {
 
 // Native C4 store windows cannot quote a price wider than their D field.
 // Keep the exact price for HTML and execution; omitted native rows have no quote.
+// The gear reserve lines sell bots only: the player's window (and so his
+// purchase, which buys only quoted rows) leaves them out.
 function nativeStoreItems(store) {
     const WireD = invoke('Packet/WireD');
-    return (store?.items || []).filter(item => WireD.isRepresentable(item.price));
+    return (store?.items || []).filter(item => item.reserve !== true && WireD.isRepresentable(item.price));
 }
 
-// The retained static-buyer route until 3.6 is only for bot materials.
-// Preview and queued execution share this gate so neither buyer selection
-// nor a direct/stale arrival can liquidate gear through a static buyer.
+// A static buyer takes anything a player sells it; a bot passes the fixed
+// buyers' one seller gate (ProductionPolicy.sellsToFixedBuyer: a gnome's
+// materials). Preview and queued execution share this gate so neither buyer
+// selection nor a direct/stale arrival bypasses it.
 function acceptsSellerItem(actor, storeItem, inventoryItem) {
     if (BeginnerShots.isRestricted(storeItem.selfId)) return false;
-    if (storeItem[staticPriceSource] && isBotActor(actor)
-        && require('./Economy/ProductionPolicy').buyersDisabled()) return false;
     return !storeItem[staticPriceSource] || !isBotActor(actor)
-        || String(inventoryItem?.fetchKind?.() || itemTemplate(storeItem.selfId)?.template?.kind || '')
-            .startsWith('Other.Material');
+        || require('./Economy/ProductionPolicy').sellsToFixedBuyer(actor,
+            inventoryItem?.fetchKind?.() || itemTemplate(storeItem.selfId)?.template?.kind);
 }
 
 async function withTradeQueues(store, selfId, actors, operation) {
@@ -118,10 +118,10 @@ function itemBasePrice(selfId) {
     return itemTemplate(selfId)?.template?.price ?? 0;
 }
 
-function ratedPrice(selfId, rate, fallback = 1) {
-    const base = itemBasePrice(selfId);
-    const price = base > 0 ? base * rate : fallback;
-    return BotEconomyPricing.scalePrice(price);
+// A store line priced at rate x the datapack price: the configured store's one
+// price rule (StaticMerchantPricing.configuredPrice).
+function ratedPrice(selfId, rate) {
+    return invoke('GameServer/Bot/Economy/StaticMerchantPricing').configuredPrice({ selfId, priceRate: rate });
 }
 
 function storeLoc(actor) {
@@ -161,6 +161,7 @@ function normalizeStoreItems(storeCfg, { staticStore = false } = {}) {
         selfId: item.selfId,
         price: pricing ? pricing.priceFor(storeCfg, item) : item.price ?? ratedPrice(item.selfId, item.priceRate ?? 1),
         count: item.count ?? 1,
+        ...(pricing && item.reserve === true ? { reserve: true } : {}),
         ...(pricing ? { [staticPriceSource]: { store: storeCfg, line: item } } : {})
     })).filter((item) => !staticStore || item.price > 0);
 }
@@ -379,13 +380,16 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
             if (options.expectedRevision !== undefined && Number(store.revision || 1) !== Number(options.expectedRevision)) {
                 throw new Error("Store listing changed.");
             }
-            const storeItem = store.items.find((item) => Number(item.selfId) === Number(selfId));
+            // A reserve piece has a crafter row (sold to named classes only) and a valve
+            // row: a bot takes the first row of the item sold to it.
+            const storeItem = store.items.find((item) => Number(item.selfId) === Number(selfId)
+                && !(isBotActor(actor) && item[staticPriceSource]?.line?.buyerClasses
+                    && !require('./Economy/ProductionPolicy').allowsFixed(item[staticPriceSource].line, actor)));
             if (!storeItem) {
                 throw new Error("Item is not available.");
             }
             if (storeItem[staticPriceSource] && isBotActor(actor)
-                && (!invoke('GameServer/Inventory/ShotStock').SHOT_IDS.includes(Number(selfId))
-                    || !require('./Economy/ProductionPolicy').allowsFixedShot(selfId))) {
+                && !require('./Economy/ProductionPolicy').allowsFixed(storeItem[staticPriceSource].line, actor)) {
                 throw new Error('Static merchant item is unavailable to bots.');
             }
             const unitPrice = storeItemPrice(store, storeItem, actor);
@@ -530,14 +534,14 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
                 if (storeItem.count <= 0) store.items = store.items.filter(item => item !== storeItem);
                 actorItem = sellableCopy(actor, selfId, options.objectId);
                 sellQty = Math.min(left, Number(actorItem?.fetchAmount() || 0));
-                if (quote.npcPrice !== unitPrice) sellQty = 0;
+                if (quote.linePrice !== unitPrice) sellQty = 0;
                 if (!sellQty) {
                     if (!adQty) throw new Error('Store price changed.');
                     const result = staticResult();
                     await runPostCommitCallback('afterTrade', options.afterTrade, result, storeItem);
                     return result;
                 }
-                unitPrice = quote.npcPrice;
+                unitPrice = quote.linePrice;
             }
 
             const totalEarn = unitPrice * sellQty;

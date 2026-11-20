@@ -45,14 +45,16 @@ try {
             178: { selfId: 178, amount: 1, equipped: true, slot: 14 },
             [itemId]: { selfId: itemId, amount: 30 }
         } });
-    for (const [id, classId, mode, units, net] of [[3948, 12, 2, 60, 5580], [2510, 12, true, 120, 3640],
-        [1463, 0, true, 120, 3640]]) {
+    // target: the row has no bag forecast, so the stock holds one hour of use
+    // plus the reserve (ConsumableTarget): ceil(units x 1 h x 1.1).
+    for (const [id, classId, mode, units, net, target] of [[3948, 12, 2, 60, 5580, 66], [2510, 12, true, 120, 3640, 132],
+        [1463, 0, true, 120, 3640, 132]]) {
         const state = make(id, classId);
         const base = Economy.basics(state, deps), stock = base.stock('shots');
         assert.equal(base.bestTable.shots, units, 'stock reads the row of the selected shot variant');
         assert.equal(stock.itemId, id);
         assert.equal(stock.usePerHour, units);
-        assert.equal(stock.target, units * 2, 'purchase target uses the same consumption forecast');
+        assert.equal(stock.target, target, 'purchase target uses the same consumption forecast');
         assert.equal(base.hourAdena, net, 'the money forecast subtracts this variant at its own price');
         assert.equal(restMode, mode, 'rest potions use the same charged cycle');
         const hunt = Hunt.huntIncome(state, deps.timestamp);

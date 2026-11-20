@@ -19,15 +19,19 @@ const simulation = {
     BR: { admittedShares: () => null, admittedDensity: spot => spot.density, huntCycleDelayMs: roll => 30000 + roll * 90000,
         soloFightCount: () => 1, resolveSolo({ timestamp }) {
         resolves++;
-        return { materialize: { items: [
+        // The round offers its loot to the pickup rule, as resolveSolo does.
+        const loot = [
             { selfId: 57, amount: 100 },
             { selfId: 1864, amount: 10 },
             { selfId: 1865, amount: 20 },
             { selfId: 2, amount: resolves === 1 ? 3 : 2 }
-        ] }, debug: { wins: 300, mobsKilled: 300, combatMs: 1000 }, patch: {}, nextResolveAt: timestamp + 3600000 };
+        ];
+        return { materialize: { items: invoke('GameServer/Bot/Population/RoundLoot').keep({}, loot, 80, 1e9).kept },
+            debug: { wins: 300, mobsKilled: 300, combatMs: 1000 }, patch: {}, nextResolveAt: timestamp + 3600000 };
     } }
 };
-const sum = Generator.hunt({ id: 'fixture', center: {}, density: 1 }, 'dps', 20, false, 2, simulation);
+// The hunt runs twice (the use pass, then the row): the row's resolves are counted afresh.
+const sum = Generator.hunt({ id: 'fixture', center: {}, density: 1 }, 'dps', 20, false, 2, simulation, null, undefined, () => { resolves = 0; });
 assert.equal(resolves, 2);
 assert.equal(sum.kills, 600);
 assert.equal(sum.stacks, 6, 'one new stackable kind + five physical weapons; starting kinds and adena use no new slots');

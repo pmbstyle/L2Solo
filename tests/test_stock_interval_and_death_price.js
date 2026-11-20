@@ -10,8 +10,7 @@ const Providers = invoke('GameServer/Bot/Economy/WishProviders');
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
 const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
-const Events = invoke('GameServer/Bot/AI/DecisionEvents');
-const Visit = require('../src/GameServer/Bot/Economy/TownVisitInterval');
+const ConsumableTarget = require('../src/GameServer/Bot/Economy/ConsumableTarget');
 const Walk = require('../src/GameServer/Bot/Economy/WalkBack');
 const Trip = invoke('GameServer/Bot/Population/ColdTrip');
 const Routes = invoke('GameServer/Bot/Travel/TravelRoutes');
@@ -35,10 +34,10 @@ const native = Economy.basics(warrior, deps), stock = native.stock('shots');
 const withShots = Table.value(native.bestSpotId, native.tableRole, warrior.level, true);
 // The use of a bot with no spot and no held answer is the table's rate at the income row its hour is priced on
 // (EquipmentIncomeRoute.spotUseOf; read from the table: a regenerated table moves it), at the
-// precision the kit rates keep (StatsPacket.roundRates); the outing to a tenth of an hour.
+// precision the kit rates keep (StatsPacket.roundRates); the bag hours down to a tenth of an hour.
 const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
-const rounded = (shotUse, outingHours = 0) => Packet.roundRates({ shotUse, outingHours });
-const tenth = hours => rounded(0, hours).outingHours;
+const rounded = (shotUse, bagHours = 0) => Packet.roundRates({ shotUse, bagHours });
+const tenth = hours => rounded(0, hours).bagHours;
 const useRow = Hunt.incomeRow(warrior);
 assert(stock.usePerHour > 0); assert.equal(stock.usePerHour, rounded(useRow.shots).shotUse);
 const use = stock.usePerHour;
@@ -48,24 +47,31 @@ const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const plannedKitSlots = Number(stock.usePerHour > 0 && !warrior.inventory[stock.itemId]?.amount)
     + Number(native.stock('potions').usePerHour > 0 && !warrior.inventory[native.stock('potions').itemId]?.amount);
 const freeSlots = Math.max(0, Floor.inventoryLimit(0) - Floor.stateInventory(warrior, Data.items).slots - plannedKitSlots);
-const bagT = tenth(withShots.stacks === null ? 24 : withShots.stacks === 0 ? 24
-    : Math.max(.5, Math.min(24, freeSlots / withShots.stacks)));
-const noHistoryT = Math.min(2, bagT);
+// The kit's hours: the hours to a full bag (ConsumableTarget.bagHours), the slots or the first weight step,
+// whichever comes first; never past the slots' own hours.
+const bagT = stock.targetHours;
+assert(withShots.stacks > 0 && bagT > 0 && bagT <= tenth(freeSlots / withShots.stacks), `bag hours ${bagT} within the slots' hours`);
+const shotMass = Number(require('../src/GameServer/Item/ItemTemplateIndex').find(Data.items, stock.itemId).template.mass);
+const maxLoad = invoke('GameServer/Bot/Population/ColdCombatProfile').profileFor(warrior).maxLoad;
+assert(stock.target * shotMass + Floor.stateInventory(warrior, Data.items).load < Floor.loadLimit(maxLoad),
+    'the shots bought weigh the bag under the first weight step');
 // The farm the shots give: the best spot with shots against the best without.
 const b = 1 - Table.best(native.tableRole, warrior.level, false).exp / Table.best(native.tableRole, warrior.level, true).exp;
 assert(b >= withShots.shots * stock.unitPrice / native.hourAdena);
 for (const commitment of [.1, .9]) {
     const state = { ...warrior, stats: { ...warrior.stats, persona: { traits: { commitment } } } };
     const own = Economy.basics(state, deps).stock('shots');
-    assert.equal(own.target, Math.ceil(use * noHistoryT)); assert.equal(own.targetHours, noHistoryT);
+    // A full bag's use plus the reserve (old: two hours' use, the visit interval's fallback).
+    assert.equal(own.target, Math.max(Math.ceil(use), ConsumableTarget.target(use, bagT))); assert.equal(own.targetHours, bagT);
     assert.equal(own.benefitHours, own.missing * own.benefitPerUnit);
     // Per shot of the hunting spot's own rate (the verdict's use), whichever spot the kit's use reads.
     const spotUse = rounded(withShots.shots).shotUse;
     assert(Math.abs(own.benefitPerUnit - b / spotUse) <= own.benefitPerUnit * .01, 'the farm the shots give, per shot');
 }
-for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30], bagT], [[22, .1], .5]]) {
+// A visit history left in a saved row is read by nothing: the stock is the bag's whatever the bot's past visits.
+for (const visitEvery of [[22, 4], [10, 0], [22, 30], [22, .1]]) {
     const own = Economy.basics({ ...warrior, stats: { ...warrior.stats, visitEvery } }, deps).stock('shots');
-    assert.equal(own.targetHours, hours); assert.equal(own.target, Math.max(Math.ceil(use), Math.ceil(use * hours)));
+    assert.equal(own.targetHours, bagT); assert.equal(own.target, stock.target);
 }
 {
     // A bot reaching town with a bag full of loot buys its kit for the outing after the sale: the bag hours read
@@ -73,43 +79,12 @@ for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30
     // loot carried in left no room and the kit covered half an hour).
     const loot = { ...warrior, inventory: { ...warrior.inventory, 1: { selfId: 1, amount: 45, stackable: false } } };
     const afterSale = Math.max(0, 40 - Floor.stateInventory(warrior, Data.items).slots - plannedKitSlots);
-    const saleT = tenth(!withShots.stacks ? 24 : Math.max(.5, Math.min(24, afterSale / withShots.stacks)));
+    const saleT = tenth(afterSale / withShots.stacks);
     const own = Economy.basics(loot, deps).stock('shots');
-    assert.equal(own.targetHours, Math.min(2, saleT));
+    assert.equal(own.targetHours, Math.min(bagT, saleT), 'the bag after the sale, ended at the sale threshold');
     assert(own.targetHours > .5, 'the loot carried into town does not shorten the next outing to half an hour');
-    assert.equal(own.target, Math.max(Math.ceil(use), Math.ceil(use * own.targetHours)));
+    assert.equal(own.target, Math.max(Math.ceil(use), ConsumableTarget.target(use, own.targetHours)));
 }
-// The visit interval moves when the bot arrives in town; it wakes nothing: a reader is
-// served the held answer, and the build the arrival wakes reads the new interval.
-const cached = Economy.forState(warrior, deps);
-const interval = { ...warrior, stats: { ...warrior.stats, visitEvery: [22, 4] } };
-assert.equal(Economy.forState(interval, deps).stock('shots').target, cached.stock('shots').target,
-    'a moved visit interval wakes no build');
-const changed = Economy.forState({ ...interval, activity: 'shopping' }, { ...deps, decide: true });
-assert.equal(changed.stock('shots').target, Math.ceil(use * 4), 'the build at the town arrival reads the visit interval');
-const session = { coldLifeState: { stats: { playedHours: 10 } } };
-for (const [hour, expected] of [[10, [10, 0]], [13, [13, 3]], [18, [18, 4]], [22, [22, 4]]]) {
-    session.coldLifeState.stats.playedHours = hour;
-    Events.raiseDecision(session, 'arrived_town');
-    assert.deepEqual(session.coldLifeState.stats.visitEvery, expected);
-}
-assert.deepEqual(Visit.arrived(session.coldLifeState.stats), [22, 4], 'repeated end of the same visit stores no zero interval');
-
-const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
-async function coldVisits() {
-    let state = { ...warrior, phase: 'cold', activity: 'shopping', currentRegion: 'Giran',
-        // This clock-only fixture has no unpaid stock need; actual merchant
-        // payment/delivery is exercised by test_npc_purchase_consumers.
-        inventory: { ...warrior.inventory, [stock.itemId]: { selfId: stock.itemId, amount: stock.target },
-            736: { selfId: 736, amount: 10 },
-            [native.stock('potions').itemId]: { selfId: native.stock('potions').itemId,
-                amount: native.stock('potions').target } },
-        stats: { ...warrior.stats, playedHours: 10 } };
-    state = await ColdMarket.finishTownErrands(state); assert.deepEqual(state.stats.visitEvery, [10, 0]);
-    state = await ColdMarket.finishTownErrands({ ...state, stats: { ...state.stats, playedHours: 13 } });
-    assert.deepEqual(state.stats.visitEvery, [13, 3]);
-}
-
 const poor = { ...warrior, characterId: 718002, spotId: native.bestSpotId,
     stats: { ...warrior.stats, huntEfficiency: [{ spotId: native.bestSpotId,
         signature: Hunt.signature(warrior), at: Date.now(), samples: 3,
@@ -119,8 +94,10 @@ assert(Math.abs(poorContext.hunt.perHour - 1) < 1e-12);
 assert.equal(poorContext.stock('shots').usePerHour, 0);
 assert.equal(poorContext.kitCost(stock.itemId), 0);
 assert(!poorContext.projection.nodes.some(row => row.key === 'stock:shots'));
-// The kit at its NPC list price (survivalPrice), the price the reserve holds it at; no Scroll of Escape.
-const noShotReserve = poorContext.stock('potions').survivalMissing * poorContext.stock('potions').survivalPrice;
+// The kit's refill (a full bag's use) at its NPC list price (survivalPrice), the price the reserve
+// holds it at: no shots (they do not pay here), no Scroll of Escape.
+assert.equal(poorContext.stock('shots').refill, 0);
+const noShotReserve = poorContext.stock('potions').refill * poorContext.stock('potions').survivalPrice;
 assert.equal(poorContext.refillReserve, noShotReserve);
 
 {
@@ -128,9 +105,10 @@ assert.equal(poorContext.refillReserve, noShotReserve);
     // the shot wish still names the whole shortfall (MVP-3), so a meeting
     // can certify it; its survival part is the reserve's money (kitCost),
     // never held a second time by the money queue.
+    // A bag full of quest items (weightless, never sold): no hours to a full bag, so the stock is its line.
     const short = { ...warrior, characterId: 718003, phase: 'cold', activity: 'hunting',
-        stats: { ...warrior.stats, visitEvery: [1, .5] },
-        inventory: { ...warrior.inventory, [stock.itemId]: { selfId: stock.itemId, amount: 10 } } };
+        inventory: { ...warrior.inventory, [stock.itemId]: { selfId: stock.itemId, amount: 10 },
+            687: { selfId: 687, amount: Floor.inventoryLimit(0), stackable: false, kind: 'Other.Quest' } } };
     const context = Economy.forState(short, deps), own = context.stock('shots');
     assert.equal(own.missing, 0); assert(own.survivalMissing > 0);
     const wish = context.network.queue.find(row => row.key === 'stock:shots');
@@ -182,5 +160,5 @@ try {
     assert.equal(calls, spots.length);
     console.log(`Stock/death: native ${Math.round(use)}/h, profitable-shot gate, town clocks, cached ${spots.length} return routes in ${Walk.summary().buildMs.toFixed(1)} ms passed`);
 } finally { Trip.spotPlan = plan; Walk.reset(); }
-coldVisits().then(() => { assert.equal(invoke('Database').isReady(), false); console.log('Cold visit end interval writer passed'); })
+Promise.resolve().then(() => { assert.equal(invoke('Database').isReady(), false); console.log('Stock hours and death price passed'); })
     .catch(error => { console.error(error); process.exitCode = 1; });

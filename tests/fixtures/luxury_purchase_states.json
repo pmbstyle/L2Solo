@@ -321,10 +321,6 @@
           22064036,
           null
         ],
-        "visitEvery": [
-          138.13,
-          0.21
-        ],
         "partyMarketReturn": null,
         "shopTown": null,
         "townLook": {
@@ -1557,10 +1553,6 @@
           "startedAt": 1793007228126,
           "reason": "improving"
         },
-        "visitEvery": [
-          138.2,
-          0.17
-        ],
         "shotDemand": null,
         "targetCombat": {
           "targetNpcId": 669,

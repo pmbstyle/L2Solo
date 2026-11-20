@@ -160,9 +160,9 @@ function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = 
     const damage = 5000 - cold.mobHp, level = cold.state.stats.coldCombat.skills[0].level;
     const own = Rules.resolve({ selfId: 1234, level });
     assert.ok(damage > 0, 'the claw hits');
-    // The fight's result rounds the bot's HP.
-    assert.strictEqual(cold.result.hp, Math.round(100 + Formulas.calcDrainHeal({ damage, targetHp: 5000, absorbPart: own.absorbPart,
-        absorbAbs: own.absorbAbs })), 'cold heals the same share');
+    // The fight's result carries the bot's HP as the fight left it, a fraction as hot keeps it.
+    assert.strictEqual(cold.result.hp, 100 + Formulas.calcDrainHeal({ damage, targetHp: 5000, absorbPart: own.absorbPart,
+        absorbAbs: own.absorbAbs }), 'cold heals the same share');
 }
 
 // 6. Life steal (absorbDam: a weapon SA, Vampiric Rage) on a normal hit, not on a bow's; hot and cold alike.

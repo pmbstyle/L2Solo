@@ -13,14 +13,14 @@ let revision = [];
 let revisionId = 0;
 let compositions = new WeakMap();
 // The spot rows: one Map from the row's key to its slot, the row (adena,
-// drop, spoil) as three numbers at the slot in a slab, the keys by slot a
+// drop, spoil, load) as four numbers at the slot in a slab, the keys by slot a
 // ring in insertion order: at the cap the oldest row's slot takes the new one
 // (a wipe re-measured the whole atlas at once). A spot is keyed by a number
 // it gets at its first row (spotNumbers), so a key is one number, not a
 // string, and no Map is held per spot: a Map per spot, a string key and an
 // object per row held 16.6-19.7 MB of each thread's heap (perf heap profiles,
-// mostly kill spots of a few rows each); the slab is 768 KB at the cap.
-const ROW_NUMBERS = 3;
+// mostly kill spots of a few rows each); the slab is 1 MB at the cap.
+const ROW_NUMBERS = 4;
 let spotNumbers = new WeakMap();
 let nextSpotNumber = 0;
 const spotValues = new Map();
@@ -77,6 +77,11 @@ function itemPrice(itemId) {
         : Sell.npcBuyPrice(Number(item.template?.price || 0));
 }
 
+// A unit's weight in the bag (the template's mass).
+function itemMass(itemId) {
+    return Math.max(0, Number(Index.find(Data.items, itemId)?.template?.mass) || 0);
+}
+
 function groupsFor(reward) {
     if (!reward) return [];
     let groups = rewardGroups.get(reward);
@@ -86,9 +91,9 @@ function groupsFor(reward) {
         const rate = Rates.groupRate(group, kind), items = group.items || [];
         const total = kind === 'drop' ? items.reduce((sum, item) =>
             sum + Rates.dropItemSelectionWeight(group, item, rate), 0) : 100;
-        const expected = { group, kind, adena: 0, items: 0 };
+        const expected = { group, kind, adena: 0, items: 0, load: 0 };
         if (kind === 'spoil') {
-            expected.spoilItems = items.map(item => ({ item, price: itemPrice(item.selfId) }));
+            expected.spoilItems = items.map(item => ({ item, price: itemPrice(item.selfId), mass: itemMass(item.selfId) }));
             groups.push(expected);
             continue;
         }
@@ -96,7 +101,10 @@ function groupsFor(reward) {
             const share = total > 0 ? Rates.dropItemSelectionWeight(group, item, rate) / total : 0;
             const amount = Rates.expectedDropAmount(group, item, rate);
             if (kind === 'drop' && Number(item.selfId) === 57) expected.adena += share * amount;
-            else expected.items += share * amount * itemPrice(item.selfId);
+            else {
+                expected.items += share * amount * itemPrice(item.selfId);
+                expected.load += share * amount * itemMass(item.selfId);
+            }
         }
         groups.push(expected);
     }
@@ -111,12 +119,13 @@ function npcValue(entry, killerLevel) {
     const key = `${entry.npcId}:${entry.reward?.selfId || 0}:${rule.active ? rule.penaltyPercent : 0}`;
     let held = npcValues.get(key);
     if (held) return held;
-    held = { adena: 0, drop: 0, spoil: 0 };
+    held = { adena: 0, drop: 0, spoil: 0, load: 0, spoilLoad: 0 };
     for (const expected of groupsFor(entry.reward)) {
         if (expected.kind === 'spoil') {
-            for (const { item, price } of expected.spoilItems) {
-                held.spoil += Rates.spoilItemPlan(expected.group, item,
-                    { npcLevel: entry.level, killerLevel }).expectedYield * price;
+            for (const { item, price, mass } of expected.spoilItems) {
+                const yielded = Rates.spoilItemPlan(expected.group, item, { npcLevel: entry.level, killerLevel }).expectedYield;
+                held.spoil += yielded * price;
+                held.spoilLoad += yielded * mass;
             }
             continue;
         }
@@ -125,13 +134,16 @@ function npcValue(entry, killerLevel) {
         const chance = roll.chance / 100;
         held.adena += chance * expected.adena;
         held[expected.kind] += chance * expected.items;
+        held.load += chance * expected.load;
     }
     if (npcValues.size >= MAX_NPC_VALUES) npcValues.delete(npcValues.keys().next().value);
     npcValues.set(key, held);
     return held;
 }
 
-// Spawn-weighted rewards per kill. The NPC's own level controls Deep Blue;
+// Spawn-weighted rewards per kill: adena, the drop's and the spoil's sale
+// value, and load, the expected weight of the drop and (for a spoiler) the
+// landed spoil a kill puts in the bag. The NPC's own level controls Deep Blue;
 // the spoiler's learned skill controls landing, independently of the killer.
 function value(spot, killerLevel, { spoilSkillLevel = 0, spoilerLevel = killerLevel } = {}) {
     if (!spot || typeof spot !== 'object') return null;
@@ -141,12 +153,12 @@ function value(spot, killerLevel, { spoilSkillLevel = 0, spoilerLevel = killerLe
     const kept = spotValues.get(key);
     if (kept !== undefined) {
         const n = spotValueSlab, at = kept * ROW_NUMBERS;
-        return { adena: n[at], drop: n[at + 1], spoil: n[at + 2] };
+        return { adena: n[at], drop: n[at + 1], spoil: n[at + 2], load: n[at + 3] };
     }
     const entries = composition(spot);
     if (!entries.length) return null;
     const total = entries.reduce((sum, entry) => sum + entry.count, 0);
-    const held = { adena: 0, drop: 0, spoil: 0 };
+    const held = { adena: 0, drop: 0, spoil: 0, load: 0 };
     for (const entry of entries) {
         const reward = npcValue(entry, killerLevel), share = entry.count / total;
         // Native ColdKillRewards uses this fallback only when no reward data
@@ -154,9 +166,13 @@ function value(spot, killerLevel, { spoilSkillLevel = 0, spoilerLevel = killerLe
         held.adena += share * (entry.reward ? reward.adena
             : (Number(spot.rewards?.adenaMin || 0) + Number(spot.rewards?.adenaMax || 0)) / 2 * rates.adena);
         held.drop += share * reward.drop;
-        if (spoilSkillLevel > 0) held.spoil += share * reward.spoil
-            * invoke('GameServer/Formulas').spoilSuccessChance({ skillId: 254,
+        held.load += share * reward.load;
+        if (spoilSkillLevel > 0) {
+            const landed = share * invoke('GameServer/Formulas').spoilSuccessChance({ skillId: 254,
                 skillLevel: spoilSkillLevel, attackerLevel: spoilerLevel, targetLevel: entry.level });
+            held.spoil += landed * reward.spoil;
+            held.load += landed * reward.spoilLoad;
+        }
     }
     const slot = spotValueNext;
     spotValueNext = (spotValueNext + 1) % MAX_SPOT_VALUES;
@@ -174,7 +190,7 @@ function value(spot, killerLevel, { spoilSkillLevel = 0, spoilerLevel = killerLe
     spotValueOrder[slot] = key;
     spotValues.set(key, slot);
     const n = spotValueSlab, at = slot * ROW_NUMBERS;
-    n[at] = held.adena; n[at + 1] = held.drop; n[at + 2] = held.spoil;
+    n[at] = held.adena; n[at + 1] = held.drop; n[at + 2] = held.spoil; n[at + 3] = held.load;
     return held;
 }
 
@@ -194,9 +210,24 @@ function keyPart(value, limit) {
     return Number.isInteger(value) && value >= 0 && value < limit;
 }
 
+// The spot of a measured kill mix ([selfId, share, ...]): the base spot's
+// entries cut to the mix's species present in it (mask: the bits of the mix
+// species kept), each weighted by its share; the base itself when none is.
+// SpotValueTable.killSpot and the spot table generator build a row's kill
+// spot with it, so a row's rewards read the same species in both.
+function mixSpot(base, mix, mask = ~0) {
+    const present = new Set((base.npcEntries || []).map(entry => Number(entry.selfId)));
+    const npcEntries = [];
+    for (let at = 0; at < mix.length; at += 2) {
+        if (!(mask & (1 << (at / 2))) || !present.has(Number(mix[at]))) continue;
+        npcEntries.push({ selfId: mix[at], count: Math.max(1, Math.round(mix[at + 1] * 1000)) });
+    }
+    return npcEntries.length ? { ...base, npcEntries, npcSelfIds: undefined } : base;
+}
+
 function spoilSkillLevel(state) {
     return Number(invoke('GameServer/Bot/Population/ColdCombatProfile').skillsFor(state)
         .find(skill => Number(skill.selfId) === 254)?.level || 0);
 }
 
-module.exports = { value, spoilSkillLevel, revision(rates) { refresh(rates); return revisionId; }, MAX_NPC_VALUES, MAX_SPOT_VALUES };
+module.exports = { value, mixSpot, spoilSkillLevel, revision(rates) { refresh(rates); return revisionId; }, MAX_NPC_VALUES, MAX_SPOT_VALUES };

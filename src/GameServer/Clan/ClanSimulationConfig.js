@@ -10,7 +10,7 @@ const DEFAULTS = {
     existingClanSuitabilityThreshold: 0.55,
     levelOneAdenaBase: 650000,
     levelTwoAdenaBase: 2500000,
-    adenaRateExponent: 0.59,
+    adenaRateExponent: 0, // prices x1 at every preset (econ design E2)
     personalAdenaReserveMultiplier: 1,
     contributionMaxFraction: 0.35,
     warehouseDepositBatchSize: 8,

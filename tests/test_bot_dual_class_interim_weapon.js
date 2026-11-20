@@ -26,7 +26,9 @@ const holding = (classId, item, adena) => ({
 const spendable = (state) => state.adena - Gear.operationalAdenaReserve(state);
 
 for (const classId of [2, 34]) {
-    const modest = holding(classId, interimWeapon(classId), 120000);
+    // 200k: an armour piece above the kit reserve (~111k for a Gladiator at 42:
+    // the consumables for the hours to a full bag), far below the dual sword.
+    const modest = holding(classId, interimWeapon(classId), 200000);
     assert.strictEqual(Gear.combatReadiness(modest).hasWeapon, true,
         `class ${classId}: the previous profession's sword counts until a dual sword`);
     assert.strictEqual(Gear.npcWeaponBridgePlan(modest), null, `class ${classId}: no bridge freeze`);

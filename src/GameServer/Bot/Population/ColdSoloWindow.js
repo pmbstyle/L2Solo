@@ -9,7 +9,7 @@
 // ahead: its rounds run at their own dues at the window's start, so the row holds
 // the bot's state up to one window past now. stats.huntedThrough keeps that end
 // whatever writes lastResolvedAt later (a command, a party, a hot session): no
-// hunt credit runs before it (stepElapsedMs), no time is hunted twice cold. Hot
+// hunt credit runs before it (ColdClock, the bot's clock), no time is hunted twice cold. Hot
 // time inside it is lived on top: at most one window per interruption.
 //
 // The window's rule, the one owner of "is a hunting round's end a decision
@@ -21,22 +21,6 @@
 // WINDOW_LEAD_MS), so the window's end comes within it.
 const ColdEconomyPlan = require('./ColdEconomyPlan');
 const Situations = require('../Situations');
-
-// The bot's own clock: what its hunt has been credited through.
-function ownClock(state) {
-    return Math.max(Number(state.timing?.lastResolvedAt) || 0, Number(state.stats?.huntedThrough) || 0);
-}
-// The clock a step at timestamp lives from. A bot that held for an event
-// (stats.eventWait, BotLifeState.prepareResolve) steps at that event or at the
-// wait's known end: the time before it was lived waiting, not hunting.
-function livedClock(state, timestamp) {
-    return state.stats?.eventWait ? timestamp : ownClock(state);
-}
-// The hunt time a step at timestamp lives: since its lived clock.
-function stepElapsedMs(state, timestamp) {
-    const since = livedClock(state, timestamp);
-    return since ? Math.max(1000, timestamp - since) : 60000;
-}
 
 // A plan the rounds change only through endOf: it keeps the bot hunting, acts on
 // nothing, waits for no fight and asks no party.
@@ -80,6 +64,12 @@ function endOf(before, after, result, readers) {
     return readers.kind(after) !== 'resolver' ? 'command' : '';
 }
 
+// The window's next due: a decision its last round woke is taken where that round
+// ended (huntedThrough), not a hunt cycle later; else the round's own due.
+function dueAt(ended, after) {
+    return ended === 'event' && Number(after.stats?.huntedThrough) > 0 ? Number(after.stats.huntedThrough) : after.timing?.nextResolveAt;
+}
+
 // A window's debug for main: the rounds' numbers summed over the last round's fields.
 function sumDebug(total, debug = {}) {
     const sum = { ...debug };
@@ -87,4 +77,4 @@ function sumDebug(total, debug = {}) {
     return sum;
 }
 
-module.exports = { ownClock, livedClock, stepElapsedMs, opens, huntingRound, endOf, sumDebug };
+module.exports = { opens, huntingRound, endOf, dueAt, sumDebug };

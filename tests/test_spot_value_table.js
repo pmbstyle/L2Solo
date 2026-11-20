@@ -187,6 +187,48 @@ try {
     fs.rmSync(walkScratch, { recursive: true, force: true });
 }
 
+// One time budget per kill: the row's 18 s a kill (kph 200) is 10 s of fight,
+// 6 s of rest and 2 s no step counts. Two levels lower the level curve gives
+// 0.75 of the kills (24 s a kill) and the fight curve 1.2 of the fight (12 s):
+// the rest is what the kill's time leaves (10 s), not the rest curve's 3.0
+// (18 s, a kill of 32 s in an hour of 24 s kills). A fight longer than the
+// kill's time lengthens the kill: 25 s of fight, no rest, 27 s a kill.
+const budgetScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-budget-'));
+try {
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+    fixture.rowFields.push('fight', 'rest', 'taken', 'hpLost', 'mpLost');
+    for (const rows of fixture.rows) for (const row of rows) if (row) row.push(10, 6, 0, 0, 0);
+    fixture.curveFields.push('fight', 'rest', 'taken');
+    const write = (name, fightAtGap2) => {
+        const copy = structuredClone(fixture);
+        copy.curves.dps['9'].fight = copy.gaps.map(gap => gap === 2 ? fightAtGap2 : 1);
+        copy.curves.dps['9'].rest = copy.gaps.map(gap => gap === 2 ? 3 : 1);
+        copy.curves.dps['9'].taken = copy.gaps.map(() => 1);
+        const file = path.join(budgetScratch, name);
+        fs.writeFileSync(file, JSON.stringify(copy));
+        return file;
+    };
+    Table.useFile(write('budget.json', 1.2));
+    const reference = Table.cycle('S', 'dps', 24, true);
+    near(reference.kph, 200, 'at the reference the row\'s kills');
+    near(reference.fight, 10, 'at the reference the row\'s fight');
+    near(reference.rest, 6, 'at the reference the row\'s rest');
+    const lower = Table.cycle('S', 'dps', 20, true);
+    near(lower.kph, 150, 'the level curve\'s kills');
+    near(lower.fight, 12, 'the fight curve\'s fight');
+    near(lower.rest, 10, 'the rest is what the kill\'s time leaves');
+    near(Table.value('S', 'dps', 20, true).busyShare, 150 * 22 / 3600, 'the hour busy: fight and rest of every kill');
+    Table.useFile(write('long-fight.json', 2.5));
+    const long = Table.cycle('S', 'dps', 20, true);
+    near(long.fight, 25, 'the longer fight');
+    near(long.rest, 0, 'no time left to rest');
+    near(long.kph, 3600 / 27, 'the longer fight lengthens the kill');
+    near(Table.value('S', 'dps', 20, true).kills, 3600 / 27, 'the value reads the same kills');
+} finally {
+    Table.useFile();
+    fs.rmSync(budgetScratch, { recursive: true, force: true });
+}
+
 // The admitted part of the spawns' production (the fight's soloShareMobs: a
 // group's production times its admitted share): a bot that takes 4 in 10 of
 // the pulls of both species keeps 0.4 of their 200 mobs an hour.
@@ -297,6 +339,24 @@ assert(raw.rows.flat().every((row) => row === null || row.length === raw.rowFiel
 assert.strictEqual(raw.rows.flat().filter(Boolean).length, raw.header.counts.huntableRows, 'header counts the huntable rows');
 assert(raw.roles.every((role) => Object.keys(raw.curves[role] || {}).length > 0), 'every role has curves');
 assert.strictEqual(raw.header.inputs.rate, 'x1', 'the file is at rate x1');
+// The kit's bag hours read every row's new slots and drop load an hour: the
+// reader gives a finite stacks >= 0 (or null, unknown) and a finite load >= 0 on
+// every built row at its reference level.
+{
+    const minGap = raw.rowFields.indexOf('minGap'), refGap = raw.rowFields.indexOf('refGap');
+    const bad = [];
+    raw.rows.forEach((rows, s) => rows.forEach((row, index) => {
+        if (!row) return;
+        const [spotId, spotLevel] = raw.spots[s], shots = raw.shots[index % raw.shots.length];
+        const role = raw.roles[Math.floor(index / raw.shots.length)];
+        const level = Math.max(1, Math.ceil(spotLevel + row[refGap >= 0 ? refGap : minGap]));
+        const value = Table.value(spotId, role, level, shots === 2 ? 2 : shots === 1);
+        if (!value) return;
+        const finite = number => Number.isFinite(number) && number >= 0;
+        if (!(value.stacks === null || finite(value.stacks)) || !finite(value.load)) bad.push(`${spotId} ${role} ${level} ${shots}`);
+    }));
+    assert.deepStrictEqual(bad.slice(0, 10), [], `every built row reads a bag forecast (${bad.length} do not)`);
+}
 // The reader applies the C4 exp level-gap penalty; the measured curves must not carry it too
 // (T43: a table measured with it read (5/6)^6 = 0.33 at gap 12 against the reference gap;
 // the gaps now end at the deep-blue gap, so the farthest one is read).

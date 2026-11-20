@@ -17,11 +17,10 @@ const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy')
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const Shots = invoke('GameServer/Bot/Economy/ColdShotEconomyService');
 
-assert.strictEqual(PriceScale.price(250, 1), 250);
-assert.strictEqual(PriceScale.price(250, 10), 500);
-assert(PriceScale.price(250, 50) < 250 * 5, 'even x50 must avoid a linear NPC price jump');
+// NPC shops price x1 at every preset: a server rate multiplies drops and hunt adena, never a shop's price.
+for (const multiplier of [1, 10, 50]) assert.strictEqual(PriceScale.price(250, multiplier), 250);
 assert.strictEqual(NpcShopBuyLists.fetchForNpc(7315).find((row) => row.selfId === 1785)?.price,
-    600, 'the taxed Gludio Soul Ore price should double at x10');
+    300, 'the taxed Gludio Soul Ore keeps its x1 price at x10');
 
 const dwarf = { characterId: 100, classId: 57, level: 60, adena: 1000000,
     phase: 'cold', activity: 'shopping', currentRegion: 'Giran',

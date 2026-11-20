@@ -74,7 +74,7 @@ assert.strictEqual(resting.patch.vitals.mp, soloHealer.vitals.mp);
 const soloMob = { level: 20, maxHp: spot.mob.hp, pAtk: 8, pAtkRnd: 0, pDef: 1, mDef: 1,
     accur: 300, evasion: 0, critical: 0, atkSpd: 253, mAtk: 1, castSpd: 333 };
 soloHealer.stats.pveEncounter = Encounter.save(null, Encounter.key([soloHealer], spot),
-    soloMob, soloMob.maxHp, at, { botReadyAt: 0, mobReadyAt: 0 });
+    soloMob, soloMob.maxHp, at - 2000, { botReadyAt: 0, mobReadyAt: 0 });
 const soloInput = JSON.stringify(soloHealer);
 const soloHealed = soloResolve(soloHealer);
 assert(soloHealed.debug.heals > 0, 'an injured cold solo bot must cast its learned heal during an ongoing fight');

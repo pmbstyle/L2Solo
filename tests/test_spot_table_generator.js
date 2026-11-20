@@ -100,6 +100,11 @@ try {
         assert(Array.isArray(share) && share.length === table.gaps.length && share.every(part => part > 0 && part <= 1),
             'a production share per gap');
     }
+    // A row hunts on an outing's shots and potions, so its bag weighs what a bot
+    // carries and the drops it picks up stay in its loot and stacks.
+    const hunted = table.rows.flat().filter(Boolean);
+    const looted = hunted.filter((row) => row[field('loot')] > 0 && row[field('stacks')] > 0).length;
+    assert(looted * 4 > hunted.length, `the rows keep their loot (${looted} of ${hunted.length} rows with loot and stacks)`);
     // Gladiator and Warlord lines are one Warrior below 40: a row read there is measured once.
     const gladiator = table.roles.indexOf('2'), warlord = table.roles.indexOf('3'), exp = field('exp');
     table.rows.forEach((rows, spot) => {
@@ -144,6 +149,36 @@ try {
             'a part of the same size from other spots is refused');
     })().then(() => {
         fs.rmSync(dir, { recursive: true, force: true });
+        // The built table through the real reader: every row's fight + rest fit
+        // in its hour per kill at every level the reader serves it (its least
+        // gap to the deep-blue gap), so a reader's idle (HuntCycle's hour:
+        // 3600 / kph - fight - rest) is never clamped and the kills an hour a
+        // reader charges are the cell's own, within the rows' 4-digit rounding.
+        const { ROUNDING } = require('../scripts/generate-spot-table');
+        const Invariants = require('../scripts/economy-model/fight/invariants');
+        const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+        const ProgressionRates = invoke('GameServer/ProgressionRates');
+        const built = JSON.parse(fs.readFileSync(path.join(root, 'data', 'Bots', 'spot-table.json'), 'utf8'));
+        const field = Object.fromEntries(built.rowFields.map((name, index) => [name, index]));
+        const maxLevel = built.header.inputs.maxLevel;
+        const over = [];
+        let read = 0;
+        built.rows.forEach((rows, s) => rows.forEach((row, index) => {
+            if (!row) return;
+            const [spotId, spotLevel] = built.spots[s];
+            const role = built.roles[Math.floor(index / built.shots.length)], shots = built.shots[index % built.shots.length];
+            const from = Math.max(1, Math.ceil(spotLevel + row[field.minGap]));
+            const to = Math.min(maxLevel, Math.floor(spotLevel + ProgressionRates.DEEP_BLUE_LEVEL_GAP));
+            for (let level = from; level <= to; level++) {
+                const cell = Table.cycle(spotId, role, level, shots === 2 ? 2 : shots === 1);
+                if (!cell) continue;
+                read += 1;
+                if (Invariants.overHour(cell, ROUNDING)) over.push(`${spotId} ${role} level ${level} shots ${shots}: ${cell.fight + cell.rest} s over ${3600 / cell.kph} s`);
+            }
+        }));
+        console.log(`the reader read ${read} cells of the built table, ${over.length} over their hour per kill`);
+        assert(read > 1000000, `the reader reads the built rows at every gap (${read})`);
+        assert.deepStrictEqual(over.slice(0, 10), [], `every built row fits in its hour per kill at every gap (${over.length} do not)`);
         console.log('Spot table generator determinism and counts passed');
     }, (error) => {
         fs.rmSync(dir, { recursive: true, force: true });
@@ -154,3 +189,65 @@ try {
     fs.rmSync(dir, { recursive: true, force: true });
     throw error;
 }
+
+// A row hunts on the stock the game buys: a full bag's use plus the reserve
+// (ConsumableTarget), restocked and its drops sold each time the bag would be
+// full. The reference bot (human, solo) turns back at its 40-slot half bag; it
+// wears one piece and drinks 10 Lesser Healing Potions every half hour (20 an
+// hour), and each round offers two new kinds of material (4 new slots an
+// hour). On the use pass its endless bottles weigh past maxLoad, so the
+// pickup rule refuses every drop; the slots are counted on the loot as rolled
+// all the same: 40 - the piece - the planned bottles = 38 free / 4 an hour =
+// 9.5 h, before the weight step ((9999 - 2 - 5) / (20 x 5 x 1.1) = 90.8 h).
+// A spot of Vrykolakas (lvl 15) kills 20 an hour at the kill mix's expected
+// drop weight of 52.76 a kill (SpotRewardExpectation, the datapack's drop
+// list): the load bounds the hours first, 9992 / (20 x 52.76 + 110) = 8.58 h.
+function stockRow(spot, killedNpcs) {
+    require('../src/Global');
+    const Data = invoke('GameServer/DataCache'); Data.init();
+    const RoundLoot = invoke('GameServer/Bot/Population/RoundLoot');
+    const Generator = require('../scripts/generate-spot-table');
+    const kinds = Data.items.filter(item => item.etc?.stackable && item.template?.kind === 'Other.Material'
+        && item.template?.mass > 0 && item.selfId !== 1864).map(item => item.selfId);
+    const seen = [];
+    let offered = 0;
+    const simulation = { items: Data.items,
+        BotGear: { planFor: () => ({ items: [{ selfId: 1864, slot: 0 }] }) },
+        Potions: { purchasePotionFor: () => ({ selfId: 1060 }) },
+        CCP: { profileFor: () => ({ maxHp: 100, maxMp: 100, maxLoad: 20000 }), attackReach: () => 0,
+            skillRecordsFromTree: () => [], skillSnapshotsFromRecords: () => [] },
+        HuntEfficiency: { lootValue: () => 0 },
+        BR: { admittedShares: () => null, admittedDensity: spot => spot.density, soloFightCount: () => 1,
+            resolveSolo({ state, timestamp }) {
+                const potions = Number(state.inventory['1060']?.amount || 0), used = Math.min(10, potions);
+                seen.push({ timestamp, potions, drops: Object.keys(state.inventory).filter(id => kinds.includes(Number(id))).length });
+                const loot = [{ selfId: kinds[offered++], amount: 1 }, { selfId: kinds[offered++], amount: 1 }];
+                const inventory = { ...state.inventory, 1060: { ...state.inventory['1060'], amount: potions - used } };
+                const { kept } = RoundLoot.keep(inventory, loot, 80, 20000);
+                return { materialize: { items: kept }, debug: { wins: 10, mobsKilled: 10, killedNpcs, combatMs: 1000, potionsUsed: used },
+                    patch: { inventory: RoundLoot.addTo(inventory, kept) }, nextResolveAt: timestamp + 1800000 };
+            } } };
+    let pass = null;
+    Generator.hunt(spot, 'dps', 20, false, 12, simulation, null, undefined, name => {
+        pass = name; seen.length = 0; offered = 0;
+    });
+    assert.strictEqual(pass, 'row');
+    return seen;
+}
+function stockFixture() {
+    const seen = stockRow({ id: 'stock', center: {}, density: 1 }, {});
+    const start = seen[0].timestamp;
+    assert.strictEqual(seen[0].potions, 204, 'the row sets out with a full bag\'s use plus the reserve: 20 x 9.25 x 1.1, the bag less the scroll the visit buys (old: 40, two hours\' use)');
+    // Restocked at the round that fills the bag (9.5 h), not every two hours, and the visit sells the drops.
+    const restocks = seen.filter((step, index) => index > 0 && step.potions > seen[index - 1].potions - 10);
+    assert.deepStrictEqual(restocks.map(step => (step.timestamp - start) / 3600000), [9.5], 'the stock is restocked as the bag would be full');
+    assert.strictEqual(restocks[0].drops, 0, 'the visit sold the drops: the outing after it starts with an empty bag');
+    assert.strictEqual(seen[seen.indexOf(restocks[0]) - 1].drops, 36, 'the round before the visit set out with 18 rounds of drops; its own fill the 38 free slots');
+    // The drop's weight: the row restocks at the load bound, before the slots fill.
+    const heavy = stockRow({ id: 'stock-drop', center: {}, density: 1, npcEntries: [{ selfId: 398, count: 1 }] }, { 398: 10 });
+    assert.strictEqual(heavy[0].potions, 187, 'the stock is a full bag\'s use by the drop\'s weight less the scroll\'s: 20 x 8.5 x 1.1 (the slots alone: 204)');
+    const heavyRestocks = heavy.filter((step, index) => index > 0 && step.potions > heavy[index - 1].potions - 10);
+    assert.deepStrictEqual(heavyRestocks.map(step => (step.timestamp - heavy[0].timestamp) / 3600000), [8.5],
+        'the stock is restocked as the drop\'s weight reaches the first weight step (8.5 h), before the slots fill (9.25 h)');
+}
+stockFixture();

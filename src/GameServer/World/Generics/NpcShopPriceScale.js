@@ -1,6 +1,7 @@
-function multiplier(progressionMultiplier) {
-    const rate = Math.max(1, Number(progressionMultiplier) || 1);
-    return 1 + Math.log10(rate);
+// NPC prices are x1 at every preset: a
+// server rate multiplies drops and hunt adena, never a shop's price.
+function multiplier() {
+    return 1;
 }
 
 function price(basePrice, progressionMultiplier) {

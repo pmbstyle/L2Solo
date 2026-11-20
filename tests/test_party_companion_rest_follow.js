@@ -129,7 +129,18 @@ function authoredKitInputs(actor, session) {
     // without one): the fixture holds no earning answer (EquipmentIncomeRoute.spotUseOf); the shot verdict is the hunt's.
     const useRow = (state.spotId && Table.value(state.spotId, Table.roleFor(state), state.level, true))
         || Hunt.incomeRow(state);
-    const shotUse = roundRate(benefit < rawShots * shotPrice / hourAdena ? 0 : plan.perAction > 0 ? positive(useRow.shots) : 0);
+    // Shots pay while the exp they add (the role and level's best spot with
+    // them against the best without) covers what they cost against the hour
+    // before them: their NPC buy-back for paid shots (a bought shot resells
+    // there), nothing for beginner shots held.
+    const Shots = invoke('GameServer/Inventory/ShotStock');
+    const farm = Math.max(0, 1 - positive(Table.best(tableRole, state.level, false)?.exp)
+        / Math.max(1, positive(Table.best(tableRole, state.level, Shots.shotRows(plan))?.exp)));
+    const datapackPrice = Number(DataCache.items.find(row => row.selfId === plan.selfId)?.template?.price || 0);
+    const shotCost = Shots.beginnerAmount(state, plan) >= plan.perAction ? 0
+        : invoke('GameServer/Items/NpcSellRules').npcBuyPrice(datapackPrice);
+    const grossHour = hourAdena + rawShots * invoke('GameServer/Bot/Economy/StaticMerchantPricing').botBuyPrice(plan.selfId);
+    const shotUse = roundRate(rawShots > 0 && grossHour > 0 && farm >= rawShots * shotCost / grossHour ? positive(useRow.shots) : 0);
     const potionId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
     const potionUse = roundRate(positive(useRow.potions));
     const potionPrice = price(potionId);
@@ -143,10 +154,12 @@ function authoredKitInputs(actor, session) {
     // the NPC's list price (the bot's estimate where no NPC sells it).
     const listPrice = id => { const list = invoke('GameServer/Bot/Economy/StaticMerchantPricing').botNpcListPrice(id);
         return Number.isFinite(list) && list > 0 ? list : price(id); };
-    // The reserve holds one outing's refill of each kind used (whole units, never
-    // under one hour of use), whatever the bag holds; no Scroll of Escape in it.
-    const outingHours = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions').targetHours;
-    const refillOf = use => use > 0 ? Math.max(Math.ceil(use), Math.ceil(use * outingHours)) : 0;
+    // The reserve holds a full bag's refill of each kind used plus the reserve
+    // share (ConsumableTarget; whole units, never under one hour of use),
+    // whatever the bag holds; no Scroll of Escape in it.
+    const bagHours = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions').targetHours;
+    const refillOf = use => use > 0
+        ? Math.max(Math.ceil(use), invoke('GameServer/Bot/Economy/ConsumableTarget').target(use, bagHours)) : 0;
     const refillReserve = refillOf(shotUse) * listPrice(plan.selfId) + refillOf(potionUse) * listPrice(potionId);
     const potionUnitPrice = invoke('GameServer/Bot/Economy/StaticMerchantPricing').cheapestPurchase(potionId);
     const potionReserve = Math.max(0, Math.ceil(potionUse) - potionHeld) * potionUnitPrice;

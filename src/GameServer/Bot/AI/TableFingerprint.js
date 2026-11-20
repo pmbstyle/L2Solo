@@ -7,7 +7,9 @@
 // the town ways'), by scripts/check-tables.js
 // (`npm run check` fails on a stale committed table) and by SpotValueTable
 // (one log line at the first read, main thread). Readers only (SpotValueTable,
-// SpotEconomics, SpotRewardExpectation, ...) are no input. A path is a file or
+// SpotEconomics, ...) are no input; SpotRewardExpectation (the expected drop
+// weight a row's stock is sized on) and BotHuntEfficiency (the loot column)
+// are inputs. A path is a file or
 // a directory: every file under it but dot files and notes (*.md). A committed
 // table with a header (spot-table.json, hunt/*.json) is no input of another:
 // its revision moves with every rebuild, so the pair would never agree; the
@@ -22,6 +24,7 @@ const ROOT = path.resolve(__dirname, '../../../..');
 // Cold solo combat and what it calls.
 const COLD_COMBAT = ['src/GameServer/Bot/Population/BackgroundResolver.js', 'src/GameServer/Bot/Population/ColdCombatProfile.js',
     'src/GameServer/Bot/Population/ColdMobAction.js', 'src/GameServer/Bot/Population/ColdRest.js',
+    'src/GameServer/Bot/Population/ColdClock.js',
     'src/GameServer/Bot/Population/ColdKillRewards.js', 'src/GameServer/Bot/Population/BackgroundDropResolver.js',
     'src/GameServer/Bot/Population/ColdClassPolicy.js',
     'src/GameServer/Bot/Population/ColdSummonProfile.js', 'src/GameServer/Bot/Population/ColdPveEncounter.js',
@@ -38,7 +41,9 @@ const REFERENCE_BOT = ['src/GameServer/Bot/AI/BotGear.js', 'src/GameServer/Bot/A
     'src/GameServer/Bot/AI/HealingPotionStock.js', 'src/GameServer/Bot/AI/SoloSelfHeal.js', 'src/GameServer/Bot/AI/PetHealRule.js',
     'src/GameServer/Bot/AI/PetTankRule.js', 'src/GameServer/Bot/AI/BotPullEstimate.js', 'src/GameServer/Bot/AI/GearGradeRule.js',
     'src/GameServer/Bot/AI/DangerRule.js', 'src/GameServer/Bot/AI/HuntCycle.js', 'src/GameServer/Inventory/ShotStock.js',
-    'src/GameServer/Bot/Economy/TownVisitInterval.js', 'src/GameServer/ClassProgression.js'];
+    'src/GameServer/Bot/Economy/KitRule.js', 'src/GameServer/Bot/Economy/ConsumableTarget.js',
+    'src/GameServer/Bot/Economy/SpotRewardExpectation.js', 'src/GameServer/Bot/AI/BotHuntEfficiency.js',
+    'src/GameServer/ClassProgression.js'];
 // The spot catalogue every row hangs on, and what its spot ids and tags are cut
 // by: the cell size, the dungeon areas (an id's `:area`, a spot's tags) and the
 // assist height that splits a cell into floors.

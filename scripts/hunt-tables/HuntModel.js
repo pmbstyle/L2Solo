@@ -262,8 +262,9 @@ function mobHour(bot, mob, correction = null) {
     // weapon hits, criticals, skills), in expectation.
     const mix = Mob.actionMix(view, { profile });
     // The cold step (resolveSolo): a fight runs at most the step's combat
-    // budget, then waits for the next step, which first adds the standing
-    // regeneration of the whole elapsed step (applyStandingRegen).
+    // budget, then waits for the next step. This model credits the standing
+    // regeneration of the whole step (the round itself regenerates by posture
+    // as its clock advances: ColdClock.advance).
     const { budget, cycle } = stepTimes();
     const standing = ColdRest.coldRestRegenPerTick(state, { profile, standing: true }).hp / 3;
     // The owner's hits stay under its pet's hate (PetTankRule), so the pet takes

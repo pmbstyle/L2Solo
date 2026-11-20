@@ -28,12 +28,20 @@ function check(actor, selfId, amount, groundItem) {
         if (reservation.stackable) stacks.add(reservation.selfId);
         load += reservation.mass * reservation.amount;
     }
-    const addedSlots = stackable ? Number(!stacks.has(selfId)) : amount;
-    const maxLoad = actor.fetchMaxLoad?.();
-    if (slots + addedSlots > Limits.forActor(actor)) return { reason: 'slots' };
+    const reason = refusal({ slots, load, limit: Limits.forActor(actor), maxLoad: actor.fetchMaxLoad?.(), held: stacks.has(selfId) },
+        { stackable, mass, amount });
+    return reason ? { reason } : { selfId, amount, stackable, mass };
+}
+
+// The C4 pickup rule, one for a body near a player (check) and a far round (RoundLoot.keep):
+// a drop that needs a slot past the bag's limit, or with mass past its carrying load, stays on
+// the ground. bag: { slots, load, limit, maxLoad, held: a stack of the drop is in the bag };
+// drop: { stackable, mass, amount }. Returns why it stays ('slots', 'weight'), null when it fits.
+function refusal({ slots, load, limit, maxLoad, held }, { stackable, mass, amount }) {
+    if (slots + (stackable ? Number(!held) : amount) > limit) return 'slots';
     // Weightless drops (notably Adena) do not worsen an existing overload.
-    if (mass > 0 && Number.isFinite(maxLoad) && load + mass * amount > maxLoad) return { reason: 'weight' };
-    return { selfId, amount, stackable, mass };
+    if (mass > 0 && Number.isFinite(maxLoad) && load + mass * amount > maxLoad) return 'weight';
+    return null;
 }
 
 // Several ground claims can arrive before the first award reaches the live
@@ -51,4 +59,4 @@ function reserve(actor, selfId, amount, groundItem) {
     } };
 }
 
-module.exports = { check, reserve };
+module.exports = { check, reserve, refusal };

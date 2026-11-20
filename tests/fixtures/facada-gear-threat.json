@@ -318,10 +318,6 @@
       ],
       "decisionSeq": 88,
       "activityLeaf": 1582945506,
-      "visitEvery": [
-        10.05,
-        1.36
-      ],
       "targetCombat": {
         "targetNpcId": 398,
         "resolves": 9,

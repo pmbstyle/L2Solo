@@ -310,7 +310,11 @@ function usePolicy(state, prepared = {}) {
     // netIncome over consumablePrices): the shots are priced against the hour
     // before them, not twice. The plan's paid shot is planForState's (a
     // beginner plan keeps its kind and grade).
-    const gross = Number(hour) > 0 ? Number(hour) + rawUse * botShotPrice(paidShotId(plan)) : 0;
+    // The purchase is judged at the same price the hour was netted at: the
+    // cheapest store or board ask a bot buys from (botBuyPrice), not its price
+    // belief, which board deals in a town without a seller pull far above it.
+    const shotPrice = botShotPrice(paidShotId(plan));
+    const gross = Number(hour) > 0 ? Number(hour) + rawUse * shotPrice : 0;
     const affordableUse = cost => rawUse > 0 && gross > 0 && benefit >= rawUse * cost / gross ? rawUse : 0;
     const paidUsePerHour = affordableUse(buyback);
     const beginnerUsePerHour = affordableUse(0);
@@ -318,7 +322,7 @@ function usePolicy(state, prepared = {}) {
         ? beginnerUsePerHour : paidUsePerHour;
     return { itemId: plan.selfId, rawUse, benefit, usePerHour, beginnerUsePerHour, paidUsePerHour,
         purchaseUsePerHour: !BeginnerShots.isRestricted(plan.selfId) && paidUsePerHour > 0
-            ? affordableUse(Number(prepared.unitPrice ?? Infinity)) : 0 };
+            ? affordableUse(shotPrice) : 0 };
 }
 
 // Personal ammunition stays usable when a hunt forecast or bag interval

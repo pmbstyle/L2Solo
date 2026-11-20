@@ -114,7 +114,8 @@ async function workerQuote() {
     try {
         assert.equal(Sources.npcOffersFor(1463).length, 0, 'D shots have no authored native NPC source');
         const fixed = Offers.fixedStoreOffers(1463).find(offer => offer.town === 'Dion');
-        assert(fixed && fixed.price === 500, 'the real x50 configured merchant is available');
+        // Stores sell at the datapack price at every preset: D soulshots cost 10 at x50.
+        assert(fixed && fixed.price === 10, 'the real configured merchant is available at x50 at the datapack price');
         const fallback = read();
         assert(fallback, 'an empty market retains configured shot supply');
         assert.equal(fallback.sourceType, 'configured_store');
@@ -123,11 +124,11 @@ async function workerQuote() {
         assert.equal(fallback.town, 'Dion');
         const board = new BoardIndex();
         board.put({ id: 1, ownerId: 2, storeType: 1, kind: 'sell_ad', town: 'Dion',
-            lines: [{ lineId: 1, selfId: 1463, count: 36, price: 185 }] });
+            lines: [{ lineId: 1, selfId: 1463, count: 36, price: 9 }] });
         const live = read(board);
         assert.equal(live.sourceType, 'afk', 'cheaper live supply remains the preferred offer');
         assert.equal(live.availableUnits, 36, 'finite market stock stays finite');
-        assert.equal(live.unitPrice, 185);
+        assert.equal(live.unitPrice, 9);
         assert.equal(read(empty, () => 0), null, 'no quote without a prepared route');
         const unreachable = () => Infinity;
         unreachable.details = () => ({ known: false, hours: NaN, fees: NaN });

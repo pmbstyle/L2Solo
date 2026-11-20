@@ -15,9 +15,9 @@ const Karma = require('../../Karma');
 let staticIndex = null;
 // Lazy: ColdOccupationSources reads this module while it loads.
 function exitValue(...args) { return require('../Population/ColdOccupationSources').exitValue(...args); }
-function staticExits(recipe, template) {
-    if (require('./ProductionPolicy').buyersDisabled()
-        || !String(template?.template?.kind || '').startsWith('Other.Material')) return [];
+// The fixed buyers' exits of a product for a seller they admit (ProductionPolicy.sellsToFixedBuyer).
+function staticExits(recipe, template, seller) {
+    if (!require('./ProductionPolicy').sellsToFixedBuyer(seller, template?.template?.kind)) return [];
     if (!staticIndex) {
         staticIndex = new Map();
         for (const [buyerName, store] of Object.entries(MerchantStoreConfigs)) {
@@ -44,7 +44,7 @@ function exitsFor(state, recipe, template, trip, options, existingOutput) {
             town: offer.town, trip: trip(offer.town), tripDetails: trip.details?.(offer.town), repeatable: false };
         result.push(require('./PriceDecision').prospectiveExit(state, exit, { board: options.board, timestamp: options.timestamp }));
     }
-    for (const exit of (options.staticExits || staticExits)(recipe, template)) result.push({ ...exit,
+    for (const exit of (options.staticExits || staticExits)(recipe, template, state)) result.push({ ...exit,
         trip: Number(exit.trip ?? trip(exit.town)), tripDetails: exit.tripDetails || trip.details?.(exit.town) });
     if (options.board) result.push(...Policy.drain(require('./ProductionSalePolicy').exits(state, recipe, {
         board: options.board, timestamp: options.timestamp, trip,

@@ -23,6 +23,10 @@ const native = require('./helpers/workerEconomyDecision');
         updatedAt: timestamp, simulation: { revision: 1 }, inventory: {},
         stats: { classId: 57, exp: Data.experience[77], money: [1000, .001, 0, 0],
             shotRecipeDemand: { itemId: recipe.recipeItemId, recipeId: 20, batches: 1, amount: 1, at: timestamp } } };
+    // It wears its level's kit: a crafter buys a missing piece cheaply at its crafter row,
+    // and that wish would come before the recipe this flow is about.
+    for (const item of invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 57, level: 78 }).items)
+        state.inventory[item.selfId] = { selfId: item.selfId, amount: 1, equipped: true, slot: item.slot };
     for (const id of [20, 21, 22, 23, 24]) for (const row of Recipes.resolveByRecipeId(id).materials)
         state.inventory[row.selfId] = { selfId: row.selfId, amount: row.amount * 16, stackable: true };
     state.persona = invoke('GameServer/Bot/AI/BotPersona').generate(state);

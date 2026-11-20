@@ -36,6 +36,18 @@ function bagNeed(state, now) {
     const fact = bagFact(state);
     return fact === 2 ? floorNeed(SurvivalFloor.bagFloor(state)) : fact === 1 ? countNeed(state, now) : null;
 }
+// A cold step's execution of the slots its build chose to destroy (stats.bagClear,
+// EconomyContext.bagDecisions): the bag without them, the answer spent. The step's resolve
+// (BotLifeState.prepareResolve) applies it on either thread, so the step's commit or main's
+// write carries the destroyed stacks.
+// Counted (bag_clear:cold) beside the bag's trips.
+function applyClear(state) {
+    const clear = state?.stats?.bagClear;
+    if (!clear) return state;
+    require('../Situations').note('bag_clear:cold');
+    return { ...state, inventory: require('./RoundLoot').removeFrom(state.inventory, clear.items),
+        stats: { ...state.stats, bagClear: null } };
+}
 const CLEANUP_BUSY_FLAGS = ['marketReturn'];
 const CLEANUP_BUSY_ACTIVITIES = ['traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting'];
 // A solo cold bot with no trip or errand under way: free to start a cleanup trip.
@@ -135,5 +147,5 @@ function ready(state) {
         && !state.stats?.travel && !state.stats?.marketReturn
         && ['hunting', 'party_wait', 'grouped'].includes(state.activity);
 }
-module.exports = { bagNeed, bagFact, cleanupDecision, cleanupFree, heldCleanup, withoutStartedTrip, clanDuty, held, pending,
+module.exports = { bagNeed, bagFact, cleanupDecision, applyClear, cleanupFree, heldCleanup, withoutStartedTrip, clanDuty, held, pending,
     goal, departure, sameObjective, traceCommitted, stats, ready, FLOOR_REASONS };

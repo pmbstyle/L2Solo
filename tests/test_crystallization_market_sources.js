@@ -85,6 +85,9 @@ try {
 } finally { Planner.equipInventoryUpgrades = equip; }
 for (const id of Crystals.catalog()) if (![90, 166, 86].includes(id)) board.remove(id);
 board.remove(86); board.remove(166);
+// The C goal cases run with the city reserve store off: with it this purse
+// buys the C sword there and the crystal price no longer moves the goal.
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = true;
 const deps = { board, spots: [], timestamp, npcOffersFor: () => [],
     routeRows: Array.from({ length: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.length },
         () => [true, 0, 0]) };

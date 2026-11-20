@@ -1,11 +1,11 @@
 const FailureLog = require('../../../FailureLog');
 const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const LifeStateCache = require('./LifeStateCache');
+const ColdClock = require('./ColdClock');
 const CharacterLocationRuntime = require('../../World/CharacterLocationRuntime');
 const RefreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ShopPlaces = require('../Economy/ShopPlaces');
 const { isMainThread } = require('node:worker_threads');
-const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
@@ -34,6 +34,7 @@ const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatib
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
+const RoundLoot = invoke('GameServer/Bot/Population/RoundLoot');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
@@ -261,20 +262,7 @@ function levelBand(level) {
 }
 
 
-function itemTemplate(selfId) {
-    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
-}
-
-function itemName(selfId, fallback = '') {
-    return itemTemplate(selfId)?.template?.name || fallback || `Item ${selfId}`;
-}
-
-function itemStackable(selfId, item = {}) {
-    const template = itemTemplate(selfId);
-    if (template) return template.etc?.stackable === true;
-    if (typeof item.fetchStackable === 'function') return !!item.fetchStackable();
-    return item.stackable === true;
-}
+const { itemTemplate, itemName, itemStackable } = RoundLoot;
 
 function normalizeInventoryStackability(inventory = {}) {
     const normalizedInventory = Object.fromEntries(Object.entries(inventory || {}).map(([key, item]) => {
@@ -1289,6 +1277,29 @@ function shiftDueTimesByDowntime() {
     });
 }
 
+// The progression rate the world runs at (the rates profile, recorded in world_meta) is part
+// of every spot's hour. A boot at another rate than the recorded one raises rate_changed on
+// every bot row, so each takes its earning answer and its build again, once, at the new rate;
+// the same rate raises nothing. A world saved before the rate was recorded holds none: its
+// rate is unknown, so it is taken as moved once. One UPDATE before the cache reads the table,
+// as the boot repairs beside it: no turn of a running world waits on it.
+function raiseOnRateChange() {
+    const rate = JSON.stringify(invoke('GameServer/ProgressionRates').profile());
+    return Database.execute(["SELECT value FROM world_meta WHERE key = 'progressionRate'", []]).then(([row] = []) => {
+        if (row?.value === rate) return 0;
+        const mind = "COALESCE(NULLIF(mindJson, ''), '{}')";
+        return Database.execute([`UPDATE ${TABLE} SET mindJson = json_set(${mind},
+            '$.woken', COALESCE(json_extract(${mind}, '$.woken'), ?) | ?,
+            '$.situationSeq', COALESCE(json_extract(${mind}, '$.situationSeq'), 0) + 1)`,
+        [Situations.FIRST, Situations.delta('rate_changed').woken]]).then((result) => {
+            const raised = Number(result?.affectedRows || 0);
+            utils.infoWarn('BotLife', 'progression rate %s (was %s): rate_changed raised on %d bots', rate, row?.value || 'unrecorded', raised);
+            return Database.execute([`INSERT INTO world_meta (key, value) VALUES ('progressionRate', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [rate]]).then(() => raised);
+        });
+    });
+}
+
 // Clocks are whole milliseconds (the command checkpoint and the native write
 // fence refuse a fraction). A row saved before the rest deadlines were ceiled
 // can hold one, and a bot with a fractional clock takes no command. Before the
@@ -2020,6 +2031,7 @@ const BotLifeState = {
         initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life')
             .then(() => wholeClocks(TABLE, ['activityStartedAt', 'nextResolveAt', 'lastResolvedAt', 'lastHotAt', 'updatedAt']))
             .then(() => shiftDueTimesByDowntime())
+            .then(() => raiseOnRateChange())
             .then(() => Database.fetchBotMarketCounts()).then((rows) => {
                 marketCounts.clear();
                 for (const row of rows) {
@@ -2313,8 +2325,9 @@ const BotLifeState = {
                     ...(craftState.timing || {}),
                     activityStartedAt: now(),
                     nextResolveAt: null,
-                    // The hot time is lived: the first cold step starts now.
-                    lastResolvedAt: now()
+                    // The hot time is lived: the first cold step starts now, or at
+                    // the end of a cold round that ran past the hand-over.
+                    lastResolvedAt: ColdClock.handedAt(craftState, now())
                 },
                 stats: { ...(craftState.stats || {}), ...membershipStats, pvpEnemies: BotEnemyMemory.snapshot(session), lastReason: reason },
                 inventory: InventorySummary.read(row.inventorySummary)
@@ -2332,8 +2345,9 @@ const BotLifeState = {
                 physicalLocation,
                 loc: preserved.loc,
                 nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000),
-                // The hot time is lived: the first cold step's length starts now.
-                lastResolvedAt: now()
+                // The hot time is lived: the first cold step's length starts now,
+                // or at the end of a cold round that ran past the hand-over.
+                lastResolvedAt: ColdClock.handedAt(preserved, now())
             });
             const nextState = bodyTrip(session, preserved, merged, physicalLocation, now()) || merged;
             session.coldLifeState = nextState;
@@ -2857,7 +2871,7 @@ const BotLifeState = {
         if (patchedStats.travel && state.activity !== 'traveling'
             && (result.patch?.activity || state.activity) !== 'traveling') patchedStats.travel = null;
         // A hold that waits for an event names it (result.eventWait); any other
-        // round ends the wait (ColdSoloWindow.livedClock reads it).
+        // round ends the wait (ColdClock.since reads it).
         if (result.eventWait) patchedStats.eventWait = result.eventWait;
         else delete patchedStats.eventWait;
         const stats = {
@@ -2874,7 +2888,7 @@ const BotLifeState = {
             route: result.debug?.route || state.stats?.route || null,
             ...(targetCombat ? { targetCombat } : {})
         };
-        const inventory = { ...(state.inventory || {}) };
+        let inventory = { ...(state.inventory || {}) };
         // ARCH-NOTE: the resolver already consumed authored summon materials
         // from its private combat inventory. Lifecycle normally rebuilds from
         // the input (shots/potions have separate counters), so carry only these
@@ -2894,41 +2908,7 @@ const BotLifeState = {
                 }
             }
         }
-        materializedItems.filter((item) => Number(item.selfId) !== 57).forEach((item) => {
-            const key = String(item.selfId);
-            const previous = inventory[key] || {};
-            const template = itemTemplate(item.selfId);
-            const amount = Number(item.amount || 0);
-            const kind = item.kind || previous.kind || template?.template?.kind || '';
-            const protectedStarterLoot = Number(item.sourceMobLevel || 0) > 0
-                && Number(item.sourceMobLevel) <= 5
-                && !String(kind).startsWith('Other.Material')
-                ? amount
-                : 0;
-            const nextAmount = Number(previous.amount || 0) + amount;
-            const starterMobLootAmount = Math.min(
-                nextAmount,
-                Number(previous.starterMobLootAmount || 0) + protectedStarterLoot
-            );
-            // Loot adds to the stack the bag holds: its worn copies, instances and
-            // reserves stay (a looted second dagger must not unequip the first).
-            const acquired = {
-                ...previous,
-                selfId: item.selfId,
-                name: item.name || previous.name || itemName(item.selfId),
-                amount: nextAmount,
-                kind,
-                rank: item.rank || previous.rank || template?.etc?.rank || 'none',
-                stackable: itemStackable(item.selfId, item),
-                slot: Number(previous.slot || template?.etc?.slot || 0),
-                ...(starterMobLootAmount > 0 ? { starterMobLootAmount } : {})
-            };
-            // Loot grows the bag without replacing its physical copies or worn
-            // slots. New gear gets anonymous +0 copies until the native sync.
-            if (acquired.stackable) delete acquired.instances;
-            else acquired.instances = previous.instances || [];
-            inventory[key] = InventorySummary.completeInstances(acquired);
-        });
+        inventory = RoundLoot.addTo(inventory, materializedItems);
         if (adena > 0) {
             inventory['57'] = {
                 selfId: 57,
@@ -2950,27 +2930,28 @@ const BotLifeState = {
             // The private combat inventory already contains exact consumption,
             // including switches between blessed, ordinary and beginner charges.
             // Carry only those decreases, preserving this resolve's new loot.
-            for (const selfId of Shots.combatShotIds(shot)) {
-                const stock = inventory[String(selfId)], original = state.inventory?.[selfId];
-                if (!stock || !original) continue;
-                const remaining = result.patch?.inventory?.[selfId]?.amount;
-                const spent = Number.isFinite(remaining)
-                    ? Math.max(0, Number(original.amount) - remaining)
-                    : selfId === shot.selfId ? shotActions * shot.perAction : 0;
-                inventory[String(selfId)] = { ...stock, amount: Math.max(0, Number(stock.amount) - spent) };
-                if (consumeFacts && spent > 0) Consumption.fact(consumeFacts, selfId, Number(stock.amount),
-                    inventory[String(selfId)].amount, 0);
-            }
+            const spent = Shots.combatShotIds(shot).filter(selfId => inventory[String(selfId)] && state.inventory?.[selfId])
+                .map(selfId => {
+                    const remaining = result.patch?.inventory?.[selfId]?.amount;
+                    return { selfId, count: Number.isFinite(remaining)
+                        ? Math.max(0, Number(state.inventory[selfId].amount) - remaining)
+                        : selfId === shot.selfId ? shotActions * shot.perAction : 0 };
+                });
+            const before = inventory;
+            inventory = RoundLoot.removeFrom(inventory, spent);
+            if (consumeFacts) for (const { selfId, count } of spent) if (count > 0) Consumption.fact(consumeFacts, selfId,
+                Number(before[String(selfId)].amount), inventory[String(selfId)].amount, 0);
         }
         // Cold combat drinks healing potions from the same stock. The fight
         // debits only its own copy; drunkPotions counts the bottles by selfId
         // (BackgroundResolver.startColdPotion).
-        for (const [selfId, count] of Object.entries(result.debug?.drunkPotions || {})) {
-            const stock = inventory[String(selfId)];
-            if (!stock || Number(stock.amount || 0) <= 0) continue;
-            inventory[String(selfId)] = { ...stock, amount: Math.max(0, Number(stock.amount) - Number(count || 0)) };
-            if (consumeFacts) Consumption.fact(consumeFacts, selfId, Number(stock.amount),
-                inventory[String(selfId)].amount, 1);
+        const drunk = Object.entries(result.debug?.drunkPotions || {}).filter(([selfId]) => Number(inventory[String(selfId)]?.amount || 0) > 0)
+            .map(([selfId, count]) => ({ selfId: Number(selfId), count: Number(count || 0) }));
+        if (drunk.length) {
+            const before = inventory;
+            inventory = RoundLoot.removeFrom(inventory, drunk);
+            if (consumeFacts) for (const { selfId } of drunk) Consumption.fact(consumeFacts, selfId,
+                Number(before[String(selfId)].amount), inventory[String(selfId)].amount, 1);
         }
 
         if (consumeFacts) Consumption.attach(result, consumeFacts);
@@ -2980,6 +2961,14 @@ const BotLifeState = {
             stats: { ...(state.stats || {}), ...(result.patch?.stats || {}) }
         }, inventory);
         const nextActivity = result.patch?.activity || state.activity;
+        const vitals = { ...(state.vitals || {}), ...(result.patch?.vitals || {}) };
+        // C4: a level up fills HP and MP to the new level's maxima (hot LevelUp's fillupVitals);
+        // a level a far round gained is applied here, after it. A dead body stays at none.
+        if (level > Number(state.level || 1) && nextActivity !== 'dead') {
+            const profile = ColdCombatProfile.fightProfile({ ...state, level, inventory: equippedInventory,
+                stats: { ...(state.stats || {}), ...(result.patch?.stats || {}) } }, timestamp);
+            Object.assign(vitals, { hp: profile.maxHp, maxHp: profile.maxHp, mp: profile.maxMp, maxMp: profile.maxMp });
+        }
         const nextState = {
             ...state,
             level,
@@ -2994,10 +2983,7 @@ const BotLifeState = {
                 ...(state.loc || {}),
                 ...(result.patch?.loc || {})
             },
-            vitals: {
-                ...(state.vitals || {}),
-                ...(result.patch?.vitals || {})
-            },
+            vitals,
             timing: {
                 ...(state.timing || {}),
                 ...(state.timing?.lastHotAt == null ? {} : { lastHotAt: Math.ceil(state.timing.lastHotAt) }),
@@ -3005,7 +2991,9 @@ const BotLifeState = {
                     ? (state.timing?.activityStartedAt == null
                         ? state.timing?.activityStartedAt : Math.ceil(state.timing.activityStartedAt))
                     : timestamp,
-                lastResolvedAt: timestamp,
+                // The bot's clock: where its round's last action ended (doneAt: before the step's
+                // timestamp when a crossing ended the round), else the step's.
+                lastResolvedAt: ColdClock.doneAt(result) ?? timestamp,
                 nextResolveAt: Math.ceil(result.nextResolveAt || timestamp + 60000)
             },
             stats: {
@@ -3100,6 +3088,9 @@ const BotLifeState = {
             Object.assign(nextState.stats, advised?.stats, economy.statsPacket);
             if (typeof options.onEconomy === 'function') options.onEconomy(economy, nextState);
         } else if (options.statsPacket && !beforeResolvePacket) Object.assign(nextState.stats, options.statsPacket);
+        // The slots the step's build chose to destroy (stats.bagClear) leave the bag in the step
+        // that decided them, on either thread: its commit or main's write carries the bag without them.
+        if (nextState.stats.bagClear) Object.assign(nextState, invoke('GameServer/Bot/Population/PartyMarketBreak').applyClear(nextState));
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);
@@ -3704,7 +3695,7 @@ const BotLifeState = {
         const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
         const Arrows = require('../../Inventory/ArrowStock');
         const reserved = Disposition.reservedEquipmentAmounts(state);
-        const inventory = { ...(state.inventory || {}) };
+        let inventory = { ...(state.inventory || {}) };
         let payout = 0;
         const sold = [];
         candidates.forEach((candidate) => {
@@ -3727,9 +3718,8 @@ const BotLifeState = {
             );
             const price = Math.max(0, Number(candidate.npcPrice || 0));
             if (!selfId || !Number.isFinite(amount) || !Number.isFinite(price) || amount <= 0 || price <= 0) return;
-            const removed = instances ? new Set(instances.slice(0, amount)) : null;
-            inventory[String(selfId)] = { ...existing, amount: Number(existing.amount) - amount,
-                ...(removed ? { instances: existing.instances.filter(instance => !removed.has(instance)) } : {}) };
+            inventory = RoundLoot.removeFrom(inventory, [{ selfId, enchant: candidate.enchant, count: amount,
+                objectIds: selectedIds && [...selectedIds] }]);
             payout += amount * price;
             sold.push([selfId, amount, price]);
         });
