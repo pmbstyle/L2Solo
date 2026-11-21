@@ -25,6 +25,8 @@ const Trade = invoke('GameServer/Bot/BotTradeService');
 const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 Data.init();
 let nextId = 971000;
+const townPoint = { locX: -12736, locY: 122816, locZ: -3112 };
+const fieldPoint = { ...townPoint, locZ: -7500 };
 function item(selfId, amount, extras = {}) {
     const template = Data.items.find(row => row.selfId === selfId);
     return new Item(++nextId, { ...utils.crushOb(template), amount, ...extras });
@@ -33,24 +35,27 @@ function owner(items, maximum = 20000) {
     const actor = { fetchId: () => 971001, fetchName: () => 'Overloaded companion', fetchClassId: () => 0,
         fetchLevel: () => 20, fetchRace: () => 0, fetchMaxLoad: () => maximum,
         fetchHp: () => 100, fetchMaxHp: () => 100, fetchHead: () => 0,
-        fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0,
+        position: townPoint, fetchLocX() { return this.position.locX; },
+        fetchLocY() { return this.position.locY; }, fetchLocZ() { return this.position.locZ; },
         fetchIsOnline: () => true, isDead: () => false, fetchKarma: () => 0,
         backpack: new Backpack({ items: [], paperdoll: {} }),
         state: { seated: true, fetchSeated() { return this.seated; }, setSeated(value) { this.seated = value; },
-            fetchTowards: () => false, fetchHits: () => false, fetchCasts: () => false },
+            fetchTowards: () => false, fetchHits: () => false, fetchCasts() { return !!this.casting; },
+            setCasts(value) { this.casting = value; } },
         automation: { abortAll() {} }, unselect() {}, moves: [], moveTo(move) { this.moves.push(move); } };
     actor.backpack.items = items;
     const leader = { actor: { fetchId: () => 971002, fetchIsOnline: () => true,
         fetchHp: () => 100, fetchMaxHp: () => 100, fetchMp: () => 100, fetchMaxMp: () => 100,
-        fetchLocX: () => 20000, fetchLocY: () => 0, fetchLocZ: () => 0 } };
+        position: fieldPoint, fetchLocX() { return this.position.locX; },
+        fetchLocY() { return this.position.locY; }, fetchLocZ() { return this.position.locZ; } } };
     const session = { actor, partyCompanion: true, followPlayerSession: leader, plan: 'following',
         dataSendToMe() {}, dataSendToOthers() {}, dataSendToMeAndOthers() {} };
     actor.session = session;
     return { actor, session, leader };
 }
 const target = { actorId: 90001, npcSelfId: 3001, name: 'Warehouse Keeper',
-    town: 'Talking Island', serviceRole: 'warehouse', locX: 0, locY: 0, locZ: 0 };
-const town = { name: target.town, x: 0, y: 0, z: 0 };
+    town: 'Gludio', serviceRole: 'warehouse', ...townPoint };
+const town = { name: target.town, x: townPoint.locX, y: townPoint.locY, z: townPoint.locZ };
 const BotAI = { getClosestTown: () => town };
 const restores = [];
 function replace(object, key, value) {
@@ -68,29 +73,41 @@ function shopping(probe) {
     try {
         replace(Catalog, 'targetFor', () => target);
         replace(Buffs, 'needsNewbieRefresh', () => false);
-        replace(Chat, 'announce', () => true);
+        const announcements = [];
+        let chatAvailable = true;
+        replace(Chat, 'announce', (_session, entry) => {
+            if (!chatAvailable) return false;
+            announcements.push(entry);
+            return true;
+        });
         replace(TownChat, 'say', () => true);
         replace(World, 'refreshPartyMemberships', () => 0);
         replace(World, 'npc', { spawns: [{ fetchId: () => target.actorId, fetchSelfId: () => target.npcSelfId,
-            fetchTitle: () => 'Warehouse Keeper', fetchLocX: () => 0, fetchLocY: () => 0 }] });
+            fetchTitle: () => 'Warehouse Keeper', fetchLocX: () => target.locX, fetchLocY: () => target.locY }] });
         const worn = item(347, 1, { equipped: true }), shots = item(1835, 10000);
         const quest = item(1865, 10, { kind: 'Other.Quest' }), locked = item(1867, 10); locked.petInUse = true;
         const probe = owner([worn, shots, quest, locked, item(57, 100000)]);
         const beforeLoad = probe.actor.backpack.fetchTotalLoad();
         assert(beforeLoad > probe.actor.fetchMaxLoad());
-        assert.equal(Cleanup.errand(probe.session, probe.actor, BotAI).kind, 'unload_inventory', 'field followers may leave for the warehouse');
-        probe.session.activeTrade = {};
-        assert.equal(Cleanup.errand(probe.session, probe.actor, BotAI), null, 'never leave an active player trade');
-        delete probe.session.activeTrade;
-
-        // Execute the real FollowingState admission, retaining party identity
-        // and the existing native travel owner rather than teleporting here.
         let requested = null;
         replace(Travel, 'request', (...args) => { requested = args; return 'walk'; });
         const context = { ...probe, bot: probe.actor, BotAI, playerSession: probe.leader,
             player: probe.leader.actor, role: 'dps', partyThreat: null, leaderTargetId: null };
+        probe.actor.position = fieldPoint;
+        assert.equal(Following.tickInventoryCleanup(context), false, 'a companion stays with the player in the field');
+        probe.leader.actor.position = townPoint;
+        assert.equal(Following.tickInventoryCleanup(context), false, 'the companion must reach town with the player first');
+        probe.actor.position = townPoint;
+        probe.session.activeTrade = {};
+        assert.equal(Cleanup.errand(probe.session, probe.actor, BotAI), null, 'never leave an active player trade');
+        delete probe.session.activeTrade;
         assert.equal(Following.tickInventoryCleanup({ ...context, partyThreat: {} }), false, 'combat defers the warehouse trip');
         assert.equal(Following.tickInventoryCleanup({ ...context, pulling: { target: {} } }), false, 'do not abandon an active pull');
+        const companions = invoke('GameServer/Bot/AI/PartyCompanionService');
+        const regroupActive = companions.regroupActive;
+        companions.regroupActive = () => true;
+        try { assert.equal(Following.tickInventoryCleanup(context), false, 'Regroup holds the town unload'); }
+        finally { companions.regroupActive = regroupActive; }
         assert.equal(probe.session.plan, 'following');
         const acted = Following.tickInventoryCleanup(context);
         assert.equal(acted, true);
@@ -99,13 +116,70 @@ function shopping(probe) {
         assert.equal(probe.session.companionShopping.kind, 'unload_inventory');
         assert.equal(probe.session.shoppingServicePhase, 'warehouse');
         assert.equal(probe.session.followPlayerSession, probe.leader);
+        assert.equal(requested, null, 'an in-town player companion starts a local visit, with no town travel');
+
+        probe.leader.actor.position = fieldPoint;
+        let aborted = 0;
+        probe.actor.automation.abortAll = () => { aborted++; };
+        probe.session.townEscape = {};
+        probe.actor.state.setCasts(true);
+        Shopping.tick(probe.session, probe.actor, {}, BotAI);
+        assert.equal(probe.session.plan, 'following', 'when the player leaves town the ongoing unload is cancelled');
+        assert.equal(probe.session.shoppingTarget, undefined);
+        assert.equal(probe.session.townEscape, undefined);
+        assert.equal(probe.actor.state.fetchCasts(), false);
+        assert.equal(aborted, 1);
+        assert.deepEqual(probe.actor.moves, []);
+
+        for (const kind of ['sell_junk', 'sell_resources', 'sell_unused_arrows', 'restock_shots']) {
+            probe.session.plan = 'shopping';
+            probe.session.companionShopping = { kind };
+            probe.session.shoppingTarget = target;
+            Shopping.tick(probe.session, probe.actor, {}, BotAI);
+            assert.equal(probe.session.plan, 'following', `${kind} stops before retrying a merchant outside the party's town visit`);
+        }
+        assert.deepEqual(probe.actor.moves, []);
+
+        probe.actor.position = fieldPoint;
+        probe.leader.accountId = 'bot_unload_leader';
+        assert.equal(Following.tickInventoryCleanup(context), true, 'bot-led parties still start a field unload');
         assert.equal(requested[4].allowCompanion, true);
         assert.equal(requested[4].preserveShoppingTarget, true);
 
+        const pack = owner([], 1000);
+        let load = 0;
+        pack.actor.backpack.fetchTotalLoad = () => load;
+        const notice = (value) => {
+            load = value;
+            Cleanup.announceCapacity(pack.session, pack.actor);
+        };
+        announcements.length = 0;
+        notice(600);
+        assert.equal(announcements.length, 0, 'exactly 60% does not prompt an unload');
+        chatAvailable = false;
+        notice(610);
+        chatAvailable = true;
+        for (const value of [610, 690, 700, 710, 800, 900, 1000, 1100, 990, 1000]) notice(value);
+        assert.deepEqual(announcements.map(({ key }) => Number(key.split(':').at(-1))), [60, 70, 80, 90, 100]);
+        assert(announcements.every(({ text }) => text.includes('Can we head to town so I can unload?')));
+        notice(500);
+        pack.actor.backpack.items = Array.from({ length: 49 }, () => item(347, 1));
+        pack.leader.actor.position = townPoint;
+        notice(0);
+        assert.equal(announcements.length, 5, 'a player in town is not asked to head to town');
+        pack.leader.actor.position = fieldPoint;
+        notice(0);
+        assert.match(announcements.at(-1).text, /61% of my inventory slots/, 'after unloading, slot pressure can start a new warning cycle');
+        pack.leader.accountId = 'bot_pack_leader';
+        notice(1000);
+        assert.equal(announcements.length, 6, 'bot parties do not ask a player for a town trip');
+
         const immovable = owner([item(347, 1, { equipped: true })], 10000);
+        immovable.leader.actor.position = townPoint;
         assert.equal(Cleanup.errand(immovable.session, immovable.actor, BotAI), null);
         assert(immovable.session.companionUnloadRetryAt > Date.now(), 'an unfixable bag must not loop through town');
         const arrows = owner([item(1341, 5000), item(1864, 4000)]);
+        arrows.leader.actor.position = townPoint;
         assert.equal(Cleanup.errand(arrows.session, arrows.actor, BotAI)?.kind, 'sell_unused_arrows');
         const sale = Disposition.unusedArrowCandidates;
         Disposition.unusedArrowCandidates = () => [];
@@ -200,7 +274,7 @@ function shopping(probe) {
         release();
         await assert.rejects(pending, /warehouse_actor_changed/);
         assert.equal((await Database.fetchWarehouseItems(971001)).find(row => row.selfId === 1835).amount, startingShots - carried);
-        console.log('Companion unload: field departure, protected inventory, partial shot storage, native SQLite conservation/reopen, leader return and interrupted writes passed');
+        console.log('Companion unload: player town boundaries, bot-party field departures, inventory warnings and native warehouse transfers passed');
     } finally {
         restores.reverse().forEach(restore => restore());
         await Database.close();
