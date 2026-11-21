@@ -185,7 +185,7 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 | Platform | Download |
 |----------|----------|
 | **Windows** | [L2Solo-Launcher-0.2.4-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.0/L2Solo-Launcher-0.2.4-windows-x64-Setup.exe) |
-| **macOS** | [L2Solo-Launcher-0.2.4-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.0/L2Solo-Launcher-0.2.4-mac-x64.dmg) |
+| **macOS** | [L2Solo-Launcher-0.2.4-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.0/L2Solo-Launcher-0.2.4-mac-arm64.dmg) |
 | **Linux** | [L2Solo-Launcher-0.2.4-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.0/L2Solo-Launcher-0.2.4-linux-x86_64.AppImage) |
 <!-- STABLE_DOWNLOADS_END -->
 
