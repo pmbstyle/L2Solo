@@ -853,6 +853,7 @@ module.exports = {
 
         if (isSoloHunter(session)) {
             const economy = DecisionEvents.held(session);
+            if (invoke('GameServer/Clan/ClanConsumableSupply').reviewActorDecision(session, economy.network.activity)) return;
             const wealthCraft = require('../../Economy/HotWealthCraftService');
             if (wealthCraft.canStart(session, economy.network.activity)) {
                 wealthCraft.review(session, economy)

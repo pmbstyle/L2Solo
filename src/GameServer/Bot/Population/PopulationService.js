@@ -3184,6 +3184,15 @@ const PopulationService = {
             if (require('./RaidSupplyPolicy').held(state)) return await this.resolveColdState(state, request, options);
             const card = request.precomputedPlan?.economyDecision;
             const acquisitionLeaf = card && invoke('GameServer/Bot/Population/ColdEconomyDecision').compact(card).activity;
+            if (acquisitionLeaf?.activity !== 'improving' && /^henna:\d+$/.test(acquisitionLeaf?.rootKey || '')) {
+                const withdrawal = await invoke('GameServer/Clan/ClanConsumableSupply').forDecision(state, acquisitionLeaf,
+                    () => checkWorkerCommandAdmission(state, options));
+                if (withdrawal) {
+                    const refreshed = await invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId,
+                        withdrawal.partial ? 'goal_failed' : 'goal_done:goal');
+                    return { ok: true, state: refreshed || withdrawal.state, reason: 'clan_stock_collected' };
+                }
+            }
             const acquisitionTravel = invoke('GameServer/Bot/Economy/BotImprovementService')
                 .acquisitionTravel(state, acquisitionLeaf);
             if (acquisitionTravel) {

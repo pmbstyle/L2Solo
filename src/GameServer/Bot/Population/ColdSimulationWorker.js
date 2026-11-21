@@ -115,6 +115,7 @@ const ColdEconomyPlan = require('./ColdEconomyPlan');
 const RecomputeGeneration = require('./RecomputeGeneration');
 const PersonalWarehouseIndex = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
 const ClanSupplyPolicy = invoke('GameServer/Clan/ClanSupplyPolicy');
+const ClanDyeStock = invoke('GameServer/Clan/ClanDyeStock');
 const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const { ColdOccupationPlanner, UNANSWERED } = require('./ColdOccupationPlanner');
 const OccupationSources = require('./ColdOccupationSources');
@@ -903,7 +904,7 @@ function cancelRoute(characterId) {
 }
 const pagedStates = new WeakSet();
 function assetsKey(state) {
-    return `${PersonalWarehouseIndex.version(state)}:${ClanSupplyPolicy.version(state)}`;
+    return `${PersonalWarehouseIndex.version(state)}:${ClanSupplyPolicy.version(state)}:${ClanDyeStock.version(state)}`;
 }
 const economyPlanHash = plan => fnv1a32(JSON.stringify(plan));
 // A service crafter's recipe book and packed known shot recipes, from main's
@@ -1178,6 +1179,10 @@ tables.watch('clan_supplies', {
     },
     remove: key => clanSupplyMoved(key)
 });
+tables.watch(ClanDyeStock.TABLE, {
+    put: key => clanSupplyMoved(key),
+    remove: key => clanSupplyMoved(key)
+});
 function boardReady() {
     return tables.ready('board') ? boardIndex : null;
 }
@@ -1250,6 +1255,7 @@ let planningNpcCatalog = ColdNpcPlanningCatalog.createLookup([], boardReady);
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 BotPersona.useRowSource((characterId) => tables.rows('personas').get(characterId));
 ClanSupplyPolicy.useRowSource(id => tables.rows('clan_supplies').get(id), () => tables.ready('clan_supplies'));
+ClanDyeStock.useRowSource(id => tables.rows(ClanDyeStock.TABLE).get(id));
 PersonalWarehouseIndex.useRowSource(id => tables.rows('personal_warehouse').get(id), () => tables.ready('personal_warehouse'));
 let eventLoopDelay = null;
 const LAG_RESOLUTION_MS = 20;

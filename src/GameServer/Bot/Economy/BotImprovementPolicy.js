@@ -162,13 +162,20 @@ function opportunities(state, ctx) {
     }
     const slots = state.stats?.hennas || [];
     if (slots.filter(Boolean).length < Henna.slotsForClass(state.stats?.classId || state.classId)) {
+        const ClanDyes = require('../../Clan/ClanDyeStock');
         for (const symbol of Henna.availableForClass(state.stats?.classId || state.classId)) {
-            if (!Sources.hasSource(symbol.dyeSelfId) || slots.includes(symbol.id)) continue;
+            if (slots.includes(symbol.id)) continue;
+            const id = symbol.dyeSelfId;
+            const held = positive(state.inventory?.[id]?.amount);
+            const ordered = positive(state.acceptedIncoming?.[id]);
+            const free = Math.min(ClanDyes.amount(state, id), Math.max(0, symbol.dyeAmount - held - ordered));
+            if (!Sources.hasSource(id) && !(free && held + free >= symbol.dyeAmount)) continue;
             const benefit = value({ hennas: [...slots, symbol.id] });
             if (benefit <= 0) continue;
             result.push({ key: `henna:${symbol.id}`, kind: 'henna', symbolId: symbol.id,
-                materials: [{ selfId: symbol.dyeSelfId, amount: symbol.dyeAmount }], fee: symbol.price,
-                price: ctx.price(symbol.dyeSelfId) * symbol.dyeAmount + symbol.price, valueHours: benefit });
+                materials: [{ selfId: id, amount: symbol.dyeAmount, ...(free ? { clanFree: free } : {}) }], fee: symbol.price,
+                price: (free ? Math.max(0, symbol.dyeAmount - held - ordered - free) : symbol.dyeAmount)
+                    * ctx.price(id) + symbol.price, valueHours: benefit });
         }
     }
     return result.sort((a,b) => b.valueHours / Math.max(1, b.price) - a.valueHours / Math.max(1,a.price)).slice(0, 6);

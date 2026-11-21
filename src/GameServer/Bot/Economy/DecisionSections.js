@@ -315,6 +315,9 @@ function storesOf(owner) {
     const into = [demand && Object.keys(demand), ClanSupply.requestIdentity(owner), ClanSupply.hasWarehouse(owner)];
     const crystals = owner.stats?.equipmentPlan?.clanGoal?.clanId && require('./ClanCrystalSupply').identity(owner);
     if (crystals) into.push(crystals);
+    const dyes = require('../../Clan/ClanDyeStock').version(owner);
+    const refill = owner.stats?.clanShotRefill;
+    if (dyes || refill) into.push([dyes, refill || null]);
     return into;
 }
 // memory: the bot's interaction memory (the caller's deps.memory), null when

@@ -1033,9 +1033,10 @@ function save(row, options = {}) {
             -- row (a NULL member removes the key), with the hennas from
             -- their rows, in one patch (one pass over the stats text).
             statsJson = ${EconomyCommit.preserveLeafSql(
-                "json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs', '$.playerPartyTakeover', '$.constPartySession')",
+                "json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs', '$.playerPartyTakeover', '$.constPartySession', '$.clanShotRefill')",
                 `'playerPartyTakeover', json_extract(bot_life_state.statsJson, '$.playerPartyTakeover'),
                 'constPartySession', json_extract(bot_life_state.statsJson, '$.constPartySession'),
+                'clanShotRefill', json_extract(bot_life_state.statsJson, '$.clanShotRefill'),
                 'hennas', json_array(
                     (SELECT symbolId FROM character_hennas WHERE characterId = excluded.characterId AND slot = 1),
                     (SELECT symbolId FROM character_hennas WHERE characterId = excluded.characterId AND slot = 2),
@@ -2289,11 +2290,14 @@ const BotLifeState = {
         return next;
     },
 
-    markCold(session, reason = 'cooldown') {
-        return this.writeColdRow(session, reason).then((saved) => {
-            if (saved) setSessionSnapshotsAuthority(session, saved);
-            return saved;
-        });
+    async markCold(session, reason = 'cooldown') {
+        const actor = session?.actor;
+        if (!actor) return null;
+        await this.settleWrites([actor.fetchId()]);
+        if (session.actor !== actor) return null;
+        const saved = await this.writeColdRow(session, reason);
+        if (saved) setSessionSnapshotsAuthority(session, saved);
+        return saved;
     },
 
     // markCold's write: the next cold row built from the actor or its craft state.
@@ -3854,7 +3858,7 @@ const BotLifeState = {
         return snapshot;
     },
 
-    applyClanMaterialTransfer(request, withdraw = false) {
+    applyClanMaterialTransfer(request, withdraw = false, publish = null) {
         const id = Number(request.characterId);
         const previous = pendingWrites.get(id) || Promise.resolve();
         const next = previous.then(() => withdraw
@@ -3864,6 +3868,7 @@ const BotLifeState = {
                 if (!result?.ok || !result.state) return result;
                 const snapshot = normalize(result.state);
                 cache.set(id, snapshot);
+                if (publish) publish({ ...result, state: snapshot });
                 notifyColdSnapshot(snapshot, 'clan_material_transfer', { critical: true });
                 return { ...result, state: snapshot };
             });

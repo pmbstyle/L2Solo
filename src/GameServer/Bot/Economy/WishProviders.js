@@ -915,17 +915,22 @@ function buildProjection(state, ctx, deps) {
     // Missing materials inherit that value; only a genuinely ready leaf applies.
     blocks?.lap('sources');
     for (const improvement of invoke('GameServer/Bot/Economy/BotImprovementPolicy').opportunities(state, ctx)) {
-        const materials = improvement.materials.map(material => ({ ...material, missing: Math.max(0,
-            material.amount - physical(material.selfId)) }));
+        const materials = improvement.materials.map(material => {
+            const gross = material.amount - positive(material.clanFree);
+            const missing = Math.max(0, gross - physical(material.selfId));
+            return { ...material, gross, missing, key: missing ? itemNode(material.selfId) : null };
+        });
         const requirements = materials.filter(material => material.missing > 0)
-            .map(material => ({ key: itemNode(material.selfId), amount: material.missing }));
+            .map(material => ({ key: material.key, amount: material.missing }));
         if (requirements.some(row => !row.key)) continue;
         const ready = !requirements.length && positive(state.adena) >= positive(improvement.fee);
         root({ key: improvement.key, need: 'power', object: { ...improvement, kind: 'improvement' },
             valueHours: improvement.valueHours, price: improvement.price,
             paths: [{ activity: ready ? 'improving' : null, kind: improvement.kind,
                 improvement, price: positive(improvement.fee), costHours: 1 / 3600,
-                riskHours: improvement.riskHours || 0, requirements }] });
+                riskHours: improvement.riskHours || 0, requirements,
+                ...(materials.some(material => material.clanFree) ? { grossRequirements: materials.filter(material => material.key)
+                    .map(material => ({ key: material.key, amount: material.gross })) } : {}) }] });
         for (const material of materials) values.set(material.selfId,
             positive(values.get(material.selfId)) + improvement.valueHours / Math.max(1, material.amount));
     }

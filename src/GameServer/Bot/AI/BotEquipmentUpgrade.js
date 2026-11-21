@@ -2,7 +2,6 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
-const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const ArmorPolicy = invoke('GameServer/Bot/AI/BotArmorPolicy');
 const { gradeForLevel, GRADES: RANK_ORDER } = invoke('GameServer/Bot/AI/GearGradeRule');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
@@ -377,7 +376,7 @@ function refreshAfterEquipment(session, upgrades) {
     // A weapon upgrade can change both the grade and the compatible shot kind.
     // Restock and re-enable after equipping; bots cannot send a client hotbar
     // toggle themselves.
-    ShotStock.restockAfterWeaponChange(actor, upgrades.map(({ slot }) => slot), 'BotGear');
+    invoke('GameServer/Clan/ClanConsumableSupply').afterWeaponChange(actor, upgrades.map(({ slot }) => slot), 'BotGear');
 
     if (session.dataSendToOthers) {
         session.dataSendToOthers(ServerResponse.charInfo(actor), actor);

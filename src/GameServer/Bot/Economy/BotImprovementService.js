@@ -76,12 +76,23 @@ async function reviewCold(state, options = {}) {
         const raised = await DecisionEvents.rejectOnRow(state, state, `improvement:${improvement.kind}:no_station`);
         return { state: raised || state, changed: false, reason: 'no_station' };
     }
-    const original = Life.cachedState(state.characterId);
-    const work = invoke('Database').applyBotImprovement(state.characterId, {
-        ...improvement, lossHours: improvement.riskHours * context.riskWeight
-    }, { ...writeOptions, coldState: state, validate() {
-        if (Life.cachedState(state.characterId) !== original || original && original !== state) throw Error('improvement_source_retired');
-    } }).then(async result => {
+    const work = Promise.resolve().then(async () => {
+        if (improvement.kind === 'henna') {
+            const withdrawal = await invoke('GameServer/Clan/ClanConsumableSupply')
+                .forDecision(state, decision.activity, writeOptions.beforeWrite);
+            if (withdrawal) state = withdrawal.state;
+            const symbol = invoke('GameServer/Henna/HennaRules').symbol(improvement.symbolId);
+            if (symbol && Number(state.inventory?.[symbol.dyeSelfId]?.amount || 0) < symbol.dyeAmount) {
+                const refreshed = await DecisionEvents.raiseOn(state.characterId, 'goal_failed');
+                return { state: refreshed || state, changed: false, reason: 'missing_dye' };
+            }
+        }
+        const original = Life.cachedState(state.characterId);
+        const result = await invoke('Database').applyBotImprovement(state.characterId, {
+            ...improvement, lossHours: improvement.riskHours * context.riskWeight
+        }, { ...writeOptions, coldState: state, validate() {
+            if (Life.cachedState(state.characterId) !== original || original && original !== state) throw Error('improvement_source_retired');
+        } });
         if (!result.coldLifeRow) throw Error('improvement_missing_native_snapshot');
         const current = Life.acceptLifecycleRow(result.coldLifeRow, 'improvement');
         invoke('GameServer/Bot/Economy/EconomyContext').forget(state.characterId);

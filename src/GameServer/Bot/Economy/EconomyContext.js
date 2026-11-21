@@ -94,7 +94,8 @@ function stateForActor(actor, session = actor?.session) {
         adena: actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0,
         sp: actor.fetchSp?.() ?? stored.sp,
         ...bodyPlace(session, stored),
-        stats: { ...decisionStats, coldCombat: hotKit, hennas: [...(session?.hennas || stored.stats?.hennas || [])], soulCrystalQuest: session?.questStates?.get(350)?.isStarted() === true || stored.stats?.soulCrystalQuest, classId: actor.fetchClassId?.(), exp: actor.fetchExp?.(), karma: actor.fetchKarma?.(), pk: actor.fetchPk?.() },
+        stats: { ...decisionStats, clanShotRefill: (current || stored).stats?.clanShotRefill,
+            coldCombat: hotKit, hennas: [...(session?.hennas || stored.stats?.hennas || [])], soulCrystalQuest: session?.questStates?.get(350)?.isStarted() === true || stored.stats?.soulCrystalQuest, classId: actor.fetchClassId?.(), exp: actor.fetchExp?.(), karma: actor.fetchKarma?.(), pk: actor.fetchPk?.() },
         activity: session?.plan || 'hunting' };
     const loc = { locX: Number(actor.fetchLocX?.()), locY: Number(actor.fetchLocY?.()), locZ: Number(actor.fetchLocZ?.()) };
     if (!Object.values(loc).every(Number.isFinite)) Object.assign(loc, stored.loc || {});
@@ -795,7 +796,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
         policy: { ownedUsePerHour: shotPolicy.usePerHour, beginnerUsePerHour: shotPolicy.beginnerUsePerHour,
             paidUsePerHour: shotPolicy.paidUsePerHour } };
     const bag = kitBag(state, { plan: shotPlan, potion, beginner: beginnerCurrent, hour: hourAdena });
-    const { stock, kitCost, reserve } = KitRule.kitReader(rates, bag, Funding.budget(state), price,
+    const { stock, kitCost, reserve } = readKit(state, rates, bag, Funding.budget(state), price,
         () => rates.scrollHours ??= scrollHoursFor(state, deps.spots, bestSpotId));
     // The published scroll hours (StatsPacket.kitRates): the build's own answer,
     // else the catalogue spot's cached one; a bot with no scroll solves its
@@ -833,7 +834,7 @@ function bagDecisions(state, base, deps, now) {
 // and wallet (kitReader).
 function foundationFromPlan(state, plan, deps, price) {
     const bag = kitBag(state, { hour: plan.hourAdena });
-    const { stock, kitCost, reserve } = KitRule.kitReader(ratesNow(plan.rates, state, bag), bag, Funding.budget(state), price,
+    const { stock, kitCost, reserve } = readKit(state, ratesNow(plan.rates, state, bag), bag, Funding.budget(state), price,
         () => plan.rates.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId));
     const scrollHours = () => plan.rates.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId, false);
     return { hunt: plan.hunt, hourAdena: plan.hourAdena, refillReserve: reserve,
@@ -1541,7 +1542,7 @@ function view(state, plan, deps, built = {}) {
     let kit = built.kit;
     if (!kit) {
         const bag = kitBag(state, { hour: plan.hourAdena });
-        const read = KitRule.kitReader(ratesNow(plan.rates, state, bag), bag, Funding.budget(state), price,
+        const read = readKit(state, ratesNow(plan.rates, state, bag), bag, Funding.budget(state), price,
             () => plan.rates.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId));
         kit = { stock: read.stock, kitCost: read.kitCost, refillReserve: read.reserve };
     }
@@ -1657,13 +1658,40 @@ function ratesOf(state, quiet) {
     }
     return rates;
 }
-// The kit a purchase reads (ShotStock, HealingPotionStock and ScrollStock
-// restocks, NpcRestockPlan, ColdMarketService funding, the card view):
-// stock, kitCost, refillReserve and price, priced at the bot's prices.
-// options.quote(id): a town's own price (NpcRestockPlan.quoteFor), read before
-// the bot's: a visit's amounts are priced where it buys (its funding stays at
-// the bot's own estimate: visitStock). options.rates: a build's own
-// rates (the worker's fresh build), read instead of the published row.
+// Once a clan withdrawal has started a refill, the bag can pass the normal
+// reorder point before the bot has enough for its outing.
+function shotRefillStock(state, row) {
+    const refill = state.stats?.clanShotRefill;
+    if (refill?.[0] !== Number(state.clanId ?? state.stats?.clanId) || refill?.[1] !== Number(row?.itemId)) return row;
+    const remaining = refill[2] - positive(state.inventory?.[row.itemId]?.amount);
+    if (!(remaining > 0)) return row;
+    const incoming = positive(state.acceptedIncoming?.[row.itemId]);
+    const refillTarget = refill[2] + positive(row.beginnerCurrent);
+    const target = Math.max(0, refillTarget - incoming);
+    const missing = Math.max(0, remaining - incoming);
+    return { ...row, target, refillTarget, survivalTarget: target, needed: missing > 0, survivalMissing: missing, missing: 0 };
+}
+
+function readKit(state, ...args) {
+    const kit = KitRule.kitReader(...args);
+    if (!state.stats?.clanShotRefill) return kit;
+    const base = kit.stock('shots');
+    const shots = shotRefillStock(state, base);
+    if (shots === base) return kit;
+    // An earning review can shrink the normal kit while this refill is open.
+    // Keep its survival funding as well as its quantity until it completes.
+    const kitCost = (id, quote = null) => {
+        const cost = kit.kitCost(id, quote);
+        if (Number(id) !== shots.itemId) return cost;
+        const price = Number.isFinite(quote) && quote > 0 ? quote : shots.survivalPrice;
+        return Math.max(cost, shots.survivalMissing * price);
+    };
+    const reserve = kit.reserve + Math.max(0, shots.refillTarget - base.refill) * shots.survivalPrice;
+    return { stock: kind => kind === 'shots' ? shots : kit.stock(kind), kitCost, reserve };
+}
+
+// A purchase reads stock, kitCost and refillReserve at published kit rates.
+// A town quote can override the prices, and a worker can use its fresh rates.
 function keptKit(state = {}, deps = {}, options = {}) {
     let read = null;
     const own = id => (read ||= personal(state, deps).price)(id);
@@ -1671,7 +1699,7 @@ function keptKit(state = {}, deps = {}, options = {}) {
     const price = !quote ? own : id => { const local = Number(quote(id)); return local > 0 ? local : own(id); };
     const bag = kitBag(state);
     const rates = options.rates !== undefined ? options.rates : ratesOf(state);
-    const { stock, kitCost, reserve } = KitRule.kitReader(ratesNow(rates, state, bag), bag, Funding.budget(state), price);
+    const { stock, kitCost, reserve } = readKit(state, ratesNow(rates, state, bag), bag, Funding.budget(state), price);
     return { stock, kitCost, refillReserve: reserve, price };
 }
 // A restock's stock row of a kind: its amounts from the visit's kit (kit: at the
@@ -1679,7 +1707,9 @@ function keptKit(state = {}, deps = {}, options = {}) {
 // ranked at, always the funding context's (the bot's own price).
 function visitStock(context, kit, kind) {
     const own = context.stock(kind);
-    return { row: kit ? kit.stock(kind) : own, estimate: own.unitPrice };
+    const quoted = kit?.stock(kind);
+    return { row: quoted && own.refillTarget ? { ...quoted, target: own.target, survivalTarget: own.survivalTarget }
+        : quoted || own, estimate: own.unitPrice };
 }
 // The sale's kept stock (ItemDisposition.saleCandidates): each kind's stock
 // row (itemId, target, beginnerCurrent), no price read. The wallet does not
@@ -1687,7 +1717,7 @@ function visitStock(context, kit, kind) {
 const NO_PRICE = () => 0;
 function keptTargets(state = {}) {
     const bag = kitBag(state);
-    const { stock } = KitRule.kitReader(ratesNow(ratesOf(state), state, bag), bag, Infinity, NO_PRICE);
+    const { stock } = readKit(state, ratesNow(ratesOf(state), state, bag), bag, Infinity, NO_PRICE);
     return { potions: stock('potions'), shots: stock('shots') };
 }
 // Whether the sale keeps the rated kit (keptTargets reads its rates, not the
@@ -1835,4 +1865,4 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { visitStopsLeft, decideEarning, bagDecisions, quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, proofIdentity, restartEventProof, restoreEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitBag, kitRates, keptKit, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, bodyPlace, preparedRouteRows, RETAIN_LIMIT, leafCheck, leafOutcome, refillReserve, forgetContext, forget, reset, configure, registerProvider };
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, proofIdentity, restartEventProof, restoreEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitBag, kitRates, keptKit, shotRefillStock, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, bodyPlace, preparedRouteRows, RETAIN_LIMIT, leafCheck, leafOutcome, refillReserve, forgetContext, forget, reset, configure, registerProvider };

@@ -33,6 +33,7 @@ const Statements = require('./DatabaseStatements');
 const MarketTradeOverview = require('./MarketTradeOverview');
 const EconomyJournal = require('./EconomyJournal');
 const ClanReviewInputs = require('./GameServer/Clan/ClanReviewEvents');
+const ClanDyeStock = require('./GameServer/Clan/ClanDyeStock');
 const ClanActionScheduler = require('./GameServer/Clan/ClanActionScheduler');
 const PvpJournal = require('./PvpJournal');
 const BotPvpMemory = require('./GameServer/Bot/AI/BotPvpMemory');
@@ -392,7 +393,10 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
         try {
             const result = job();
             EconomyJournal.commit();
-            if (!connection?.isTransaction) ClanReviewInputs.commitCandidateInputs();
+            if (!connection?.isTransaction) {
+                ClanReviewInputs.commitCandidateInputs();
+                ClanDyeStock.publish();
+            }
             committed = true;
             if (timed) record(operation, wait, now() - startedAt, read);
             return result;
@@ -2819,7 +2823,8 @@ function completeEconomyStepUnsafe(characterId, step, result, changedIds, mp = n
             recipeId: step.command[1] === EconomyCommit.KINDS.craft ? Number(result.nativeId || 0) : undefined });
     const patch = { ...statsPatch, economyCommit: tuple, ...(learning ? { lastRecipeBookLearning: learning } : {}) };
     if (step.row.phase === 'cold') return writeColdInventorySnapshotUnsafe(characterId, step.row, changedIds, mp, patch);
-    const { body, mind } = SavedStats.split(patch);
+    const refillPatch = clearClanShotRefillUnsafe(characterId, step.row, changedIds);
+    const { body, mind } = SavedStats.split({ ...patch, ...refillPatch });
     write(`UPDATE bot_life_state SET statsJson=json_patch(COALESCE(statsJson,'{}'),json(?)),
         mindJson=CASE WHEN ? IS NULL THEN mindJson ELSE json_patch(mindJson,json(?)) END WHERE characterId=?`,
     [JSON.stringify(body), ...mindPatchParams(mind), Number(characterId)]);
@@ -2990,6 +2995,15 @@ function mindPatchParams(mind) {
     return [json, json];
 }
 
+function clearClanShotRefillUnsafe(characterId, row, changedIds, physical = null, addedRefill = null) {
+    if (!addedRefill && !row.statsJson?.includes('"clanShotRefill"')) return null;
+    const refill = addedRefill || jsonObject(row.statsJson).clanShotRefill;
+    if (!refill || !(changedIds instanceof Set ? changedIds.has(refill[1]) : changedIds.includes(refill[1]))) return null;
+    const held = physical ? physical[refill[1]]?.amount || 0 : one(`SELECT COALESCE(SUM(amount),0) AS amount
+        FROM items WHERE characterId=? AND selfId=?`, [characterId, refill[1]]).amount;
+    return held >= refill[2] ? { clanShotRefill: null } : null;
+}
+
 // The summary entries of changedIds and adena from the physical rows, and the
 // next simulationRevision, for a row its caller has checked. The write moves
 // a far row, so what waits for it on the board joins it here.
@@ -3005,7 +3019,8 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
         else delete inventory[id];
     }
     const adena = Number(physical[57]?.amount || 0);
-    const { body, mind } = SavedStats.split({ ...statsPatch, hennas: nativeHennaSlotsUnsafe(characterId) });
+    const refillPatch = clearClanShotRefillUnsafe(characterId, row, ids, physical, statsPatch?.clanShotRefill);
+    const { body, mind } = SavedStats.split({ ...statsPatch, ...refillPatch, hennas: nativeHennaSlotsUnsafe(characterId) });
     // An equipment plan is a complete ownership record, not a partial JSON
     // patch: merging a resumed project into the completed goal leaves stale
     // target fields and even its nested inputPreparation behind.
@@ -5143,6 +5158,7 @@ const Database = {
                 transferMs: Number(options.default.Database?.historyTransferMs) || 200 });
             startEconomyJournal();
             ClanReviewInputs.attach(connection);
+            ClanDyeStock.attach(connection);
             CheckpointCoordinator.start(databasePath, {
                 intervalMs: Number(options.default.Database?.checkpointIntervalMs) || 5000,
                 minWalBytes: Number(options.default.Database?.checkpointMinWalBytes) || (4 * 1024 * 1024)
@@ -10553,6 +10569,10 @@ const Database = {
     fetchClanWarehouseItems(clanId) {
         return select('clan_warehouse_items', ['*'], 'clanId = ? AND amount > 0', [Number(clanId)], 'clan-warehouse:list');
     },
+    hasFreeClanWarehouseItem(clanId, selfId) {
+        return run('SELECT 1 FROM clan_warehouse_items WHERE clanId = ? AND selfId = ? AND amount > reservedAmount LIMIT 1',
+            [clanId, selfId], 'clan-warehouse:available').then(rows => rows.length > 0);
+    },
     updateAutonomousClanStrategy({ clanId, leaderId, expectedUpdatedAt, strategy, eventType = null } = {}) {
         const clan = Number(clanId);
         if (!clan || strategy?.version !== 1 || !require('./GameServer/Clan/ClanStrategyPolicy').LABELS[strategy.objective]
@@ -11369,14 +11389,16 @@ const Database = {
         expectedWarehouseRevision = null,
         expectedSimulationRevision = null,
         allowParty = false,
-        clanOrder = null
+        clanOrder = null,
+        consumable = null
     } = {}) {
         const clan = Number(clanId);
         const beneficiary = Number(characterId);
         const itemId = Number(selfId || 0);
-        const requested = Math.floor(Number(amount) || 0);
+        let requested = Math.floor(Number(amount) || 0);
         const key = String(goalKey || '').trim();
-        if (!clan || !beneficiary || !itemId || requested <= 0 || !key) {
+        if (!clan || !beneficiary || !itemId || requested <= 0 || !key
+            || consumable && !Number.isSafeInteger(requested)) {
             return Promise.resolve({ ok: false, code: 'warehouse_transfer_failed' });
         }
 
@@ -11385,13 +11407,13 @@ const Database = {
                 return { ok: false, code: 'clan_order_revision_conflict' };
             }
             const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
-            const member = one('SELECT id, clanId FROM characters WHERE id = ?', [beneficiary]);
-            const life = one(`SELECT phase, simulationRevision, partyId
-                FROM bot_life_state WHERE characterId = ?`, [beneficiary]);
-            if (!simulation || !member || Number(member.clanId) !== clan || !life) {
+            const member = one('SELECT id, clanId, classId FROM characters WHERE id = ?', [beneficiary]);
+            const life = one('SELECT * FROM bot_life_state WHERE characterId = ?', [beneficiary]);
+            if ((!simulation && !consumable) || !member || Number(member.clanId) !== clan || !life) {
                 return { ok: false, code: 'warehouse_transfer_failed' };
             }
-            if (String(life.phase || '') !== 'cold'
+            const phase = consumable?.phase || 'cold';
+            if (!['cold', 'hot'].includes(phase) || life.phase !== phase
                 || (!allowParty && String(life.partyId || '') !== '')) {
                 return { ok: false, code: 'stale_snapshot' };
             }
@@ -11400,8 +11422,9 @@ const Database = {
                 return { ok: false, code: 'stale_snapshot', simulationRevision: Number(life.simulationRevision || 0) };
             }
 
-            const previousState = jsonObject(simulation.stateJson);
-            const currentWarehouseRevision = Math.max(0, Number(previousState.warehouseRevision) || 0);
+            const previousState = jsonObject(simulation?.stateJson);
+            const currentWarehouseRevision = simulation ? Math.max(0, Number(previousState.warehouseRevision) || 0)
+                : Number(one('SELECT COALESCE(MAX(warehouseRevision), 0) AS revision FROM clan_warehouse_ledger WHERE clanId = ?', [clan]).revision);
             if (expectedWarehouseRevision !== null
                 && currentWarehouseRevision !== Number(expectedWarehouseRevision)) {
                 return { ok: false, code: 'ownership_conflict', warehouseRevision: currentWarehouseRevision };
@@ -11439,7 +11462,52 @@ const Database = {
                 0,
                 Number(row.amount || 0) - Number(row.reservedAmount || 0)
             ), 0);
-            if (available < requested) {
+            let errandPatch = null;
+            if (consumable && available > 0) {
+                if (!(Number(one('SELECT level FROM clans WHERE id = ?', [clan])?.level) >= 1)
+                    || typeof consumable.validate !== 'function' || !consumable.validate()) {
+                    return { ok: false, code: 'stale_snapshot' };
+                }
+                if (consumable.symbolId) {
+                    const Henna = invoke('GameServer/Henna/HennaRules');
+                    const symbol = Henna.symbolForClass(member.classId, consumable.symbolId);
+                    const slots = nativeHennaSlotsUnsafe(beneficiary).filter(Boolean);
+                    if (symbol?.dyeSelfId !== itemId || slots.includes(symbol.id)
+                        || slots.length >= Henna.slotsForClass(member.classId)) {
+                        return { ok: false, code: 'invalid_bot_henna' };
+                    }
+                } else if (!invoke('GameServer/Inventory/ShotStock').kindForSelfId(itemId)
+                    || require('./GameServer/Items/C4BeginnerShots').isRestricted(itemId)) {
+                    return { ok: false, code: 'warehouse_transfer_failed' };
+                }
+                const order = one(`SELECT amount FROM clan_orders WHERE clanId = ? AND itemId = ?
+                    AND status IN ('active', 'paused', 'blocked')`, [clan, itemId]);
+                const total = stockRows.reduce((sum, row) => sum + Number(row.amount), 0);
+                requested = Math.min(requested, available, Math.max(0, total - Number(order?.amount || 0)));
+                if (requested > 0 && consumable.errand) {
+                    const Errands = require('./GameServer/Bot/Population/CombinedErrandPolicy');
+                    const expected = consumable.errand;
+                    const errands = Errands.pending({ stats: SavedStats.merge(life.statsJson, life.mindJson) });
+                    const index = errands.findIndex(errand => Errands.key(errand) === Errands.key(expected)
+                        && Number(errand.at) === Number(expected.at) && Number(errand.amount) === Number(expected.amount));
+                    if (index < 0) return { ok: false, code: 'stale_snapshot' };
+                    const errand = errands[index], rest = Number(errand.amount) - requested;
+                    if (rest > 0) errands[index] = { ...errand, amount: rest };
+                    else errands.splice(index, 1);
+                    errandPatch = { marketErrands: errands, marketErrand: errands[0] || null };
+                }
+                if (requested > 0 && phase === 'cold') {
+                    // An older cold row can still hold a stack awaiting materialization.
+                    const held = InventorySummary.read(life.inventorySummary)[itemId];
+                    const physical = one(`SELECT COALESCE(SUM(amount), 0) AS amount FROM items
+                        WHERE characterId = ? AND selfId = ?`, [beneficiary, itemId]).amount;
+                    if (Number(physical) > Number(held?.amount || 0)) return { ok: false, code: 'stale_snapshot' };
+                    if (held && Number(physical) < Number(held.amount)) {
+                        syncInventorySummaryUnsafe(beneficiary, { [itemId]: held }, new Set([itemId]));
+                    }
+                }
+            }
+            if (!requested || available < requested) {
                 return { ok: false, code: 'warehouse_no_stock', available };
             }
 
@@ -11487,32 +11555,38 @@ const Database = {
             }
             if (remaining > 0) throw new Error('clan warehouse handoff source changed');
 
-            const lifeUpdate = updateColdInventorySnapshotUnsafe(beneficiary, itemId, {
+            const event = {
                 clanId: clan,
                 selfId: itemId,
                 amount: requested,
                 warehouseId: consumedRows[0]?.warehouseId || null,
                 at: timestamp,
                 operation: 'withdraw'
-            }, expectedSimulationRevision === null
-                ? Number(life.simulationRevision || 0)
-                : Number(expectedSimulationRevision), allowParty);
+            };
+            const snapshot = consumable ? writeColdInventorySnapshotUnsafe(beneficiary, life, [itemId], null, {
+                ...errandPatch,
+                lastClanWarehouseTransfer: event,
+                clanInventoryRevision: Number(life.simulationRevision) + 1,
+                ...(consumable.shotRefillTarget > 0
+                    ? { clanShotRefill: [clan, itemId, consumable.shotRefillTarget] } : {})
+            }) : null;
+            const lifeUpdate = snapshot ? { ok: true, simulationRevision: snapshot.simulationRevision }
+                : updateColdInventorySnapshotUnsafe(beneficiary, itemId, event, Number(life.simulationRevision), allowParty);
             if (!lifeUpdate.ok) throw new Error(`clan warehouse handoff rejected: ${lifeUpdate.code}`);
 
             const nextWarehouseRevision = currentWarehouseRevision + 1;
-            const state = simulationState(simulation.stateJson, clan, previousState.leaderId, previousState.memberIds || [], timestamp);
-            state.warehouseRevision = nextWarehouseRevision;
-            const stateUpdate = write(`UPDATE clan_simulation_clans
-                SET updatedAt = ?, stateJson = ?
-                WHERE clanId = ? AND json_extract(stateJson, '$.warehouseRevision') = ?`, [
-                timestamp,
-                JSON.stringify(state),
-                clan,
-                currentWarehouseRevision
-            ]);
-            if (Number(stateUpdate.affectedRows || 0) !== 1) throw new Error('clan warehouse revision changed');
+            if (simulation) {
+                const state = simulationState(simulation.stateJson, clan, previousState.leaderId, previousState.memberIds || [], timestamp);
+                state.warehouseRevision = nextWarehouseRevision;
+                const stateUpdate = write(`UPDATE clan_simulation_clans
+                    SET updatedAt = ?, stateJson = ?
+                    WHERE clanId = ? AND COALESCE(json_extract(stateJson, '$.warehouseRevision'), 0) = ?`, [
+                    timestamp, JSON.stringify(state), clan, currentWarehouseRevision
+                ]);
+                if (Number(stateUpdate.affectedRows || 0) !== 1) throw new Error('clan warehouse revision changed');
+            }
 
-            const reservationResult = reservation
+            const reservationResult = consumable ? null : reservation
                 ? write(`UPDATE clan_warehouse_reservations
                     SET amount = ?, beneficiaryId = ?, status = 'consumed', updatedAt = ?
                     WHERE id = ? AND clanId = ?`, [requested, beneficiary, timestamp, reservation.id, clan])
@@ -11535,8 +11609,9 @@ const Database = {
                 amount: requested,
                 warehouseRevision: nextWarehouseRevision,
                 simulationRevision: lifeUpdate.simulationRevision,
-                reservationId: Number(reservation?.id || reservationResult.insertId || 0),
-                state: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [beneficiary])),
+                reservationId: Number(reservation?.id || reservationResult?.insertId || 0),
+                state: snapshot || normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [beneficiary])),
+                ...(phase === 'hot' ? { items: all('SELECT * FROM items WHERE characterId = ? AND selfId = ?', [beneficiary, itemId]) } : {}),
                 ledgerId: Number(ledger.insertId)
             };
         }, 'clan-warehouse:withdraw')).then(result => {
