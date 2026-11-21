@@ -534,6 +534,11 @@ function endCompanionErrand(session, bot) {
 module.exports = {
     endCompanionErrand, workshopTarget, stockWorkshopTarget, craftAtWorkshop, arrive,
     tick(session, bot, Generics, BotAI) {
+        const errandKind = session.companionShopping?.kind;
+        if (!InventoryCleanup.canContinue(session, bot, errandKind, session.shoppingTarget)) {
+            endCompanionErrand(session, bot);
+            return;
+        }
         // A companion's personal visit yields to the commander's raid even
         // when this local party has no incoming hits or selected target.
         if (session.partyCompanion === true && session.followPlayerSession
@@ -646,6 +651,10 @@ module.exports = {
 
         const targetActor = CompanionNavigationRecovery.resolveTargetActor(session.shoppingTarget);
         const target = CompanionNavigationRecovery.refreshTarget(session.shoppingTarget, targetActor);
+        if (!InventoryCleanup.canContinue(session, bot, errandKind, target)) {
+            endCompanionErrand(session, bot);
+            return;
+        }
         const distToTarget = new SpeckMath.Point3D(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ())
             .distance(new SpeckMath.Point3D(target.locX, target.locY, target.locZ));
         const npcApproach = TownNpcApproach.plan(session, bot, target, 'shopping', { bodiesNear: TownNpcBodies.seenBy(bot) });
@@ -670,7 +679,7 @@ module.exports = {
                     const failedIds = new Set((session.failedWarehouseNpcSelfIds || []).map(Number));
                     if (target.npcSelfId) failedIds.add(Number(target.npcSelfId));
                     const alternate = warehouseTarget(town, bot, { excludedNpcSelfIds: [...failedIds] });
-                    if (alternate) {
+                    if (alternate && InventoryCleanup.canContinue(session, bot, errandKind, alternate)) {
                         session.failedWarehouseNpcSelfIds = [...failedIds];
                         session.shoppingTarget = alternate;
                         TownNpcApproach.reset(session);
@@ -709,7 +718,7 @@ module.exports = {
 
                 if (session.partyCompanion === true) {
                     const alternate = alternateTownNpcErrand(session, bot, town);
-                    if (alternate) {
+                    if (alternate && InventoryCleanup.canContinue(session, bot, alternate.kind, alternate.target)) {
                         session.companionShopping = alternate;
                         session.shoppingTarget = alternate.target;
                         CompanionNavigationRecovery.clear(session);

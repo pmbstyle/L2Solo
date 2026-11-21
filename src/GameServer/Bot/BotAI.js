@@ -30,6 +30,7 @@ const BotClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy');
 const { performance } = require('perf_hooks');
 const ActorQueries = require('../World/ActorSpatialQueries');
 const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
+const CompanionInventoryCleanup = require('./AI/CompanionInventoryCleanup');
 
 // Visibility refreshes and damage can request an immediate AI pass from
 // several nearby actors at once.  Without a small gate each request cancels
@@ -531,7 +532,8 @@ const BotAI = {
         }
 
         // If bot is a companion, dynamically refresh player's party HUD sidebar HP/MP bars
-        if (session.followPlayerSession && session.partyCompanion === true) {
+        if (isCompanion) {
+            if (!botDead) CompanionInventoryCleanup.announceCapacity(session, bot);
             const partyMemberStartedAt = DiagnosticConfig.developerDiagnostics ? performance.now() : 0;
             PartyCompanionService.updateMember(session);
             recordHotStage('partyMemberSync', partyMemberStartedAt);

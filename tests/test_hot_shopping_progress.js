@@ -115,7 +115,8 @@ async function run() {
 
         let raid = null;
         Safety.syncPlayerPartyRaid = () => raid;
-        const leader = { actor: { fetchIsOnline: () => true } };
+        const leader = { actor: { fetchIsOnline: () => true,
+            fetchLocX: bot.fetchLocX, fetchLocY: bot.fetchLocY, fetchLocZ: bot.fetchLocZ } };
         const companion = kind => ({ actor: bot, plan: 'shopping', partyCompanion: true,
             followPlayerSession: leader, shoppingTarget: target, shoppingWarehouseDone: true,
             companionShopping: { kind, target } });
