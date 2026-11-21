@@ -1,5 +1,6 @@
 const SkillRankIndex = require('../Skills/SkillRankIndex');
 const BeginnerShots = require('../Items/C4BeginnerShots');
+const { ITEM: { seal: CLAN_AMBITION_SEAL } } = require('../Clan/ClanAmbitionRules');
 const DiagnosticConfig = invoke('GameServer/Bot/Population/PopulationConfig');
 const ConsumptionDiagnostics = require('../Bot/Economy/ConsumptionDiagnostics');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
@@ -226,8 +227,10 @@ class Backpack extends BackpackModel {
     }
 
     dropItem(session, id, amount, locX, locY, locZ) {
-        if (BeginnerShots.isRestricted(this.fetchItemRaw(id)?.fetchSelfId?.())) return;
-        const petData = this.fetchItemRaw(id)?.fetchPetData?.();
+        const item = this.fetchItemRaw(id);
+        const selfId = item?.fetchSelfId?.();
+        if (selfId === CLAN_AMBITION_SEAL || BeginnerShots.isRestricted(selfId)) return;
+        const petData = item?.fetchPetData?.();
         this.deleteItem(session, id, amount, (selfId) => {
             World.spawnItem(session, selfId, amount, {
                 locX: locX,

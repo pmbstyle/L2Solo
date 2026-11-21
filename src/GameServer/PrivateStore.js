@@ -1,4 +1,5 @@
 const ServerResponse = invoke('GameServer/Network/Response');
+const { ITEM: { seal: CLAN_AMBITION_SEAL } } = require('./Clan/ClanAmbitionRules');
 
 const SELL = 1;
 const BUY = 3;
@@ -81,6 +82,7 @@ function publishSell(session, packageSale, rows) {
     const ids = new Set();
     const items = rows.map((row) => {
         const item = actor.backpack.fetchItemRaw(row.objectId);
+        if (item?.fetchSelfId() === CLAN_AMBITION_SEAL) return null;
         if (!item || item.fetchPetLocked?.() || item.fetchEquipped() || item.fetchSelfId() === 57 || !Number.isSafeInteger(row.count) || row.count < 1 || row.count > item.fetchAmount() || !Number.isSafeInteger(row.price) || row.price < 0 || ids.has(item.fetchId())) return null;
         ids.add(item.fetchId());
         return { objectId: item.fetchId(), selfId: item.fetchSelfId(), count: row.count, price: row.price,

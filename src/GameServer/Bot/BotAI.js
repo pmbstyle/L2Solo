@@ -480,6 +480,9 @@ const BotAI = {
         if (!botDead && !defendingPvp
             && BotTradeService.activeTradeSummary(session)) return;
 
+        if (!botDead && !defendingPvp && (session.clanAmbitionActive || bot.fetchClanId?.())
+            && invoke('GameServer/Bot/AI/ClanAmbitionQuestAI').tick(session, bot, invoke(path.actor), this)) return;
+
         if (!botDead && !defendingPvp) {
             const BuffServiceChat = invoke('GameServer/Bot/Economy/BuffServiceChat');
             if (BuffServiceChat.onDuty(session, tickStartedAt)) {

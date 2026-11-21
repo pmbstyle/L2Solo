@@ -248,6 +248,7 @@ const tests = [
     'tests/test_clan_alliance_support.js',
     'tests/test_clan_alliance_flow.js',
     'tests/test_clan_alliance_death_recovery.js',
+    'tests/test_clan_ambition_quest.js',
     'tests/test_pet_system.js',
     'tests/test_pet_quest.js',
     'tests/test_pet_ticket_items.js',

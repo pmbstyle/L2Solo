@@ -214,6 +214,19 @@ function levelUp(session) {
         }).finally(() => { session.clanLevelUpPending = false; });
     }
 
+    if (Number(clan.level) === 4) {
+        return invoke('GameServer/Clan/ClanAmbitionService').raise(session).then(result => {
+            if (session.actor !== actor) return result;
+            sendHtml(session, page((result.ok
+                ? 'Clan level increased to <font color="LEVEL">5</font>.'
+                : errorText(result.code, result)) + returnLink()));
+            return result;
+        }).catch(error => {
+            utils.infoWarn('Clan', 'level five upgrade failed: %s', error.message);
+            if (session.actor === actor) sendHtml(session, page('Failed to increase clan level.' + returnLink()));
+        });
+    }
+
     // One request at a time, as on the 3->4 path above: a repeated click while
     // the first one still pays must not buy the same level twice. The level
     // write is returned so that its failure reaches the catch below.

@@ -88,7 +88,7 @@ function snapshot(clan, inputs = {}) {
     const state = summary(clan, inputs), candidates = [];
     const add = (objective, target, benefit, cost = 0) => candidates.push({ id: objective, objective, target,
         benefit, cost: Math.ceil(n(cost)), label: LABELS[objective] });
-    // Level four has an existing native trial; level five has no autonomous executor yet.
+    // The live level-five quest has its own bot duties and advances independently of economic objectives.
     if (state.level < 3 || state.level === 3 && trialReady(clan)) {
         const requirement = Rules.LEVEL_REQUIREMENTS[state.level];
         add('advance_clan', { level: state.level + 1 }, 'More member capacity and clan progression',

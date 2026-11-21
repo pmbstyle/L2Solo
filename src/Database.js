@@ -4137,6 +4137,7 @@ function afkTradeCreditItemUnsafe(characterId, item, amount) {
 }
 
 function afkTradeTakeItemUnsafe(characterId, itemId, selfId, enchant, amount) {
+    if (Number(selfId) === ClanRules.LEVEL_REQUIREMENTS[4].itemId) throw new Error('quest_item_not_transferable');
     const count = Math.max(1, Math.floor(Number(amount) || 1));
     const source = itemId
         ? one('SELECT * FROM items WHERE id = ? AND characterId = ?', [itemId, characterId])
@@ -11596,6 +11597,7 @@ const Database = {
         requiredItemAmount = requiredAmount
     } = {}) {
         if (Number(fromLevel) === 3 || Number(toLevel) === 4) return Promise.resolve({ ok: false, code: 'alliance_trial_required' });
+        if (Number(fromLevel) === 4 || Number(toLevel) === 5) return Promise.resolve({ ok: false, code: 'ambition_trial_required' });
         const clan = Number(clanId);
         return ClanLevelSp.withLeader(clan, () => inTransaction(() => {
             const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
@@ -12038,6 +12040,7 @@ for (const name of ['refreshRecommendations', 'giveRecommendation', 'fetchRecomm
     Database[name] = Recommendations[name];
 }
 Object.assign(Database, require('./GameServer/Clan/ClanAllianceRepository')({ one, all, write, inTransaction, withCharacterFlushes, ClanLevelSp, recordClanGoalEventUnsafe }));
+Object.assign(Database, require('./GameServer/Clan/ClanAmbitionRepository')({ one, all, write, inTransaction, withCharacterFlushes, ClanLevelSp }));
 
 Object.assign(Database, require('./GameServer/ClanHall/Repository')({
     one, all, write, inTransaction, inPreparedTransaction, inPreparedTransactionBatch, withCharacterFlush, updateColdInventorySnapshotUnsafe,
