@@ -35,6 +35,8 @@ const EconomyJournal = require('./EconomyJournal');
 const ClanReviewInputs = require('./GameServer/Clan/ClanReviewEvents');
 const ClanActionScheduler = require('./GameServer/Clan/ClanActionScheduler');
 const PvpJournal = require('./PvpJournal');
+const BotPvpMemory = require('./GameServer/Bot/AI/BotPvpMemory');
+const BotRaidMemory = require('./GameServer/Bot/AI/BotRaidMemory');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const HistoryStore = require('./HistoryStore');
 const History = require('./HistoryDatabase');
@@ -6551,6 +6553,16 @@ const Database = {
         'raid-boss:upsert');
     },
 
+    recordBotRaidOutcome(outcome) {
+        if (!connection) return Promise.resolve();
+        return inTransaction(() => BotRaidMemory.writeOutcome(write, outcome), 'bot-activity:raid-outcome');
+    },
+
+    recordBotPvpOutcome(outcome) {
+        if (!connection) return Promise.resolve();
+        return inTransaction(() => BotPvpMemory.writeOutcome(write, outcome), 'bot-activity:pvp-outcome');
+    },
+
     // A bot's input revisions (bag summary, learned skills, henna slots) from
     // its bot_life_state row or a state that copied them; 0 = unknown.
     stateRevisions,
@@ -6758,10 +6770,13 @@ const Database = {
             const partyClock = groupClock !== null ? performance.now() : null;
             for (const [groupId, group] of atomicGroups) {
                 if (atomicGroupFailures.has(groupId)) continue;
-                const changes = group[0].atomicGroup.partyChanges || [];
-                if (!changes.length) continue;
+                const { partyChanges: changes = [], pvpMemory, memberIds } = group[0].atomicGroup;
+                if (!changes.length && !pvpMemory) continue;
                 if (group.some(request => !results.find(result => result.characterId === Number(request.characterId))?.ok)) {
                     throw new Error('party conflict: incomplete atomic outcome');
+                }
+                if (pvpMemory && pvpMemory.sides.flat().every(id => memberIds.includes(id))) {
+                    BotPvpMemory.writeOutcome(write, pvpMemory);
                 }
                 for (const change of changes) {
                     const previous = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [change.partyId]);
@@ -6800,6 +6815,24 @@ const Database = {
                             ON CONFLICT(npcId) DO UPDATE SET respawnTime=excluded.respawnTime, hp=0, mp=0, updatedAt=excluded.updatedAt`,
                         [defeat.npcId, defeat.respawnTime, now()]);
                     }
+                    if (raidCommit.dialogueMemory && raidCommit.worldRequired !== false) {
+                        const [change] = changes;
+                        const outcome = jsonObject(change.statsJson).raidEncounter;
+                        const defeated = outcome?.status === 'defeated';
+                        const owner = defeated ? raidCommit.snapshot.winnerPartyId : outcome?.failedPartyId;
+                        if (owner === change.partyId && outcome.raidInstanceId === raidCommit.snapshot.raidInstanceId
+                            && (!defeated || (raidCommit.snapshot.status === 'defeated'
+                                && raidCommit.snapshot.defeatedAt === outcome.defeatedAt))) {
+                            BotRaidMemory.writeOutcome(write, {
+                                bossId: Number(outcome.bossTemplateId), bossName: raidCommit.dialogueMemory.bossName,
+                                instanceId: outcome.raidInstanceId, partyId: change.partyId, status: outcome.status,
+                                at: defeated ? outcome.defeatedAt : outcome.failedAt,
+                                participants: raidCommit.dialogueMemory.participantIds,
+                                bots: raidCommit.dialogueMemory.participantIds,
+                                winningParticipantIds: raidCommit.dialogueMemory.winningParticipantIds
+                            });
+                        }
+                    }
                     let raidRow, raidPartyRow, raidRowsRead = false;
                     for (const request of group) {
                         const result = results.find(result => result.characterId === Number(request.characterId));
@@ -6820,7 +6853,7 @@ const Database = {
         }, 'bot-life:cold-owner-commit-release-batch');
     },
 
-    endPvpEncounter(key, ids, outcome = 'pvp_expired') {
+    endPvpEncounter(key, ids, outcome = 'pvp_expired', memory = null) {
         if (typeof key !== 'string' || !Array.isArray(ids) || ids.length > 18) return Promise.resolve({ rows: [], parties: [] });
         return inTransaction(() => {
             const rows = [], parties = [], partyIds = new Set(), timestamp = now();
@@ -6846,6 +6879,9 @@ const Database = {
                 write('UPDATE bot_background_parties SET statsJson = ?, updatedAt = ?, revision = revision + 1 WHERE partyId = ?',
                     [JSON.stringify(stats), Math.max(timestamp, Number(party.updatedAt) + 1), partyId]);
                 parties.push(one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId]));
+            }
+            if (rows.length && memory?.key === key && memory.sides.flat().every(id => ids.includes(id))) {
+                BotPvpMemory.writeOutcome(write, memory);
             }
             return { rows, parties };
         }, 'bot-life:pvp-encounter-end');
@@ -6961,6 +6997,7 @@ const Database = {
             }
             write('UPDATE bot_background_parties SET status = ?, nextResolveAt = ?, statsJson = ?, updatedAt = ?, revision = revision + 1 WHERE partyId = ?',
                 [request.phase === 'hot' ? 'hot' : 'active', request.nextResolveAt, request.statsJson, timestamp, request.partyId]);
+            if (request.raidMemory) BotRaidMemory.writeOutcome(write, request.raidMemory);
             return { ok: true, rows: ids.map(coldSimulationRow),
                 party: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId]) };
         }, 'bot-life:party-lifecycle');

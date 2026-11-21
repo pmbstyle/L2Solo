@@ -921,7 +921,10 @@ class Npc extends NpcModel {
             this.clearAggroList();
             // A living grand boss's hate reset ends its damage ownership.
             // Death teardown precedes loot in this runtime: retain it at 0 HP.
-            if (this.fetchHp() > 0) this.grandBossDamage?.clear();
+            if (this.fetchHp() > 0) {
+                this.grandBossDamage?.clear();
+                this.raidMemoryAttackers?.clear();
+            }
         }
         else if (this.aggroList.size > 0) hateStats.idleWithHate += 1;
         this.state.setCombatEnded();

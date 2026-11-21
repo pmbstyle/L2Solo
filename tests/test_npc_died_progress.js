@@ -69,5 +69,30 @@ try {
     assert.deepStrictEqual(paid, [], 'a killer far from the corpse gets no EXP or SP');
     assert.deepStrictEqual(awaySession.coldLifeState.stats, { lifelongKills: 3, fightsWon: 1, fightsResolved: 1 },
         'and the kill is not its won fight');
+
+    const RaidMemory = require('../src/GameServer/Bot/AI/BotRaidMemory');
+    const leader = { accountId: 'player_raid', actor: actor(7003, 0) };
+    const healer = { accountId: 'bot_healer', actor: actor(7004, 20), partyCompanion: true, followPlayerSession: leader };
+    const wing = { accountId: 'bot_wing', actor: actor(7005, 50) };
+    const observer = { accountId: 'player_observer', actor: actor(7006, 50) };
+    const raid = { ...mob, raidInstanceId: 'confirmed-spawn', fetchIsRaidBoss: () => true, fetchSelfId: () => 10484,
+        fetchName: () => 'Confirmed Boss', isDead: () => false };
+    replace(World, 'user', { sessions: [leader, healer, wing, observer], revision: 0 });
+    const recorded = [];
+    replace(invoke('Database'), 'recordBotRaidOutcome', async outcome => recorded.push(outcome));
+    const ordinaryKills = [];
+    replace(invoke('GameServer/Bot/AI/BotEventJournal'), 'record', event => ordinaryKills.push(event));
+    RaidMemory.recordHotHit(raid, wing.actor, wing, 100);
+    RaidMemory.recordHotHit(raid, observer.actor, observer, 0);
+    RaidMemory.recordHotHit(raid, { fetchKind: () => 'monster' }, observer, 100);
+    assert.deepStrictEqual(RaidMemory.hotFailure(raid, 'wing', [wing], now).participants, [7005]);
+    assert.equal(RaidMemory.hotFailure(raid, 'observer', [observer], now), null);
+    NpcDied(leader, leader.actor, raid);
+    assert.equal(recorded.length, 1);
+    assert.deepStrictEqual(recorded[0].participants.sort(), [7003, 7004, 7005]);
+    assert.deepStrictEqual(recorded[0].bots.sort(), [7004, 7005]);
+    assert.equal(recorded[0].status, 'defeated');
+    NpcDied(wing, wing.actor, raid);
+    assert.deepStrictEqual(ordinaryKills, [], 'a raid kill must not also enter the ordinary dialogue context');
     console.log('NpcDied: a hot bot\'s kill moves its progress from its row without a body capture');
 } finally { saved.reverse().forEach(restore => restore()); }

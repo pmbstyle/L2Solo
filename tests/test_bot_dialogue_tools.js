@@ -11,7 +11,154 @@ const World = invoke('GameServer/World/World');
 const Budget = invoke('GameServer/Bot/AI/BotInferenceBudget');
 const Registry = invoke('GameServer/Bot/AI/BotToolRegistry');
 
+async function testSelfKnowledge() {
+    const Database = invoke('Database');
+    const Clans = invoke('GameServer/Clan/ClanService');
+    const Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+    const originals = [Database.execute, Clans.clanOfMember, Life.cachedState, Memory.ensureMany, Memory.inspect];
+    const characterId = 71;
+    const clanId = 9;
+    const clan = { id: clanId, name: 'Moon', level: 3, leaderId: characterId, members: [
+        { id: characterId, title: 'Quartermaster' }, { id: 72, title: '' }, { id: 73, title: '' }
+    ] };
+    const goals = { goal: { goalKey: 'moon-gear', type: 'equipment', status: 'executing', progress: 0, required: 1,
+        target: { itemId: 123, itemName: 'Long Bow', memberId: characterId },
+        plan: { kind: 'craft' }, assignedMemberIds: [characterId, 72] },
+    productionGoal: { type: 'equipment', status: 'completed', target: { itemId: 111 } } };
+    const plan = { target: { selfId: 123, name: 'Long Bow' }, status: 'active', strategy: 'craft',
+        clanGoal: { clanId, goalKey: 'moon-gear' }, materials: [{ selfId: 1870, amount: 8, owned: 1, missing: 7 }] };
+    const saved = { characterId, activity: 'party_wait', updatedAt: 100, stats: { equipmentPlan: plan },
+        inventory: { 1870: { selfId: 1870, amount: 4 } } };
+    const inspect = (topic, session, options = {}) =>
+        Knowledge.execute({ action: 'inspect_self', topic, query: options.query }, { session, publicChat: options.publicChat });
+
+    try {
+        Clans.clanOfMember = id => clan.members.some(member => member.id === id) ? clan : null;
+        Life.cachedState = id => id === characterId ? saved : null;
+        Database.execute = async ([sql, params], operation) => {
+            if (operation === 'bot-dialogue:clan-state') {
+                assert.deepStrictEqual(params, [clanId]);
+                return [{ stateJson: JSON.stringify(goals) }];
+            }
+            assert(sql.includes('FROM characters'));
+            return params.map(id => ({ id, name: id === 8 ? 'Рюрик' : 'Other' + id }));
+        };
+        Memory.ensureMany = async ids => assert.deepStrictEqual(ids, [characterId]);
+        Memory.inspect = () => ({ ready: true, relations: Array.from({ length: 8 }, (_, index) => ({
+            targetId: index + 1, kind: 'character', affinity: index < 7 ? 10 : 1, trust: 1,
+            hostility: 0, familiarity: 4, at: 200,
+            reasons: [{ type: 'hunted_together', at: 200 }]
+        })) });
+
+        const identity = await Knowledge.selfContext(saved, 'hello');
+        assert.deepStrictEqual(identity.clan, { id: clanId, name: clan.name });
+        assert.deepStrictEqual((await inspect('clan', { characterId: 999 })).clan, null);
+        const leader = await inspect('clan', saved);
+        assert.strictEqual(leader.clan.position, 'leader');
+        assert.strictEqual(leader.clan.title, 'Quartermaster');
+        assert.strictEqual(leader.goals.length, 1);
+        assert.strictEqual(leader.goals[0].itemName, 'Long Bow');
+        assert.deepStrictEqual(leader.goals[0].assignment, { role: 'beneficiary', task: 'craft' });
+        const participant = await inspect('clan', { characterId: 72, stats: {
+            clanPartyObjective: { clanId, clanGoalKey: 'moon-gear', status: 'open', sourceKind: 'raid' }
+        } }, { publicChat: true });
+        assert.deepStrictEqual(participant.goals[0].assignment, { role: 'participant', task: 'raid' });
+        const stale = await inspect('clan', { characterId: 73, stats: {
+            equipmentPlan: { ...plan, clanGoal: { clanId, goalKey: 'old-goal' } }
+        } });
+        assert.strictEqual(stale.goals[0].assignment, null);
+
+        const firstPage = await inspect('relationships', saved);
+        assert(!firstPage.rows.some(row => row.name === 'Рюрик'));
+        const known = await inspect('relationships', saved, { query: ' РЮРИК ' });
+        assert.strictEqual(known.total, 1);
+        assert.deepStrictEqual(known.rows[0].reasons, [{ type: 'hunted_together', at: 200 }]);
+        assert.strictEqual(known.rows[0].name, 'Рюрик');
+        assert.strictEqual((await inspect('relationships', saved, { query: 'unknown' })).total, 0);
+        assert.strictEqual((await inspect('relationships', saved, { query: 'friends' })).total, 7);
+        assert.strictEqual((await inspect('relationships', saved, { query: 'Рюрик', publicChat: true })).reason, 'private_memory');
+        const namedQuestion = 'How do you know Рюрик?';
+        const namedRead = Knowledge.readForQuestion(namedQuestion);
+        assert.strictEqual((await Knowledge.execute(namedRead, { session: saved, playerMessage: namedQuestion })).terminalReply,
+            'We hunted together.');
+        assert.strictEqual((await Knowledge.execute(namedRead, { session: saved, playerMessage: namedQuestion, publicChat: true })).terminalReply,
+            "I'd rather talk about that in private.");
+
+        const cold = await inspect('goals', saved);
+        assert.strictEqual(cold.activityBlocker, 'waiting_for_party');
+        assert.strictEqual(cold.equipmentGoal.materialCountsSource, 'saved_backpack');
+        assert.deepStrictEqual(cold.equipmentGoal.materials[0], {
+            selfId: 1870, name: 'Coal', required: 8, inBag: 4, missingFromBag: 4
+        });
+        assert.strictEqual(cold.equipmentGoal.backpackUpdatedAt, 100);
+        const goalQuestion = 'What are you collecting right now, and how much Coal do you still need?';
+        const goalAnswer = await Knowledge.execute(Knowledge.readForQuestion(goalQuestion), { session: saved, playerMessage: goalQuestion });
+        assert.match(goalAnswer.terminalReply, /working on Long Bow.*4 of the 8 Coal.*4 short.*waiting for a party/);
+        const bagQuestion = 'Do you have any Coal in your backpack? How many?';
+        const bagAnswer = await Knowledge.execute(Knowledge.readForQuestion(bagQuestion), { session: saved, playerMessage: bagQuestion });
+        assert.strictEqual(bagAnswer.terminalReply, 'I have 4 Coal in my bag.');
+        const localQuestion = 'Who do you see nearby right now?';
+        const remoteView = await Knowledge.execute(Knowledge.readForQuestion(localQuestion), { session: saved, playerMessage: localQuestion });
+        assert.strictEqual(remoteView.terminalReply, "I can't see who or what is nearby from here.");
+        const hot = await inspect('goals', { plan: 'hunting',
+            actor: { fetchId: () => characterId, backpack: { fetchItems: () => [2, 3].map(amount => ({
+                fetchSelfId: () => 1870, fetchAmount: () => amount
+            })) } },
+            coldLifeState: { stats: { equipmentPlan: { ...plan, status: 'blocked', reason: 'test_blocker' } } }
+        });
+        assert.strictEqual(hot.activityBlocker, null);
+        assert.strictEqual(hot.equipmentGoal.blocker, 'test_blocker');
+        assert.strictEqual(hot.equipmentGoal.materialCountsSource, 'current_backpack');
+        assert.strictEqual(hot.equipmentGoal.materials[0].missingFromBag, 3);
+        const unknown = await inspect('goals', { characterId, stats: saved.stats });
+        assert.strictEqual(unknown.equipmentGoal.materialCountsSource, null);
+        assert.strictEqual(unknown.equipmentGoal.materials[0].missingFromBag, undefined);
+    } finally {
+        [Database.execute, Clans.clanOfMember, Life.cachedState, Memory.ensureMany, Memory.inspect] = originals;
+    }
+}
+
 async function main() {
+    assert.strictEqual(Knowledge.readForQuestion('Hey! How are you today?'), null);
+    assert.strictEqual(Knowledge.readForQuestion('Look around, then attack the wolf.'), null);
+    for (const question of ['sarp what is your goal currently?', 'do you collecting on some gear?']) {
+        assert.deepStrictEqual(Knowledge.readForQuestion(question), { action: 'inspect_self', topic: 'goals', directAnswer: true });
+    }
+    assert.deepStrictEqual(Knowledge.readForQuestion('how was the last raid?'), { action: 'recall_event', query: '', directAnswer: true });
+    const clanQuestion = 'what do you think about your clan?';
+    const clanRead = Knowledge.readForQuestion(clanQuestion);
+    assert.deepStrictEqual(clanRead, { action: 'inspect_self', topic: 'clan', answerOnly: true });
+    const opinion = await Runner.run({
+        messages: Protocol.messages('English only.', { playerMessage: clanQuestion }),
+        initialRead: clanRead, isRead: action => action === 'inspect_self',
+        read: async decision => {
+            assert.strictEqual(decision.topic, 'clan');
+            return { ok: true, clan: { name: 'Legion', position: 'member' } };
+        },
+        generate: async round => {
+            assert.strictEqual(round.final, true, 'a clan opinion uses speech only once clan facts are available');
+            assert(round.messages.at(-1).content.includes('Legion'));
+            return { action: 'say', reply: 'Legion is a good fit for me.' };
+        }
+    });
+    assert.strictEqual(opinion.reply, 'Legion is a good fit for me.');
+    const namedQuestion = 'How do you know Rurik?';
+    const namedRead = Knowledge.readForQuestion(namedQuestion);
+    assert.deepStrictEqual(namedRead, { action: 'inspect_self', topic: 'relationships', query: 'Rurik', directAnswer: true });
+    const grounded = await Runner.run({
+        messages: Protocol.messages('English only.', { playerMessage: namedQuestion }),
+        initialRead: namedRead, isRead: action => action === 'inspect_self',
+        read: async decision => {
+            assert.deepStrictEqual(decision, namedRead);
+            return { ok: true, rows: [{ name: 'Rurik', reasons: [{ type: 'hunted_together' }] }] };
+        },
+        generate: async round => {
+            assert(round.messages.at(-1).content.includes('hunted_together'), 'the first model round receives the named relationship');
+            return { action: 'say', reply: 'We hunted together.' };
+        }
+    });
+    assert.strictEqual(grounded.reply, 'We hunted together.');
     const dialogue = Protocol.messages('system', { playerMessage: 'Why that kind in particular?',
         bot: { name: 'MusicBot' }, conversation: { summary: 'Friends.', recentTurns: [
             { role: 'player', text: 'What music do you like?' }, { role: 'bot', text: 'Classical.' },
@@ -90,6 +237,15 @@ async function main() {
     assert.strictEqual(snapshot.updatedAt, 123);
     assert.strictEqual(snapshot.source, 'persistent_inventory_snapshot');
     assert.strictEqual(snapshot.historyEvidence, false);
+    const goals = await Knowledge.execute({ action: 'inspect_self', topic: 'goals' }, { session: {
+        characterId: 10, activity: 'shopping',
+        stats: { equipmentPlan: { target: 'Long Bow', phase: 'buy' },
+            supplyErrand: { itemName: 'Soulshot', amount: 100 } }
+    } });
+    assert.strictEqual(goals.activity, 'shopping');
+    assert.strictEqual(goals.equipmentGoal.target, 'Long Bow');
+    assert.strictEqual(goals.supplyErrand.amount, 100);
+    await testSelfKnowledge();
     assert.strictEqual((await Knowledge.inspect({ topic: 'relationship' }, { session: {}, publicChat: true })).reason, 'private_memory');
     const sources = Knowledge.lookup({ topic: 'item_sources', entityId: 1870 }, {
         itemDetail: () => ({ id: 1870, name: 'Coal', sources: { drops: [{ id: 120, name: 'Known Mob', level: 20,
@@ -154,6 +310,12 @@ async function main() {
         assert.deepStrictEqual(executions, ['list_safe_loadouts', 'equip_candidate'], 'receipt delivery must never execute a mutation again');
         assert.deepStrictEqual(replies, ['Now using Tarbar.'], 'speculative speech must not be delivered');
         const firstSchema = requests[0].response_format.json_schema.schema;
+        assert.deepStrictEqual(firstSchema.properties.action.enum, ['say', 'none', 'inspect_self', 'lookup_game',
+            'find_item_sources', 'recall_event', 'look_around', 'get_actions']);
+        assert(firstSchema.properties.topic.enum.includes('clan'));
+        const initialReference = JSON.parse(requests[0].messages[1].content);
+        assert.strictEqual(initialReference.tools.length, 6);
+        assert(!initialReference.bot.equipmentGoal, 'goal details are read on demand');
         assert(!firstSchema.properties.itemId && !firstSchema.properties.negotiationPrice, 'ordinary chat does not carry equipment or trading argument schemas');
         assert(requests[1].response_format.json_schema.schema.properties.itemId);
         assert.deepStrictEqual(requests[2].response_format.json_schema.schema.properties.action.enum, ['say']);
@@ -213,6 +375,49 @@ async function main() {
         assert.deepStrictEqual(replies, [], 'old hot replies cannot be delivered to a replacement character');
         assert.strictEqual(requests.length, 1, 'queued hot turns preserve the original actor identity');
         player.actor = originalActor;
+
+        requests.length = 0;
+        const geo = invoke('GameServer/Geodata/GeodataEngine');
+        const oldSight = geo.hasLineOfSight, oldNpcs = World.fetchNpcsInRadius;
+        let scans = 0;
+        World.fetchNpcsInRadius = () => {
+            scans++;
+            return [{ ...actor(904, 'ScoutWolf'), fetchAttackable: () => true, fetchDestId: () => 902 }];
+        };
+        geo.hasLineOfSight = () => true;
+        Tools.execute = (_session, decision) => {
+            assert.strictEqual(decision.action, 'say', 'a look-around read must not execute a world action');
+            return { applied: true };
+        };
+        try {
+            Gateway.setTransport(async (_url, init) => {
+                const body = JSON.parse(init.body);
+                requests.push(body);
+                const data = requests.length === 1
+                    ? { action: 'look_around', reply: '', reason: 'observe', confidence: 1 }
+                    : { action: 'say', reply: 'A ScoutWolf is after me.', reason: 'observed', confidence: 1 };
+                return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(data) } }] }) };
+            });
+            assert(Brain.maybeThink(bot, 'player_chat', { available: false }, 'Give me a quick scout report.', { playerSession: player,
+                requestId: 'look-around', assembledContext: { bot: { name: 'Bot' }, fragments: [] } }));
+            for (let i = 0; i < 100 && bot.brainInFlight; i++) await new Promise(resolve => setTimeout(resolve, 5));
+            assert.deepStrictEqual(replies, ['A ScoutWolf is after me.']);
+            assert.strictEqual(scans, 1);
+            assert.strictEqual(requests.length, 2);
+            assert(!JSON.stringify(requests[0].messages).includes('ScoutWolf'), 'a live view is not preloaded');
+            const view = JSON.parse(requests[1].messages.at(-1).content).serverToolResult;
+            assert.strictEqual(view.danger, 'confirmed');
+            assert.strictEqual(view.threats[0].name, 'ScoutWolf');
+            requests.length = 0; replies.length = 0;
+            const promptTokens = Budget.status(bot).promptTokens;
+            assert(Brain.maybeThink(bot, 'player_chat', { available: false }, 'What can you see around you?', { playerSession: player,
+                requestId: 'look-around-direct', assembledContext: { bot: { name: 'Bot' }, fragments: [] } }));
+            for (let i = 0; i < 100 && bot.brainInFlight; i++) await new Promise(resolve => setTimeout(resolve, 5));
+            assert.strictEqual(scans, 2);
+            assert.strictEqual(requests.length, 0, 'a direct question about the scene uses server observations');
+            assert.match(replies[0], /ScoutWolf is targeting me/);
+            assert.equal(Budget.status(bot).promptTokens, promptTokens, 'server replies do not consume model tokens');
+        } finally { geo.hasLineOfSight = oldSight; World.fetchNpcsInRadius = oldNpcs; }
 
         let partyDeliveries = 0;
         const oldRecipients = Manager.partyChatRecipients, oldPartySay = Manager.botPartySay;

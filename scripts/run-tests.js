@@ -351,6 +351,7 @@ const tests = [
     'tests/test_bot_activity_journal.js',
     'tests/test_bot_context_assembler.js',
     'tests/test_bot_dialogue_tools.js',
+    'tests/test_bot_local_observation.js',
     'tests/test_bot_clan_conversation_store.js',
     'tests/test_bot_conversation_summary.js',
     'tests/test_bot_tool_registry.js',

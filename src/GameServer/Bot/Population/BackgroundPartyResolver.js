@@ -408,6 +408,11 @@ const BackgroundPartyResolver = {
         }
 
         const raid = raidObjective;
+        const previousRaid = party.stats?.raidEncounter;
+        const raidParticipants = new Set(raid && previousRaid?.status === 'active'
+            && previousRaid.raidInstanceId === raidSnapshot?.raidInstanceId
+            && Number(raidSnapshot?.resetAt || 0) <= Number(previousRaid.updatedAt || 0)
+            ? previousRaid.participantIds : []);
         const raidComposition = raid ? (party.stats?.objective?.opportunisticRaid
             ? require('./OpportunisticRaidPolicy').composition(members) : ClanRaidPolicy.composition(members)) : null;
         const understaffed = !admission?.held && party.stats?.objective?.clanGoalKey
@@ -622,7 +627,12 @@ const BackgroundPartyResolver = {
             combatMs += walkMs;
             attemptedFights += 1;
             pending = encounter.encounter || null;
-            if (raid) raidSnapshot = ColdRaidEncounter.record(party, raidSnapshot, encounter, timestamp);
+            if (raid) {
+                for (const member of combatMembers) {
+                    if (alive(member)) raidParticipants.add(Number(member.characterId));
+                }
+                raidSnapshot = ColdRaidEncounter.record(party, raidSnapshot, encounter, timestamp, raidParticipants);
+            }
             if (encounter.won || !pending) fights += 1;
             for (const help of encounter.help || []) combatHelp.set(`${help.sourceId}:${help.targetId}:${help.type}`, help);
             combatActions += Number(encounter.debug?.actions || 0);
@@ -978,6 +988,10 @@ const BackgroundPartyResolver = {
             ...(!raid && !attemptedFights && avoidedReason ? { unhuntable: true } : {}),
             memberResults: distributedMemberResults,
             events,
+            ...((raidFailed || raidDefeated) && raidParticipants.size ? { raidOutcome: {
+                bossName: spot.name, participantIds: raidDefeated ? raidSnapshot.combatParticipantIds : [...raidParticipants],
+                ...(raidDefeated ? { winningParticipantIds: [...raidParticipants] } : {})
+            } } : {}),
             partyPatch: {
                 ...(raidFailed || raidDefeated ? { status: 'dissolved', nextResolveAt: null } : {}),
                 cohesion: clamp(Number(party.cohesion || 0.65) + cohesionDelta, 0.1, 1),
@@ -991,7 +1005,7 @@ const BackgroundPartyResolver = {
                     ...(round?.share != null ? { coldShare: { spotId: spot.id, carry: (left => Math.round((left < 0 ? left : left % 1)
                         * 1000) / 1000)(round.shareMobs - mobsKilled) } } : {}),
                     recommendationHunt: huntActivity,
-                    ...(raid ? { raidEncounter: raidSnapshot } : {}),
+                    ...(raid ? { raidEncounter: { ...raidSnapshot, participantIds: [...raidParticipants] } } : {}),
                     ...(marked && attemptedFights > 0 ? { raidAdmission: admission.proof } : {}),
                     assemblyAt: null,
                     rosterRecheck: null,

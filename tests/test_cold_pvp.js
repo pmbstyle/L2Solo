@@ -205,6 +205,8 @@ async function main() {
     assert.deepStrictEqual(healOnly(aidSides).opponentAid, [], 'stale damage cannot blame a cold healer');
     const noIntent = await Conflict.apply({ ...base, event: { ...event(25, 27), pvpIntent: false } });
     assert(noIntent.ok && !noIntent.pvp, 'resource disputes do not all become fights');
+    const pvpMemoryFor = botId => invoke('GameServer/Bot/AI/BotEventJournal').search({ botId, combatKind: 'pvp' });
+    assert.deepStrictEqual(await pvpMemoryFor(25), [], 'a dispute without combat makes no PvP memory');
 
     // A real accepted solo-vs-party episode commits health, death, PK and memory together.
     await party([1, 2]);
@@ -216,6 +218,11 @@ async function main() {
     assert.strictEqual(state(2).stats.coldCompetition.key, firstEvent.key, 'a party with a recovering teammate can fight');
     assert.strictEqual(state(2).stats.coldCompetition.conflictUntil, undefined, 'and keeps no conflict window after it');
     assert.strictEqual(first.outcome, 'pvp_killed');
+    const [firstMemory] = await pvpMemoryFor(1);
+    assert.deepStrictEqual(firstMemory.meta.sides, [[1], [3]]);
+    assert.deepStrictEqual(firstMemory.meta.kills, [{ killerId: 3, victimId: 1, credit: 'pk' }]);
+    assert.strictEqual(firstMemory.meta.losingSide, 0);
+    assert.deepStrictEqual(await pvpMemoryFor(2), [], 'a resting teammate was not observed fighting');
     assert.strictEqual(state(1).activity, 'dead');
     assert.strictEqual(state(1).vitals.hp, 0);
     assert.deepStrictEqual(state(1).stats.coldCombat.effects, []);
@@ -227,6 +234,7 @@ async function main() {
     const relation = Memory.inspect(1).relations.find(r => r.targetId === 3);
     assert(relation.reasons.some(r => r.type === 'attacked') && relation.reasons.some(r => r.type === 'killed'));
     assert.strictEqual((await new ColdCompetitionActions(base).apply(firstEvent)).ok, false, 'replay cannot kill or award karma twice');
+    assert.strictEqual((await pvpMemoryFor(1)).length, 1, 'replay cannot make another memory');
     assert.strictEqual((await Database.execute(['SELECT pk FROM characters WHERE id=3', []]))[0].pk, 1);
     const wait = state(1).stats.coldCompetition.wait;
     assert(Wait.consume(state(1), 30000, at + 100).waiting);
@@ -260,6 +268,7 @@ async function main() {
     assert.strictEqual((await Database.execute(['SELECT hp FROM characters WHERE id=7', []]))[0].hp, 20);
     assert.strictEqual((await Database.execute(['SELECT pk FROM characters WHERE id=9', []]))[0].pk, 0);
     assert.strictEqual((await Repository.load(7)).relations.length, 0);
+    assert.deepStrictEqual(await pvpMemoryFor(7), [], 'a rejected group transaction cannot record a fight');
     assert.strictEqual((await Conflict.apply({ ...base, event: event(10, 12), participantAllowed: id => id !== 12 })).ok, false);
     await assert.rejects(Conflict.apply({ ...base, event: event(13, 15), owner: { ...Owner,
         commitBatch: (entries, options) => {
@@ -268,6 +277,7 @@ async function main() {
         } } }), /memory/i);
     assert.strictEqual((await Database.execute(['SELECT hp FROM characters WHERE id=13', []]))[0].hp, 20);
     assert.strictEqual((await Database.execute(['SELECT pk FROM characters WHERE id=15', []]))[0].pk, 0);
+    assert.deepStrictEqual(await pvpMemoryFor(13), [], 'a rolled-back fight creates no memory');
     const contextRace = await Conflict.apply({ ...base, event: event(16, 18), owner: { ...Owner,
         commitBatch: async (entries, options) => {
             await Database.execute(['UPDATE characters SET karma=7 WHERE id=18', []]);
@@ -303,6 +313,7 @@ async function main() {
     assert.strictEqual(refused.reason, 'forecast_only');
     const initial = await Conflict.apply({ ...base, event: revengeEvent(29, 32), incrementalPvp: true });
     assert(initial.ok && initial.encounter?.reason === 'revenge', JSON.stringify(initial));
+    assert.deepStrictEqual(await pvpMemoryFor(29), [], 'an ongoing encounter has no result to remember');
     assert(state(29).stats.coldPvp.flagUntil > at, 'the initiating avenger carries a flag into hot activation');
     const continued = await Conflict.apply({ ...base, now: () => at + 1000,
         event: { ...revengeEvent(29, 32), at: at + 1000 }, resume: JSON.parse(JSON.stringify(initial.encounter)), incrementalPvp: true });
@@ -324,6 +335,9 @@ async function main() {
     assert(fightRow && !extraRows.length, 'one journal row per fight');
     assert.strictEqual(fightRow.action, 'revenge');
     assert.strictEqual(fightRow.outcome, last.outcome);
+    const completedMemory = await pvpMemoryFor(29);
+    assert.strictEqual(completedMemory.length, 1);
+    assert.strictEqual(completedMemory[0].meta.outcome, last.outcome.replace(/^pvp_/, ''));
     assert.strictEqual(fightRow.actions, resumed.actions + last.combat.actions);
     assert.strictEqual(fightRow.durationMs, Math.min(Math.max(resumed.stepAt, stepAt - 1000) + last.combat.durationMs,
         resumed.expiresAt) - resumed.startedAt, 'the row spans the fight from its first step to its end');
@@ -353,10 +367,12 @@ async function main() {
     const aidMemory = await Repository.load(38);
     assert(aidMemory.recent.some(e => e.type === 'aided_opponent' && e.targetId === 35), JSON.stringify(aidMemory));
     assert(state(35).vitals.mp < 500, 'the cold helper really spent MP');
+    assert((await pvpMemoryFor(38)).some(event => event.meta.participantIds.includes(35)), 'a confirmed healer participates');
     const savedMemory = await Repository.load(1);
     await Database.close(); Database.init();
     assert.deepStrictEqual(await Repository.load(1), savedMemory);
     assert.deepStrictEqual(await Repository.load(38), aidMemory, 'cold aid consequences survive SQLite reopen');
+    assert.deepStrictEqual(await pvpMemoryFor(29), completedMemory, 'outcomes survive SQLite reopen');
     assert.strictEqual((await Database.execute(['SELECT hp FROM characters WHERE id=1', []]))[0].hp, 0);
     assert.strictEqual((await Database.execute(['SELECT pk,karma FROM characters WHERE id=3', []]))[0].karma, 240);
     console.log('Cold PvP: deterministic bounded combat, CP/MP, PK/PvP, death/recovery, atomic rollback, replay and SQLite reopen passed');

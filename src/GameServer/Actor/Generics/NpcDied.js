@@ -192,7 +192,8 @@ function npcDied(session, actor, npc) {
     // it was a solo hunter or a party companion.
     killEffect('kill.sweep', () => autoSweepSpoiledCorpse(npc, Generics));
 
-    if (session?.accountId?.startsWith?.('bot_')) {
+    const raidBoss = npc.fetchIsRaidBoss?.() === true || require('../../RaidBoss/GrandBossRules').isGrandBoss(npc);
+    if (!raidBoss && session?.accountId?.startsWith?.('bot_')) {
         killEffect('kill.journal', () => BotEventJournal.record({
             botId: session.actor?.fetchId?.(),
             eventType: 'kill',
@@ -216,6 +217,12 @@ function npcDied(session, actor, npc) {
         const remainingShare = PetRuntime.rewardDamage(npc, overhit.adjustedExp, base.sp);
         rewards = partyRewardShares(participants, overhit.adjustedExp * remainingShare, base.sp * remainingShare);
     });
+
+    if (raidBoss) {
+        killEffect('kill.raid_memory', () => require('../../Bot/AI/BotRaidMemory')
+            .recordHotVictory(npc, session, rewards)
+            .catch(error => FailureLog.note('kill.raid_memory', error)));
+    }
 
     // C4's ordinary quest callback is attributed to the actual killer, not to
     // every party member that receives shared EXP.

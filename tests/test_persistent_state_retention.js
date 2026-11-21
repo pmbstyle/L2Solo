@@ -253,6 +253,22 @@ async function run() {
         Metrics.currentEventLoopLag = originalLag;
     }
 
+    const raider = await insertCharacter('RetentionRaider');
+    await Database.execute([`INSERT INTO bot_activity_journal (botId, eventType, summary, createdAt, updatedAt)
+        VALUES (?, 'raid_defeated', 'Recent victory', ?, ?), (?, 'raid_failed', 'Old attempt', ?, ?),
+               (?, 'pvp_encounter', 'Recent fight', ?, ?)`,
+    [raider, fresh - Retention.DAY_MS, fresh - Retention.DAY_MS, raider, old, old,
+        raider, fresh - Retention.DAY_MS, fresh - Retention.DAY_MS]]);
+    await Database.execute([`WITH RECURSIVE seq(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM seq WHERE value < 32)
+        INSERT INTO bot_activity_journal (botId, eventType, summary, createdAt, updatedAt)
+        SELECT ?, 'kill', 'Routine hunt', ?, ? FROM seq`, [raider, fresh, fresh]]);
+    await executePolicy('activity_pair_cap');
+    assert.equal(await scalar("SELECT COUNT(*) value FROM bot_activity_journal WHERE botId = ? AND eventType = 'kill'", [raider]), 16);
+    assert.equal(await scalar("SELECT COUNT(*) value FROM bot_activity_journal WHERE botId = ? AND eventType LIKE 'raid_%'", [raider]), 2);
+    assert.equal(await scalar("SELECT COUNT(*) value FROM bot_activity_journal WHERE botId = ? AND eventType = 'pvp_encounter'", [raider]), 1);
+    await executePolicy('activity_age');
+    assert.equal(await scalar("SELECT COUNT(*) value FROM bot_activity_journal WHERE botId = ? AND eventType LIKE 'raid_%'", [raider]), 1);
+
     console.log('Persistent state retention checks passed');
 }
 

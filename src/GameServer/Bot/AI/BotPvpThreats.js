@@ -100,7 +100,7 @@ function record(victim, source, now = Date.now()) {
     return true;
 }
 
-function context(session, now = Date.now()) {
+function context(session, now = Date.now(), { observeOnly = false } = {}) {
     const party = members(session);
     const nearby = party.filter(member => distance(member.actor, session.actor) <= PARTY_RADIUS);
     const Commands = invoke('GameServer/Bot/AI/ClanCommandParty');
@@ -115,12 +115,13 @@ function context(session, now = Date.now()) {
             if (!alive(attacker) || partyIds.has(attackerId) || inPeace(attacker)
                 || invoke('GameServer/Bot/AI/PartyAwareness').isCombatAlly(session, attacker) ||
                 now - entry.at > MEMORY_MS || !combatNearby.some(ally => distance(ally.actor, attacker) <= PARTY_RADIUS)) {
-                member.pvpAggressors.delete(attackerId);
+                if (!observeOnly) member.pvpAggressors.delete(attackerId);
                 continue;
             }
             if (Arena.canInteract(session.actor, attacker) && !inPeace(session.actor)) found.set(attackerId, { actor: attacker, ...entry });
         }
     }
+    if (observeOnly) return { members: combatNearby, threats: [...found.values()] };
     const revengeTarget = session.pvpRevenge?.target;
     if (revengeTarget && invoke('GameServer/Bot/AI/BotRevenge').allows(session, revengeTarget, now)) {
         found.set(id(revengeTarget), { actor: revengeTarget, at: now, proactive: true });

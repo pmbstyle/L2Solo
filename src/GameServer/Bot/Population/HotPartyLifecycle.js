@@ -186,6 +186,7 @@ async function failRaidOnDeath(session, timestamp = Date.now(), options = {}) {
     raidFailures.add(partyId);
     let resumed = false;
     try {
+        const raidMemory = require('../AI/BotRaidMemory').hotFailure(bossAtDeath, partyId, sessions, timestamp);
         stopRaidSessions(sessions, timestamp);
         let saved = null;
         let boss = null;
@@ -218,7 +219,9 @@ async function failRaidOnDeath(session, timestamp = Date.now(), options = {}) {
                 } }
             };
             try {
-                ({ party: saved } = await transition(failed, states, states, 'hot', 'raid_failed'));
+                const memory = raidMemory?.instanceId === snapshot.raidInstanceId && snapshot.status !== 'defeated'
+                    ? raidMemory : null;
+                ({ party: saved } = await transition(failed, states, states, 'hot', 'raid_failed', memory));
             } catch (error) {
                 lastReason = error?.message || lastReason;
             }
@@ -228,6 +231,9 @@ async function failRaidOnDeath(session, timestamp = Date.now(), options = {}) {
         // The durable failed state is authoritative before the live boss is
         // restored. A crash can therefore never leave a healed boss attached
         // to a party that still believes its raid is active.
+        if (raidMemory && raidMemory.instanceId === saved.stats?.raidEncounter?.raidInstanceId) {
+            for (const participant of raidMemory.participants) bossAtDeath.raidMemoryAttackers?.delete(participant);
+        }
         resetRaidWorld(saved, boss, maxHp, session);
         retreatRaidSessions(sessions, boss, timestamp);
         resumeRaidSessions(sessions);
@@ -313,7 +319,7 @@ function members(party) {
     return states.every(s => s?.party?.partyId === party.partyId) ? states : null;
 }
 
-async function transition(party, states, next, phase, reason) {
+async function transition(party, states, next, phase, reason, raidMemory = null) {
     const at = Date.now();
     const nextResolveAt = phase === 'hot' ? null : at + 30000;
     const stats = { ...party.stats, hotLifecycle: phase === 'hot'
@@ -325,7 +331,7 @@ async function transition(party, states, next, phase, reason) {
         timing: { ...s.timing, nextResolveAt, lastResolvedAt: ColdClock.handedAt(s, at) }, updatedAt: at }));
     const result = await Database.transitionBackgroundParty({ partyId: party.partyId,
         expectedStatus: party.status, expectedPartyRevision: party.revision, expectedPhase: states[0].phase,
-        phase, nextResolveAt, statsJson: JSON.stringify(stats),
+        phase, nextResolveAt, statsJson: JSON.stringify(stats), ...(raidMemory ? { raidMemory } : {}),
         members: nextStates.map((s, index) => ({ characterId: s.characterId,
             expectedRevision: Number(states[index].simulation?.revision || 0),
             expectedUpdatedAt: states[index].updatedAt, patch: Owner.persistencePatch(s, at) })) });

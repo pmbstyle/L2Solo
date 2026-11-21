@@ -2254,7 +2254,8 @@ class ColdSimulationKernel {
                 memoryGroup.raidCommit = { key: snapshot.key,
                     worldRequired: run.spot.raidWorldAvailable !== false,
                     expectedRevision: Number(run.spot.raidAuthorityRevision || 0),
-                    revision: Number(run.spot.raidAuthorityRevision || 0) + 1, snapshot };
+                    revision: Number(run.spot.raidAuthorityRevision || 0) + 1, snapshot,
+                    ...(resolution.raidOutcome ? { dialogueMemory: resolution.raidOutcome } : {}) };
             }
             let requirementMs = 0, lastRequirementPlanMs = 0;
             // The open re-plan of the party's needs: the members planned, whose plan stands

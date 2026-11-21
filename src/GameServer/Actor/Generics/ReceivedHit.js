@@ -1,6 +1,7 @@
 const BOT_WAKEUP_THROTTLE_MS = 750;
 const FailureLog = require('../../../FailureLog');
 const { killEffect } = require('../../World/KillEffect');
+const BotPvpMemory = require('../../Bot/AI/BotPvpMemory');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const PvpRules = invoke('GameServer/PvpRules');
 
@@ -116,9 +117,16 @@ function creditKill(session, source, victim) {
         const isBotSession = invoke('GameServer/World/World').isBotSession;
         const isPlayer = (character) => !!character.session && !isBotSession(character.session);
         const fact = invoke('GameServer/Social/PvpResponsibility').assess(attacker, victim);
+        const at = Date.now();
+        const encounter = attackerSession?.pvpEncounter;
         invoke('PvpJournal').hotKill({ attacker, victim, outcome, attackerKarma: attacker.fetchKarma(),
-            playerInvolved: isPlayer(attacker) || isPlayer(victim), reason: `${fact.responsibility}:${fact.why || 'unknown'}`,
-            at: Date.now() });
+            playerInvolved: isPlayer(attacker) || isPlayer(victim), reason: `${fact.responsibility}:${fact.why || 'unknown'}`, at });
+        killEffect('death.pvp_memory', () => BotPvpMemory.hotKill({
+            killerId: attacker.fetchId(), victimId: victim.fetchId(), credit: outcome, at,
+            encounter: encounter?.key === victim.session?.pvpEncounter?.key ? encounter : null,
+            bots: [isBotSession(attackerSession) ? attacker.fetchId() : null,
+                isBotSession(victim.session) ? victim.fetchId() : null].filter(Boolean)
+        }).catch(error => FailureLog.note('death.pvp_memory', error)));
     }
     if (outcome !== 'none') {
         const tally = PvpRules.tallyAfterKill({ pvp: attacker.fetchPvp(), pk: attacker.fetchPk(), karma: attacker.fetchKarma(),
