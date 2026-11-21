@@ -100,6 +100,7 @@ function playerContext(session, realPlayers, now, World = null) {
     const bot = session?.actor;
     if (!bot) return null;
     if (session.clanAllianceQuest) return 'player_clan_quest';
+    if (session.clanAmbitionActive) return 'clan_ambition';
     if (session.partyCompanion === true && session.followPlayerSession) return 'player_party';
     if (session.hotBackgroundPartyId) {
         const group = invoke('GameServer/Bot/AI/HotBackgroundParty').roster(session);

@@ -1,4 +1,5 @@
 const NpcAttacked = invoke('GameServer/Npc/Attacked');
+const IMPERIAL_GRAVEKEEPER_ID = 5181;
 
 function receivedHit(session, actor, npc, hit, options = {}) {
     if (invoke('GameServer/Effects/EffectStore').hasDebuff(npc, 'petrification')) return;
@@ -57,6 +58,8 @@ function receivedHit(session, actor, npc, hit, options = {}) {
         return;
     }
 
+    if (npc.fetchSelfId?.() === IMPERIAL_GRAVEKEEPER_ID && questSession?.actor)
+        invoke('GameServer/Clan/ClanAmbitionService').onAttack(questSession, npc);
     npc.automation.replenishVitals(npc);
     NpcAttacked(session, actor, npc, hit, options.npcAttacked);
     epic.onAttack(invoke('GameServer/World/World'), npc, actor, hit, session);

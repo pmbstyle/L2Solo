@@ -1,4 +1,5 @@
 const BeginnerShots = require('../Items/C4BeginnerShots');
+const { ITEM: { seal: CLAN_AMBITION_SEAL } } = require('../Clan/ClanAmbitionRules');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Database  = invoke('Database');
@@ -143,7 +144,8 @@ function fetchAdena(actor) {
 }
 
 function isSellableInventoryItem(item) {
-    return item && !BeginnerShots.isRestricted(item.fetchSelfId?.()) && !item.fetchPetLocked?.() && !item.fetchEquipped() && item.fetchSelfId() !== 57;
+    return item && !BeginnerShots.isRestricted(item.fetchSelfId?.()) && !item.fetchPetLocked?.()
+        && !item.fetchEquipped() && item.fetchSelfId() !== 57 && item.fetchSelfId() !== CLAN_AMBITION_SEAL;
 }
 
 // The copies a sale to a buy store may take: not reserved by the bot's

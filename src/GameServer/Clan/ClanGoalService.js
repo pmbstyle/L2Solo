@@ -1,3 +1,4 @@
+const { randomUUID } = require('node:crypto');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const InventorySummary = require('../Bot/Population/InventorySummary');
 const { DiagnosticMetricMap } = require('../Bot/Population/DiagnosticMetricMap');
@@ -316,6 +317,15 @@ async function cancelLegacyBloodMarkDemand(clan, context) {
 async function resolveClan(clan, options = {}) {
     ReviewEvents.track(clan);
     try {
+        if (number(clan?.level) === 4 && clan.state?.mode === 'autonomous'
+            && (clan.state.goal?.controlledBy !== 'player' || clan.state.goal.status === 'completed')) {
+            const retryAt = await invoke('GameServer/Bot/AI/ClanAmbitionQuestAI').requestLeader(clan);
+            if (retryAt) await Database.enqueueClanAction({
+                clanId: clan.id, actionKey: `clan:${clan.id}:ambition-activation:${randomUUID()}`,
+                actionType: 'goal_plan', priority: 75, availableAt: retryAt, coalescePending: true,
+                payload: { reason: 'clan_ambition_activation_retry' }
+            });
+        }
         const strategic = await require('./ClanStrategyService').review(clan, options);
         if (strategic.pending || strategic.ok === false) return strategic;
         const strategy = require('./ClanStrategyPolicy').active(clan);

@@ -88,7 +88,8 @@ function track(clan) {
     syncRecruitment(clan);
     forgetLeader(id);
     const leaderId = Number(clan.leaderId);
-    if (cashLevelGoal(clan) && Number.isSafeInteger(leaderId) && leaderId > 0) {
+    const ambition = Number(clan.level) === 4 && clan.state?.mode === 'autonomous';
+    if ((cashLevelGoal(clan) || ambition) && Number.isSafeInteger(leaderId) && leaderId > 0) {
         clanLeaders.set(id, leaderId);
         leaders.set(leaderId, { clanId: id, requiredSp: ClanRules.LEVEL_REQUIREMENTS[Number(clan.level)].sp });
     }

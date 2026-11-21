@@ -23,15 +23,15 @@ function returnLanding(session, target) {
     return null;
 }
 
-function travel(session, target, reason) {
+function travel(session, target, reason, quest) {
     const actor = session.actor;
     session.currentTargetId = null;
     const landing = reason === 'leader' ? returnLanding(session, target) : Service.loc(target);
-    if (landing) return Travel.startViaEscape(session, actor, { id: `alliance-${reason}`, name: 'clan quest destination', center: landing }, landing);
+    if (landing) return Travel.startViaEscape(session, actor, { id: `${quest}-${reason}`, name: 'clan quest destination', center: landing }, landing);
     Service.report(session, 'return_landing_blocked', 'I cannot find a safe landing near you. Please move to open ground so I can return.');
     return false;
 }
-function move(session, target, reason) {
+function move(session, target, reason, quest = 'alliance') {
     const actor = session.actor;
     if (session.spotRelocation) { Travel.tick(session, actor); return false; }
     if (Service.near(actor, target, 180)) return true;
@@ -39,11 +39,11 @@ function move(session, target, reason) {
     // Couriers escape to town, then take a gatekeeper to the quest target.
     // Retry transport instead of falling back to a cross-country walk.
     if (Math.hypot(actor.fetchLocX() - destination.locX, actor.fetchLocY() - destination.locY) > 1500) {
-        travel(session, target, reason);
+        travel(session, target, reason, quest);
         return false;
     }
-    const navigation = Navigation.move(session, actor, destination, `clan_alliance_${reason}`, { targetActor: target, arrivalRadius: 180 });
-    if (navigation?.status === 'exhausted') travel(session, target, reason);
+    const navigation = Navigation.move(session, actor, destination, `clan_${quest}_${reason}`, { targetActor: target, arrivalRadius: 180 });
+    if (navigation?.status === 'exhausted') travel(session, target, reason, quest);
     return false;
 }
 function request(session, work) {

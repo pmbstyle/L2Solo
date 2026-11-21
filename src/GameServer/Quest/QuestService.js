@@ -375,6 +375,8 @@ async function onKill(session, npc, source = session?.actor) {
     if (session.actor !== actor) return;
     await invoke("GameServer/Clan/ClanAllianceService").onKill(session, npc);
     if (session.actor !== actor) return;
+    await invoke("GameServer/Clan/ClanAmbitionService").onKill(session, npc);
+    if (session.actor !== actor) return;
     const ownerId = Number(npc.questSpawn?.ownerId) || 0;
     if (ownerId && ownerId !== Number(session.actor.fetchId())) return;
     const spawnedQuestId = Number(npc.questSpawn?.questId) || 0;

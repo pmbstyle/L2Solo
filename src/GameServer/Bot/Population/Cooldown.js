@@ -82,6 +82,7 @@ const Cooldown = {
         if (session.plan === 'merchant' && !session.coldMarketState && !session.coldCraftState) return { ok: false, reason: 'merchant' };
         if ((session.pkProfile || session.plan === 'pk_hunting') && !options.allowPk) return { ok: false, reason: 'pk_active' };
         if (session.clanAllianceQuest) return { ok: false, reason: 'player_clan_quest' };
+        if (session.clanAmbitionActive) return { ok: false, reason: 'clan_ambition' };
         // A supply errand on its way back owns the row's hot write (BotTownTravel.returnSupplyHot).
         if (session.supplyErrandPhase === 'returning') return { ok: false, reason: 'supply_errand_returning' };
         if (session.partyCompanion === true || session.followPlayerSession) return { ok: false, reason: 'player_party' };
