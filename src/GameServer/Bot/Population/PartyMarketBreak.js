@@ -53,6 +53,7 @@ const CLEANUP_BUSY_ACTIVITIES = ['traveling', 'shopping', 'merchant', 'crafting'
 // A solo cold bot with no trip or errand under way: free to start a cleanup trip.
 function cleanupFree(state) {
     return !!state && state.phase === 'cold' && !(state.party?.partyId || state.partyId)
+        && state.stats?.partyMarketReturn?.cleanupReason !== 'trade_meeting'
         && !state.stats?.travel && !BotErrands.busyWith(state, CLEANUP_BUSY_FLAGS)
         && !CLEANUP_BUSY_ACTIVITIES.includes(state.activity);
 }
@@ -80,8 +81,47 @@ function clanDuty(party) {
 // (GoalExecutor.beginMarketTravel). A ticket with no time (until missing, 0, not a number)
 // is held by neither: departure always writes one.
 const held = (token, now) => Number(token?.until) > now;
-function pending(party, now = Date.now()) {
-    return Object.values(party?.stats?.marketAbsences || {}).filter(value => held(value, now));
+function pending(party, now = Date.now(), stateFor = () => null) {
+    return Object.values(party?.stats?.marketAbsences || {}).filter(value => {
+        if (held(value, now)) return true;
+        if (value?.cleanupReason !== 'trade_meeting') return false;
+        const current = stateFor(value.characterId)?.stats?.partyMarketReturn;
+        return !!current && sameTicket(value, current);
+    });
+}
+
+// Ordinary background hunts can lend one member while the remaining roster
+// retains its support roles and enough fighters. Check the same facts when
+// listing, reserving and departing. The reserved member is allowed to recheck.
+function canMeet(party, member, members, now, meetingId = null, stateFor = () => null) {
+    const objective = party?.stats?.objective;
+    if (party?.status !== 'active' || Number(party.leaderId) === Number(member?.characterId)
+        || objective?.priority === 'required' || objective?.clanGoalKey || objective?.raidBoss || objective?.opportunisticRaid
+        || ['raid', 'war'].includes(objective?.sourceKind) || require('./CraftMaterialParty').isObjective(objective)
+        || party.stats?.forming || party.stats?.travel || party.stats?.warOperation || party.stats?.raidEncounter || party.stats?.pendingRecruits
+        || party.stats?.agreement?.help?.status === 'funded' || pending(party, now, stateFor).length) return false;
+    const id = Number(member?.characterId);
+    const roster = party.memberIds || [];
+    if (!roster.includes(id) || members.length !== roster.length
+        || members.some(state => !state || (state.party?.partyId || state.partyId) !== party.partyId
+            || state.phase !== 'cold' || !(Number(state.vitals?.hp ?? state.hp) > 0)
+            || !['grouped', 'hunting', 'resting', 'fighting'].includes(state.activity) || state.stats?.travel || state.stats?.pvpEncounter
+            || state.stats?.playerPartyTakeover || state.stats?.partyMarketReturn
+            || state.stats?.tradeMeeting && !(Number(state.characterId) === id && state.stats?.partyMeeting === meetingId))) return false;
+    const remaining = members.filter(state => Number(state.characterId) !== id);
+    if (remaining.length < invoke('GameServer/Bot/Population/PopulationConfig').partyMinSize) return false;
+    const { roleForState } = require('./BackgroundPartyComposition');
+    const roles = remaining.map(roleForState), role = roleForState(member);
+    const support = ['tank', 'healer', 'buffer'];
+    return roles.some(value => value !== 'healer' && value !== 'buffer')
+        && (!support.includes(role) || roles.includes(role));
+}
+
+function meetingDeparture(party, member, now) {
+    const token = { partyId: party.partyId, characterId: member.characterId, until: now + RESERVATION_MS,
+        objective: party.stats?.objective, startedAt: now, cleanupReason: 'trade_meeting' };
+    const marketReturn = { loc: member.loc, regionName: member.currentRegion, spotId: member.spotId };
+    return { token, marketReturn };
 }
 // The trips a clan duty lets its member go on (its stay answered one,
 // ColdSimulationKernel.partyStay, one absence at a time): an unload of a bag at its
@@ -105,6 +145,7 @@ function departure(party, member, travel, now, given = undefined) {
 // The party the ticket returns to still runs the errand its member left: a clan duty's
 // goal, else (an ordinary party's warehouse trip) its objective.
 function sameObjective(party, token) {
+    if (token?.cleanupReason === 'trade_meeting') return party?.partyId === token.partyId;
     return token?.cleanupReason === 'craft_warehouse'
         ? String(party?.stats?.objective?.objectiveKey || '') === String(token.objective?.objectiveKey || '')
         : party?.stats?.objective?.clanGoalKey === token?.objective?.clanGoalKey;
@@ -148,4 +189,4 @@ function ready(state) {
         && ['hunting', 'party_wait', 'grouped'].includes(state.activity);
 }
 module.exports = { bagNeed, bagFact, cleanupDecision, applyClear, cleanupFree, heldCleanup, withoutStartedTrip, clanDuty, held, pending,
-    goal, departure, sameObjective, traceCommitted, stats, ready, FLOOR_REASONS };
+    goal, departure, canMeet, meetingDeparture, sameObjective, traceCommitted, stats, ready, FLOOR_REASONS };

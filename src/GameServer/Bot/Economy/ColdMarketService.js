@@ -350,11 +350,9 @@ function planPurchase(state, selfId, amount, options = {}) {
     let fundingContext;
     const accept = line => {
         if (options.npcOnly) return false;
-        // A raid's reserved supply is an explicit purchase, rather than a
-        // personal wish certificate for a bilateral conditional advertisement.
-        // Use backed shops and NPC stock; do not keep restaging an ineligible meeting.
-        if (options.purpose === 'raid_supply' && (line?.conditional || line?.custodyPolicy === 1)) return false;
-        // The lines the bot's build quotes (OfferQuery.admits, the build's reader).
+        // The lines the bot's build quotes (OfferQuery.admits, the build's reader); a
+        // raid's supply too: graded shots sell to bots only from crafters' lines, most
+        // of them conditional ads bought in a meeting.
         return OfferQuery.admits(line, state);
     };
     // The units other bots' trips claim are gone for this buyer (OfferQuery.takeableUnits).
@@ -462,17 +460,18 @@ function endVisit(current) {
         townVisit: current.stats?.townVisit ? { ...current.stats.townVisit, completed: true } : null } };
 }
 
-// A crafter's board stock of C/B/A gear and graded shots (CrafterStock) at a town visit. First it pays
+// A supplier's (crafter, spoiler, station trader) board stock of C/B/A gear and a crafter's graded
+// shots (CrafterStock) at a town visit. First it pays
 // the store the cost of the consigned units it no longer holds (sold on the board, in a
 // meeting or while hot), each payment journalled as the fixed_wts purchase it stands
 // for; then it restocks on consignment (no adena; stats.gnomeStock owes the units; its
 // listing sells them between their cost and their ceiling) from the reserve rows sold
-// to its line, each grade within its hourly allowance, and the shots it crafts at the
+// to its role, each grade within its hourly allowance, and the shots it crafts at the
 // cheapest store price. Returns the state.
 async function crafterStock(state) {
     const Stock = require('./CrafterStock');
     let current = state;
-    if (!Stock.isCrafter(current)) return current;
+    if (!Stock.roleOf(current)) return current;
     const board = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(), now = Date.now();
     const { SELL } = require('../../AfkTrade/BoardIndex');
     const listed = board.ownerLines(Number(current.characterId)).filter(line => line.storeType === SELL);
@@ -491,16 +490,24 @@ async function crafterStock(state) {
             break;
         }
         current = require('./NpcPurchaseBasket').acceptResult(current, result);
-        // The store row paid: the crafter row of its town, else any store row of the item
-        // (a shot is stocked in every town).
-        const stores = require('./FixedShotOffers').offers(pay.selfId), crafterRows = stores.filter(entry => Array.isArray(entry.buyerClasses));
-        const rows = crafterRows.length ? crafterRows : stores;
+        // The store row paid: its own role's row of its town, else any store row of the item
+        // (a shot has none: the journal names the crafter's town).
+        const stores = require('./FixedShotOffers').offers(pay.selfId, current, { consignment: true }),
+            ownRows = stores.filter(entry => Array.isArray(entry.buyerClasses) || entry.buyerRole);
+        const rows = ownRows.length ? ownRows : stores;
         observePurchase({ ...(rows.find(entry => entry.town === current.currentRegion) || rows[0]),
             selfId: pay.selfId, price: pay.cost, sellerKind: 'fixed' }, pay.units, current);
     }
+    // Its store town (SupplierRoles.storeTown), decided here and held until its next
+    // restock; the restock stocks for that town's demand, where it lists.
+    const storeTown = require('./SupplierRoles').storeTown(current);
+    const seated = storeTown && storeTown !== current.stats?.storeTown?.town ? { town: storeTown, at: now } : null;
+    if (seated && Diagnostics.active()) Diagnostics.count('supplier_town', current.stats?.storeTown ? 'moved' : 'seated', storeTown);
+    const town = storeTown || current.stats?.storeTown?.town || current.currentRegion;
     const plan = Stock.restock(current, { offers: Stock.townOffers(current), heldFor, now,
-        demandFor: id => require('./MarketDemand').forecast(id, current.currentRegion,
-            { board, ownerId: Number(current.characterId), timestamp: now })?.applicableUnits || 0 });
+        ...Stock.townSupply(board, town, current.characterId),
+        demandFor: id => require('./MarketDemand').forecast(id, town,
+            { board, ownerId: Number(current.characterId), timestamp: now, plans: require('./PlanDemand').units })?.applicableUnits || 0 });
     const allowance = plan.allowance && Object.fromEntries(Object.entries(plan.allowance).map(([grade, pool]) => [grade, { ...pool }]));
     for (const row of plan.rows) {
         const bought = await buyNpcStack(current, row.selfId, row.amount, row.unit, { free: true }, null, false, { consigned: true })
@@ -509,8 +516,24 @@ async function crafterStock(state) {
         if (allowance?.[row.grade]) allowance[row.grade].pieces += row.amount - Number(bought.units || 0);
         if (bought.hot) break;
     }
-    if (plan.rows.length) current = { ...current, stats: { ...current.stats, gnomeAllowance: allowance } };
+    if (plan.rows.length || seated) current = { ...current, stats: { ...current.stats,
+        ...(plan.rows.length ? { gnomeAllowance: allowance } : {}), ...(seated ? { storeTown: seated } : {}) } };
     return current;
+}
+
+// A station trader's step (SupplierRoles), on the state its step's saved round left
+// (PopulationService.resolveColdState: that save took its board settlements into its bag):
+// it settles and restocks its consigned gear
+// (crafterStock) and lists its bag on its shop in its own town (the board sale of a
+// market visit: BotAfkMarketService.saleDecision, listOnBoard); it steps again at
+// its next raise (ColdSimulationKernel: event_driven). Returns the state.
+async function stationTraderReview(state, timestamp = Date.now()) {
+    let current = await crafterStock(state);
+    if (LifeState.hotRow(current.characterId)) return current;
+    const Afk = invoke('GameServer/Bot/Economy/BotAfkMarketService');
+    const board = await Afk.listOnBoard(current, { decided: Afk.saleDecision(current, { now: timestamp }), now: timestamp });
+    current = board.state || current;
+    return await LifeState.upsertState(current, 'station_trader_review') || current;
 }
 
 // Buys a plan in the town the bot stands in: each board line one deal, then
@@ -566,8 +589,11 @@ async function buyHere(state, plan, options = {}) {
         // order, the kit waits for the bot's own restock.
         if (realSeller && (options.basket || options.errand)) {
             const offer = realSeller, kit = !!options.basket && !plan.raidPreparationId;
+            const shots = kit && ShotStock.planForState(current).selfId !== Number(plan.selfId);
+            const withdrawal = shots && await invoke('GameServer/Clan/ClanConsumableSupply').forColdShots(current);
+            if (withdrawal) current = withdrawal.state;
             const baskets = NpcRestock.collect(current, { town: plan.town, seller: offer,
-                shots: kit && ShotStock.planForState(current).selfId !== Number(plan.selfId),
+                shots, shotRefillTarget: withdrawal?.target,
                 potions: kit
                     && invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(current).selfId !== Number(plan.selfId),
                 scrolls: kit && Number(plan.selfId) !== 736,
@@ -606,7 +632,7 @@ async function buyHere(state, plan, options = {}) {
 // (Database.purchaseNpcInventoryItem, as his cold shot restock made it): the
 // bag and the wallet in one transaction, the cold state following. null when
 // refused.
-// attribution.consigned: a crafter's restock from its crafter row on consignment
+// attribution.consigned: a supplier's restock from its reserve row on consignment
 // (CrafterStock): no adena moves, the units owed are written with the purchase.
 async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, original = null, autoEquip = true, attribution = {}) {
     const Basket = require('./NpcPurchaseBasket');
@@ -622,10 +648,6 @@ async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, origi
                 offer.town === state.currentRegion && Number(offer.price) === unitPrice);
         const offer = configured();
         if (!offer) return null;
-        // A valve row sells the bot what is left of its pieces of the grade, counted
-        // in its stats with the purchase (ProductionPolicy.valveAllowance).
-        const Production = require('./ProductionPolicy');
-        amount = Math.min(amount, Production.valveAllowance(offer, state));
         // The row's server stock (FixedShotOffers.take): what it does not hold is refused,
         // and what the purchase did not take goes back.
         const FixedStock = require('./FixedShotOffers');
@@ -643,8 +665,7 @@ async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, origi
             selfId, amount, unitPrice, autoEquip, consigned, name: template?.template?.name || `Item ${selfId}`,
             stackable: !!template?.etc?.stackable, slot: Number(template?.etc?.slot || 0),
             coldState: admitted.state, economyCommand: admitted.command,
-            statsPatch: consigned ? require('./CrafterStock').consignPatch(admitted.state, offer, amount)
-                : Production.valvePatch(offer, admitted.state, amount),
+            statsPatch: consigned ? require('./CrafterStock').consignPatch(admitted.state, offer, amount) : null,
             errands: attribution.errand ? [{ errand: attribution.errand, units: amount, spent: amount * unitPrice }] : [],
             funding: { ...funding, itemId: selfId }, validate: () => {
                 if (!configured()) throw Error('configured_quote_changed');
@@ -708,6 +729,15 @@ async function acquire(state, selfId, amount, options = {}) {
     // ARCH-NOTE: a saved cap outlives the packet that admitted it. Recheck
     // at planning, arrival and each debit using the originating valuation.
     options = { ...options, currentFunding: true };
+    if (options.persist !== false && ['shots', 'raid_supply'].includes(options.purpose)) {
+        const withdrawal = await invoke('GameServer/Clan/ClanConsumableSupply')
+            .forShotOrder(state, selfId, amount, options, options.existingErrand);
+        if (withdrawal) {
+            state = withdrawal.state;
+            amount -= withdrawal.amount;
+            if (amount <= 0) return { state, bought: false, supplied: true, units: withdrawal.amount, spent: 0, traveling: false, plan: null };
+        }
+    }
     const here = state.activity === 'shopping' ? state.currentRegion : null, craft = CRAFT_PURPOSES.has(options.purpose);
     const visitTown = craft ? here : state.stats?.travel?.townName || here;
     const local = visitTown ? planPurchase(state, selfId, amount, { ...options, towns: [visitTown] }) : null;
@@ -822,7 +852,7 @@ function wealthMiss(state, errand) {
 // Returns null without one, or when it lapsed (ERRAND_MS: the job that sent
 // it plans again).
 async function buyErrand(state, options = {}) {
-    const errand = pendingErrand(state);
+    let errand = pendingErrand(state);
     if (!errand || state.activity !== 'shopping' || errand.town !== state.currentRegion) return null;
     if (errand.purpose === 'clan' && Number(state.stats?.clanId) !== Number(errand.tag?.clanId)) {
         // The buyer left the clan on its way: the treasury credit it carries is not spent;
@@ -836,6 +866,15 @@ async function buyErrand(state, options = {}) {
     // still describe the whole earlier deficit. Recompute this producer's
     // missing input before asking another seller for it.
     let amount = Number(errand.amount);
+    if (['shots', 'raid_supply'].includes(errand.purpose)) {
+        const withdrawal = await invoke('GameServer/Clan/ClanConsumableSupply').forShotOrder(state, errand.selfId, amount, errand, errand);
+        if (withdrawal) {
+            state = withdrawal.state;
+            amount -= withdrawal.amount;
+            if (amount <= 0) return { state, purchased: false, improved: true, units: withdrawal.amount, reason: 'clan_stock_filled' };
+            errand = { ...errand, amount };
+        }
+    }
     const job = state.stats?.wealthCraft;
     if (errand.purpose === 'wealth_craft' && job?.outcome === 'buying') {
         const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(job.recipeId));
@@ -884,7 +923,7 @@ async function buyErrand(state, options = {}) {
 }
 
 const ColdMarketService = {
-    tryPurchase(state, goal) {
+    tryPurchase(state, goal, checkedClanStock = false) {
         if (!state || state.phase === 'hot' || state.activity !== 'shopping') return Promise.resolve({ state, purchased: false, reason: 'not_shopping' });
         const errand = pendingErrand(state);
         if (errand?.town === state.currentRegion) return buyErrand(state);
@@ -892,8 +931,9 @@ const ColdMarketService = {
             // The errand's town is another one: the bot goes on there.
             return acquire(state, errand.selfId, errand.amount, { money: errand.money ?? Infinity,
                 maxPrice: errand.maxPrice ?? Infinity, purpose: errand.purpose, towns: [errand.town],
-                ...savedRoute(errand), ...fundingTerms(errand) })
-                .then((result) => ({ ...result, purchased: result.bought, reason: 'market_errand_town' }));
+                ...savedRoute(errand), ...fundingTerms(errand), existingErrand: errand })
+                .then((result) => ({ ...result, purchased: result.bought, improved: result.supplied === true,
+                    reason: result.supplied ? 'clan_stock_filled' : 'market_errand_town' }));
         }
         const expectedBenefit = goal?.plan?.expectedBenefit;
         const activeGearPurchase = goal?.type === 'upgrade_gear'
@@ -905,6 +945,20 @@ const ColdMarketService = {
         }
         if (activeMaterialPurchase && (!Number.isSafeInteger(Number(goal.target.amount)) || Number(goal.target.amount) <= 0)) {
             return Promise.resolve({ state, purchased: false, reason: 'purchase_quantity_unknown' });
+        }
+        const supply = !checkedClanStock && activeMaterialPurchase && Number(state.clanId ?? state.stats?.clanId) > 0
+            && invoke('GameServer/Clan/ClanConsumableSupply');
+        const leaf = { rootKey: goal.plan?.wishKey, itemId: goal.target.itemId };
+        if (supply && supply.isDecision(leaf)) {
+            return Promise.resolve(supply.forDecision(state, leaf)).then(withdrawal => {
+                if (!withdrawal) return ColdMarketService.tryPurchase(state, goal, true);
+                const dyeGap = require('../../Clan/ClanDyeStock').remaining(withdrawal.state, leaf.rootKey, leaf.itemId);
+                const amount = dyeGap === null ? Number(goal.target.amount) - withdrawal.amount
+                    : Math.min(Number(goal.target.amount), dyeGap);
+                if (withdrawal.selfId !== Number(goal.target.itemId) || amount <= 0)
+                    return { state: withdrawal.state, purchased: false, improved: true, reason: 'clan_stock_filled' };
+                return ColdMarketService.tryPurchase(withdrawal.state, { ...goal, target: { ...goal.target, amount } }, true);
+            });
         }
         const detailed = Trace.detailed(state.characterId);
         if (goal.plan?.marketTown && String(goal.plan.marketTown) !== String(state.currentRegion)) {
@@ -934,13 +988,13 @@ const ColdMarketService = {
         // at the seller or for money (GearMarks.quoteRefused) marks the step's quote (this town,
         // the card's unit price): the build skips it. Any other miss (a failed write, a busy
         // meeting, a stock limit) marks nothing: neither the seller nor the purse refused.
-        const refreshAfter = written => written.then(result => {
+        const refreshAfter = written => written.then(async result => {
             const key = Number(goal.target.itemId), reason = result?.reason;
             const quote = arrival && GearMarks.quoteRefused(reason) && GearMarks.quoteOf({ town: state.currentRegion, price: arrival.unitPrice });
-            invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId, 'goal_failed',
+            const raised = await invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId, 'goal_failed',
                 GEAR_SOURCE_FAILED.has(reason) ? { impossible: true, kind: 'gear_errand', key, reason }
                     : quote ? { impossible: true, kind: 'gear_errand', key, ...quote, reason } : { impossible: true });
-            return result;
+            return raised ? { ...result, state: raised } : result;
         });
         const missed = reason => refreshAfter(retryAfterFailedPurchase(state, goal, reason));
         if (!arrival) return missed('arrival_step_gone');
@@ -1053,6 +1107,7 @@ const ColdMarketService = {
     async finishTownErrands(state, options = {}) {
         if (!state || state.activity !== 'shopping' || state.phase === 'hot') return state;
         let current = state;
+        let shotRefillTarget;
         // A finite snapshot; every purchase replans against current quotes and current wallet.
         for (const errand of CombinedErrands.pending(state, Date.now(), state.currentRegion)) {
             if (LifeState.hotRow(current.characterId)) return LifeState.hotRow(current.characterId);
@@ -1066,9 +1121,18 @@ const ColdMarketService = {
         // a visit already ended plans no shot purchase again (the NPC basket below still runs).
         if (!options.raidSupplyOnly && current.stats?.townVisit?.completed !== true) {
             const plan = ShotStock.planForState(current);
+            const withdrawal = await invoke('GameServer/Clan/ClanConsumableSupply').forColdShots(current, { plan });
+            if (withdrawal) {
+                current = withdrawal.state;
+                shotRefillTarget = withdrawal.target;
+            }
+            // The local NPC's price, else the bot's own (a graded shot's: the crafters' ask
+            // ceiling), so a bot in a town without a shot NPC still plans its purchase.
             const localPrices = staticOffers(plan.selfId).filter(offer => offer.town === current.currentRegion);
-            const unitPrice = localPrices.length ? Math.min(...localPrices.map(offer => Number(offer.price))) : 0;
-            const restock = ShotStock.restockPlan(current, { plan, unitPrice });
+            const unitPrice = localPrices.length ? Math.min(...localPrices.map(offer => Number(offer.price))) : undefined;
+            const kit = withdrawal ? invoke('GameServer/Clan/ClanConsumableSupply').refillKit(
+                invoke('GameServer/Bot/Economy/EconomyContext').keptKit(current), shotRefillTarget) : undefined;
+            const restock = ShotStock.restockPlan(current, { plan, unitPrice, kit });
             if (restock.needed && restock.amount > 0) {
                 const purchase = planPurchase(current, plan.selfId, restock.targetAmount - restock.currentAmount, {
                     towns: [current.currentRegion], money: restock.cost, purpose: 'shots'
@@ -1146,7 +1210,7 @@ const ColdMarketService = {
             extras.push({ selfId: errand.selfId, amount: errand.amount, offer, errand, money: errand.money,
                 funding: purchaseTerms(current, { ...errand, npcPrice: offer.price }) });
         }
-        const bought = await NpcRestock.purchase(current, { town: current.currentRegion, extras,
+        const bought = await NpcRestock.purchase(current, { town: current.currentRegion, extras, shotRefillTarget,
             ...(options.raidSupplyOnly ? { shots: false, potions: false, scrolls: false } : {}) });
         current = bought.state;
         if (LifeState.hotRow(current.characterId)) return current;
@@ -1157,6 +1221,7 @@ const ColdMarketService = {
     planPurchase,
     buyHere,
     crafterStock,
+    stationTraderReview,
     acquire,
     acquireMaterials,
     errandGoal,

@@ -266,7 +266,8 @@ async function main() {
         let fight;
         try {
             Formulas.normalAttackMs = () => Formulas.calcMeleeAtkTime(1500);
-            Background.resolvePartyFight = input => (fight = originalFight(input));
+            // Keep the fixture on the action limit by choosing a roll that avoids a raid casualty.
+            Background.resolvePartyFight = input => (fight = originalFight({ ...input, rng: () => 0.5 }));
             const [row] = await Database.execute(['SELECT * FROM bot_background_parties WHERE partyId=?', [party.partyId]]);
             party = Parties.acceptRow(row);
             const timestamp = Math.max(expectedDeadline + 1, Date.now()), key = 'raid:10372';

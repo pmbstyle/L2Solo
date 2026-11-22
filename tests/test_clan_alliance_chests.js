@@ -1,7 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
-const path = require('path');
 const vm = require('vm');
+const { createRequire } = require('node:module');
 require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const SpawnNpcs = invoke('GameServer/World/Generics/SpawnNpcs');
@@ -27,10 +27,12 @@ const mocks = {
     'npc-generics': { die(session, actor, npc) { npc.state.setDead(true); kills.push(npc.fetchId()); } }
 };
 const moduleBox = { exports: {} };
-vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../src/GameServer/Npc/Generics/ReceivedHit.js'), 'utf8'), {
-    module: moduleBox, invoke: key => { assert(key in mocks, key); return mocks[key]; }, path: { npc: 'npc-generics' },
+const receivedHitPath = require.resolve('../src/GameServer/Npc/Generics/ReceivedHit');
+vm.runInNewContext(fs.readFileSync(receivedHitPath, 'utf8'), {
+    module: moduleBox, require: createRequire(receivedHitPath),
+    invoke: key => { assert(key in mocks, key); return mocks[key]; }, path: { npc: 'npc-generics' },
     utils: { infoWarn: (...args) => assert.fail(args.join(' ')) }
-});
+}, { filename: receivedHitPath });
 const receiveHit = moduleBox.exports;
 const spawn = (selfId, questId = 501) => SpawnNpcs.spawnQuestNpc(world, {
     selfId, questId, ownerId: 2000001, locX: 102273, locY: 103433, locZ: -3512

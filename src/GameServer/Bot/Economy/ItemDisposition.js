@@ -30,11 +30,7 @@ const NPC_SURPLUS_GEAR_MIN_SLOTS = 20;
 const { SOLO_BAG_SLOTS } = require('../Population/SurvivalFloor');
 const CLAN_PROGRESSION_ITEM_IDS = new Set([1419]);
 const { rankOf } = invoke('GameServer/Bot/AI/GearGradeRule');
-const SHOT_PRODUCT_RANK = Object.freeze({
-    1463: 'd', 1464: 'c', 1465: 'b', 1466: 'a', 1467: 's',
-    2510: 'd', 2511: 'c', 2512: 'b', 2513: 'a', 2514: 's',
-    3948: 'd', 3949: 'c', 3950: 'b', 3951: 'a', 3952: 's'
-});
+const SHOT_PRODUCT_RANK = require('./ProductionPolicy').SHOT_GRADE;
 
 
 function templateFor(selfId) {
@@ -153,17 +149,22 @@ function isGradeCrystal(item) {
     return CRYSTALS.has(Number(item?.selfId));
 }
 
-// A crafter's board stock of an item (CrafterStock: bought from its reserve row for
+// A supplier's board stock of an item (CrafterStock: bought from its reserve row for
 // resale), { cost, ceiling } or null: every unequipped copy it holds is listed, never
-// deposited or sold to an NPC, at an ask between its unit cost and the valve price.
+// deposited or sold to an NPC, at an ask between its unit cost and its ceiling.
 function gnomeStock(state, selfId) {
     const row = state?.stats?.gnomeStock?.[Number(selfId)];
     return row && Number(row.cost) > 0 ? row : null;
 }
-// An ask for a crafter's stock: clamped to [cost, ceiling]; any other item's as asked.
+// An ask for a supplier's stock: a graded shot's at its ceiling, the anchor (our rule: a
+// consumable keeps one price, as an NPC's does; CrafterStock), other stock clamped to
+// [cost, ceiling]; any other item's as asked.
 function gnomeAsk(state, selfId, price) {
     const row = gnomeStock(state, selfId);
-    return row ? Math.min(Math.max(Number(price), Number(row.cost)), Math.max(Number(row.cost), Number(row.ceiling) || Infinity)) : price;
+    if (!row) return price;
+    const ceiling = Math.max(Number(row.cost), Number(row.ceiling) || Infinity);
+    if (Number.isFinite(ceiling) && invoke('GameServer/Bot/Economy/ProductionPolicy').GRADED_SHOTS.has(Number(selfId))) return ceiling;
+    return Math.min(Math.max(Number(price), Number(row.cost)), ceiling);
 }
 
 // Consumables a bot sells to the NPC beyond its working stock: wrong-grade

@@ -11,7 +11,6 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
-const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const WealthDecision = require('./WealthCraftDecision');
 const Commit = require('./EconomyCommit');
 const { personalOfferAllowed } = require('../Population/PartyAdmission');
@@ -60,9 +59,6 @@ function eligible(state) {
     return true;
 }
 
-function staticExits(recipe, template, seller) {
-    return require('./WealthCraftDecision').staticExits(recipe, template, seller);
-}
 
 
 function chooseOpportunity(state, knownRecipes, context = Profit.contextFor(state)) {
@@ -72,7 +68,7 @@ function chooseOpportunity(state, knownRecipes, context = Profit.contextFor(stat
         offersFor: (id, side, characterId) => Number(side) === AfkTrade.BUY
             ? Price.productionBids(AfkTrade.boardIndex(), id).filter(line => line.ownerId !== Number(characterId))
                 .map(line => require('../../AfkTrade/BoardIndex').offerFields(line))
-            : AfkTrade.offers(id, side, { characterId }), staticExits
+            : AfkTrade.offers(id, side, { characterId })
     });
 }
 
@@ -259,25 +255,7 @@ async function execute(state, opportunity, options = {}) {
     let sold = false;
     let revenue = 0;
     const exit = opportunity.exit;
-    if (exit.type === 'static') {
-        const saleCount = Math.min(units, Number(exit.count || units));
-        const saved = await LifeState.applyNpcLiquidation(current, [{ selfId: recipe.productId,
-            count: saleCount, npcPrice: Number(exit.price) }], {
-            source: 'wealth_craft', town: exit.town, buyerName: exit.buyerName
-        });
-        const payout = Number(saved?.adena || 0) - Number(current.adena || 0);
-        if (saved && payout > 0) {
-            current = saved;
-            sold = saleCount >= units;
-            revenue = payout;
-            MarketTelemetry.staticBuyerSale?.([{
-                selfId: recipe.productId, name: product.name, count: saleCount,
-                npcPrice: Number(exit.price), buyerName: exit.buyerName, buyerTown: exit.town
-            }], payout, {
-                sellerCharacterId: current.characterId, sellerName: current.name, town: exit.town
-            });
-        }
-    } else if (exit.type === 'afk' && current.activity === 'shopping' && current.currentRegion === exit.offer.town) {
+    if (exit.type === 'afk' && current.activity === 'shopping' && current.currentRegion === exit.offer.town) {
         // A buy ad is answered in its town; elsewhere the product waits
         // for the bot's sale, which goes there when it pays (MarketPricing.disposition).
         const offer = AfkTrade.offers(recipe.productId, AfkTrade.BUY, { characterId: current.characterId })

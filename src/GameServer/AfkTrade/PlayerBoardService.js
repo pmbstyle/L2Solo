@@ -3,6 +3,7 @@
 // Server contract for the player board. Each answer resolves the current
 // canonical record; a displayed quote never becomes a remote purchase.
 const { SELL, BUY } = require('./BoardIndex');
+const Karma = require('../Karma');
 const SHOP_RANGE = 200;
 const WORKSHOP_RANGE = 1200;
 const TRADE_TYPES = Object.freeze(['all', 'meeting', 'shop']);
@@ -45,6 +46,13 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
     workshops = () => invoke('GameServer/Bot/Economy/CraftWorkshopService'),
     life = () => invoke('GameServer/Bot/Population/BotLifeState'),
     database = () => invoke('Database'), meetings = () => require('./TradeMeetingService'), response = () => invoke('GameServer/Network/Response') } = {}) {
+    const reachable = line => {
+        if (line.custodyPolicy !== 1 || line.town === Karma.TOWN_NAME) return true;
+        const state = life().cachedState(line.ownerId);
+        const actor = state?.phase === 'hot' ? invoke('GameServer/World/World').registeredActorById(line.ownerId)?.session?.actor : null;
+        return !Karma.closesTowns(actor?.fetchKarma?.() ?? state?.stats?.karma);
+    };
+    const available = line => reachable(line) && (line.custodyPolicy !== 1 || meetings().playerOfferAllowed?.(line.ownerId) !== false);
     function* workshopOffers(session, options = {}) {
         const playerId = Number(session.actor.fetchId());
         const customer = { characterId: playerId, clanId: Number(session.actor.fetchClanId?.() || 0), stats: {} };
@@ -68,8 +76,12 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
         if (!afk().isBoardReady()) return [];
         const board = afk().boardIndex();
         const ids = [...board.itemIds(options.side, options.town)];
-        return !options.tradeType || options.tradeType === 'all' ? ids
-            : ids.filter(id => { for (const line of board.lines(id, options.side, options.town)) if (matchesType(line, options.tradeType)) return true; return false; });
+        return ids.filter(id => {
+            for (const line of board.lines(id, options.side, options.town)) {
+                if (matchesType(line, options.tradeType) && available(line)) return true;
+            }
+            return false;
+        });
     }
     function entries(session, options = {}) {
         if (!human(session)) return { available: false, entries: [], next: null };
@@ -95,7 +107,7 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
                 const cursor = !options.cursor?.side || side === Number(options.cursor.side) ? options.cursor : null;
                 for (const row of board.page(side, { town: options.town || null, selfId: Number(options.selfId) || 0, cursor })) {
                     const line = row.line;
-                    if (line.ownerId === playerId || !matchesType(line, options.tradeType)) continue;
+                    if (line.ownerId === playerId || !matchesType(line, options.tradeType) || !available(line)) continue;
                     const offer = service.offerOf(line);
                     if (!offer) continue;
                     if (!push({ id: line.recordId, kind: line.kind, side: line.storeType, ownerId: line.ownerId,
@@ -171,6 +183,8 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
         if (!line || line.revision !== request.revision || line.price !== Number(request.price)
             || line.selfId !== Number(request.selfId) || line.count <= 0) return { ok: false, reason: 'record_changed' };
         if (line.ownerId === playerId) return { ok: false, reason: 'own_record' };
+        if (!reachable(line)) return { ok: false, reason: 'record_changed' };
+        if (!available(line)) return { ok: false, reason: 'merchant_party' };
         const offer = service.offerOf(line);
         if (!offer) return { ok: false, reason: 'record_changed' };
         // The canonical advertisement exposes its meeting point on the offer;

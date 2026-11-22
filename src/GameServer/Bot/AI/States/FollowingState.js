@@ -1252,11 +1252,15 @@ const FollowingState = {
             || ratio(bot.fetchHp?.(), bot.fetchMaxHp?.()) < 0.30) return false;
         if (!(bot.fetchMaxLoad?.() > 0) || !require('../../Population/SurvivalFloor').bagMarks(bot).weight) return false;
         if (weakestPartyVitals(playerSession, bot)?.hpRatio < CRITICAL_COMBAT_HP_RATIO) return false;
+        const playerLeader = InventoryCleanup.playerLeader(session);
+        const travel = invoke('GameServer/Bot/AI/BotTownTravel');
+        if (playerLeader && (PartyCompanionService.regroupActive(playerLeader) || travel.inCombat(session, bot))) return false;
         const errand = InventoryCleanup.errand(session, bot, BotAI);
-        if (!errand) return false;
+        if (!errand || !InventoryCleanup.canContinue(session, bot, errand.kind, errand.target)) return false;
         if (bot.state.fetchSeated?.()) standUp(session, bot);
         beginCompanionTownErrand(session, bot, playerSession, errand);
-        invoke('GameServer/Bot/AI/BotTownTravel').request(session, bot, BotAI, 'Unloading inventory.', {
+        // A player's companion is already in town and can go straight to the NPC.
+        if (!playerLeader) travel.request(session, bot, BotAI, 'Unloading inventory.', {
             allowCompanion: true, preserveShoppingTarget: true, destinationTown: errand.town,
             announce: false
         });
@@ -1398,7 +1402,7 @@ const FollowingState = {
             const errand = timedFollowingStage('townErrand', () => (
                 companionTownErrand(session, bot, player, BotAI)
             ));
-            if (errand) {
+            if (errand && InventoryCleanup.canContinue(session, bot, errand.kind, errand.target)) {
                 beginCompanionTownErrand(session, bot, playerSession, errand);
                 recordRoleDecision(session, bot, 'town_errand', errand.kind, {
                     town: errand.target.town,

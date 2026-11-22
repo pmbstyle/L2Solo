@@ -10,7 +10,7 @@ const state = { characterId: 900003, phase: 'cold', activity: 'hunting', level: 
     classId: 53, adena: 100000, inventory: {}, vitals: { mp: 1000 },
     stats: { classId: 53, money: [1000, .001, 0, 0] } };
 const context = { hourAdena: 1000, moneyPrice: .001, mpPerHour: 100000, maxBatches: 1 };
-const options = { unknownRecipes: () => [recipe], staticExits: () => [],
+const options = { unknownRecipes: () => [recipe],
     offersFor: id => id === recipe.productId ? [{ ownerId: 2, price: 1000, count: 1, town: 'Giran' }] : [],
     planPurchase: (owner, id, count) => ({ town: 'Giran', units: count, whole: true,
         cost: count, landed: count, lines: [{ line: { lineId: id, selfId: id, revision: 1 }, count, price: 1 }],

@@ -203,8 +203,10 @@ function create({ service = () => require('./PlayerBoardService'),
         return Native.present(session, html, snapshot, response());
     }
     function track(session, result) {
-        const loc = result.loc, coords = [loc?.locX, loc?.locY, loc?.locZ].map(Number);
-        if (!loc || !coords.every(n => Number.isSafeInteger(n) && Math.abs(n) <= 2000000)) return false;
+        const loc = result.loc;
+        if (!loc) return false;
+        const coords = [loc.locX, loc.locY, loc.locZ].map(Math.round);
+        if (!coords.every(n => Number.isSafeInteger(n) && Math.abs(n) <= 2000000)) return false;
         session.playerBoardWaypoint = { x: coords[0], y: coords[1], z: coords[2], name: text(result.ownerName, 'Merchant', 100) };
         waypoints().syncDirection(session, session.playerBoardWaypoint);
         return true;

@@ -1,6 +1,7 @@
 const assert = require('assert');
 require('../src/Global');
-// These routes read the author's fixed shot merchant and NPC D-S shots: off by default since T116.
+// The switch on: the crafters' shots and the reserve rows stand (off by default since T116);
+// no configured shot row sells to a bot even then.
 invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 
 const DataCache = invoke('GameServer/DataCache');
@@ -46,20 +47,22 @@ function privateSession(name, id, selfId) {
     const originalUser = World.user;
     try {
         World.user = { sessions: [] };
-        await check('cold plans exclude configured material/gear stock and keep shots/NPC', () => {
+        await check('cold plans exclude configured material/gear/shot stock and keep NPC and board lines', () => {
             assert.strictEqual(ColdMarket.planPurchase(buyer, STEM, 1, { cost: () => 0 }), null);
+            assert.strictEqual(ColdMarket.planPurchase(buyer, SHOT, 100, { cost: () => 0 }), null,
+                'no configured shot row sells a bot its graded shots');
+            record(987105, SHOT, 50, 200);
             const shot = ColdMarket.planPurchase(buyer, SHOT, 100, { cost: () => 0 });
-            assert(shot && shot.units === 100 && shot.npc > 0);
+            assert(shot && shot.units === 100 && shot.npc === 0, 'a board line (a crafter\'s) sells them');
             const npc = ColdMarket.planPurchase(buyer, 1, 1, { towns: ['Talking Island'], cost: () => 0 });
             assert(npc && npc.npc > 0, 'ordinary C4 weapon shop remains available');
         });
         await check('fixed table and cold/supply queries do not inspect world sessions', () => {
             World.user = { get sessions() { throw new Error('world session scan'); } };
             const fixed = Market.fixedStoreOffers();
-            // A bot buys its shots and the reserve gear lines from the configured stores.
-            assert(fixed.length > 0 && fixed.every((offer) => offer.reserve === true || [1835, 1463, 1464, 1465, 1466, 1467,
-                2509, 2510, 2511, 2512, 2513, 2514, 3947, 3948, 3949, 3950, 3951, 3952].includes(offer.selfId)));
-            assert(fixed.some((offer) => offer.selfId === SHOT), 'the shot lines stay in the table');
+            // A bot buys only the hidden reserve rows from the configured stores.
+            assert(fixed.length > 0 && fixed.every((offer) => offer.reserve === true));
+            assert(!fixed.some((offer) => offer.selfId === SHOT), 'no shot line in the bot table');
             assert(fixed.every((offer) => offer.sourceName && offer.sellerKind === 'fixed'));
             assert.strictEqual(Market.fixedStoreOffers(), fixed, 'reuse the static table');
             record(987101, STEM, 10, 3);
@@ -79,9 +82,9 @@ function privateSession(name, id, selfId) {
             assert.strictEqual(Market.bestSupplyOffer(STEM, { ...options, budget: 4 }), null);
             assert.strictEqual(Market.bestSupplyOffer(STEM, { ...options, amount: 5 }), null);
             assert.strictEqual(Market.bestSupplyOffer(STEM, { amount: 4, buyerCharacterId: buyer.characterId })?.sourceId, 987103);
-            assert(Market.bestSupplyOffer(SHOT, { amount: 5000 }), 'shot supply survives without live fixed actor');
+            assert.strictEqual(Market.bestSupplyOffer(SHOT, { amount: 5000 }), null, 'no configured shot supply for a bot');
         });
-        await check('hot private offers exclude configured non-shots and keep ordinary physical shops', () => {
+        await check('hot private offers exclude configured stores and keep ordinary physical shops', () => {
             World.user = { sessions: [privateSession('GiranMats', 987201, STEM),
                 privateSession('PrivateCrafter', 987202, STEM), privateSession('DionSS', 987203, SHOT)] };
             // Pick actual names from the configured catalogue, independent of fixture aliases.
@@ -94,67 +97,43 @@ function privateSession(name, id, selfId) {
             World.user.sessions[2] = privateSession(shotName, 987203, SHOT);
             assert(!Market.hotOffers(STEM, { town: 'Giran' }).some((offer) => offer.sourceId === 987201));
             assert(Market.hotOffers(STEM, { town: 'Giran' }).some((offer) => offer.sourceId === 987202));
-            assert(Market.hotOffers(SHOT, { town: 'Giran' }).some((offer) => offer.sourceId === 987203));
+            assert(!Market.hotOffers(SHOT, { town: 'Giran' }).some((offer) => offer.sourceId === 987203),
+                'a configured shot store sells a bot nothing');
             World.user = { sessions: [] };
         });
-        await check('player display refresh cannot change hot configured bot shot quotes', () => {
+        await check('a configured shot store stands out of the hot bot quotes; a player trader stays', () => {
             const configs = invoke('GameServer/Bot/MerchantStoreConfigs');
-            const pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
             const [name, config] = Object.entries(configs).find(([, store]) => store.storeType === 1
                 && store.items.some(line => line.selfId === SHOT));
-            const source = config.items.find(line => line.selfId === SHOT);
-            const cfg = { ...config, items: [source] };
-            const store = { storeType: 1, town: config.town, items: Trade.normalizeStoreItems(cfg, { staticStore: true }) };
-            const quote = pricing.sellersOf(SHOT).find(row => row.sourceName === name).price;
-            record(987501, SHOT, quote + 100, 10, config.town);
-            if (Trade.refreshStorePrices) Trade.refreshStorePrices(store);
-            else store.items[0].price = quote + 100; // Isolated routing slice precedes the shared player accessor.
-            assert.strictEqual(store.items[0].price, quote + 100, 'fixture is a refreshed player window');
-            const originalPrice = Trade.storeItemPrice;
-            let quoted = 0;
-            Trade.storeItemPrice = (activeStore, line, actor) => {
-                quoted++;
-                assert.strictEqual(actor.session.botSession, true, 'bot quote has the shared bot price context');
-                return originalPrice ? originalPrice(activeStore, line, actor) : quote;
-            };
             const physical = privateSession(name, 987502, SHOT);
-            physical.actor.fetchPrivateStore = () => store;
+            physical.actor.fetchPrivateStore().town = config.town;
             const ordinary = privateSession('HumanShotTrader', 987503, SHOT);
             ordinary.accountId = 'human_shot_trader';
             ordinary.actor.fetchPrivateStore().town = config.town;
             try {
                 World.user = { sessions: [physical, ordinary] };
                 const offers = Market.hotOffers(SHOT, { town: config.town });
-                const hot = offers.find(offer => offer.sourceId === 987502);
-                assert.strictEqual(hot.price, quote);
-                assert.strictEqual(hot.price, Market.fixedStoreOffers(SHOT).find(row => row.sourceName === name).price);
+                assert(!offers.some(offer => offer.sourceId === 987502), 'the configured shot store is a player\'s only');
                 assert.strictEqual(offers.find(offer => offer.sourceId === 987503).price, 1,
                     'ordinary physical player pricing is retained');
-                assert.strictEqual(store.items[0].price, quote + 100, 'quoting does not mutate the player display row');
-                assert.strictEqual(quoted, 1, 'only the configured shot line needs the shared bot price');
-            } finally {
-                if (originalPrice) Trade.storeItemPrice = originalPrice;
-                else delete Trade.storeItemPrice;
-                World.user = { sessions: [] };
-            }
+            } finally { World.user = { sessions: [] }; }
         });
-        // Store prices are x1 at every preset: the Adena rate multiplies hunt adena only.
-        await check('fixed bot shot table keeps the x1 store price at every effective Adena', () => {
-            const progression = invoke('GameServer/ProgressionRates');
+        // The player's store prices follow the Adena rate, as the hunt adena that pays them does.
+        await check('configured shot rows follow effective Adena for the player; none sells to a bot', () => {
             const pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
-            const originalProfile = progression.profile;
-            const profile = originalProfile();
+            const { useRate, useGeneral } = require('./helpers/progressionRate');
+            const preset = process.env.L2NODE_PROGRESSION_RATE, adenaRate = global.options.default.General.adenaRate;
             try {
-                progression.profile = () => ({ ...profile, multiplier: 1, adena: 1 });
-                const first = Market.fixedStoreOffers(SHOT).map(row => [row.sourceName, row.price]);
-                progression.profile = () => ({ ...profile, multiplier: 1, adena: 2 });
-                const second = Market.fixedStoreOffers(SHOT);
+                useRate('x1');
+                useGeneral({ adenaRate: 1 });
+                const first = pricing.sellersOf(SHOT).map(row => [row.sourceName, row.price]);
+                useGeneral({ adenaRate: 2 });
+                const second = pricing.sellersOf(SHOT);
                 assert(second.length > 0);
-                assert.deepStrictEqual(second.map(row => [row.sourceName, row.price]), first, 'the Adena rate leaves store prices');
-                for (const row of second) {
-                    assert.strictEqual(row.price, pricing.sellersOf(SHOT).find(offer => offer.sourceName === row.sourceName).price);
-                }
-            } finally { progression.profile = originalProfile; }
+                assert.deepStrictEqual(second.map(row => [row.sourceName, row.price]), first.map(([name, price]) => [name, price * 2]),
+                    'twice the Adena rate doubles each store price');
+                assert.deepStrictEqual(Market.fixedStoreOffers(SHOT), [], 'no row of them sells to a bot');
+            } finally { useRate(preset); useGeneral({ adenaRate }); }
         });
         await check('stale configured non-shot direct purchases are rejected before paying', async () => {
             const originalBlocker = LifeState.marketPurchaseBlocker;

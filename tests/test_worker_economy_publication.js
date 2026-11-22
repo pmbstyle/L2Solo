@@ -8,6 +8,7 @@ require('../src/Global');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const Decisions = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const StateWire = require('../src/GameServer/Bot/Population/ColdStateWire');
+const ClanDyeStock = require('../src/GameServer/Clan/ClanDyeStock');
 const { rowOf, SELL } = require('../src/GameServer/AfkTrade/BoardIndex');
 
 async function runWorker(state, predicate, followUp = null, init = {}) {
@@ -39,8 +40,8 @@ async function runWorker(state, predicate, followUp = null, init = {}) {
         assert.equal(loaded.payload.forbiddenDependencies, 0);
         send('catalog_page', { catalog: 'spots', rows: [], done: true });
         send('catalog_page', { catalog: 'npc_offers', rows: [], done: true });
-        send('table_page', { tables: ['board', 'market'].map(name =>
-            ({ name, from: null, to: 0, full: true, rows: [], removed: [] })) });
+        send('table_page', { tables: ['board', 'market', ClanDyeStock.TABLE].map(name =>
+            ({ name, from: null, to: 0, full: true, last: 1, rows: [], removed: [] })) });
         send('init', { config: { loopIntervalMs: 20, maxInFlight: 1, maxBatch: 1 }, ...init }, 'init');
         await until(message => message.type === 'ready' && message.msgId === 'init');
         send('snapshot_page', { rows: [{ state }], initial: true, done: true });
@@ -135,8 +136,8 @@ async function runWorker(state, predicate, followUp = null, init = {}) {
     // A near body hears a board offer its held build wants: a player's new SELL line of its
     // watched weapon within its wallet wakes its build on its near mind, and its near
     // decision answers the post it holds (no new post), as a far bot's next step would.
-    // Its 2M wallet is short of the reserve store's C dual (2.94M at the valve row):
-    // a piece the store sells it now is an executable purchase, which watches no board.
+    // No store sells it the C dual (the reserve sells to suppliers only): a piece the
+    // store sold it would be an executable purchase, which watches no board.
     const watcher = { ...state, characterId: 765415, level: 61, exp: 146307211, adena: 2000000, stats: { classId: 2, generatedCold: true } };
     await runWorker(watcher, decidedFor(watcher.characterId), async ({ result: first, until, received, table }) => {
         assert.notEqual(Decisions.compact(first.payload.economyDecision).activity?.itemId, 2517, 'no seller yet: it shops elsewhere');

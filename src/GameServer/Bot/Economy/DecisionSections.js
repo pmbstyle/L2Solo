@@ -66,21 +66,22 @@ function movedInput(link, before, now, error = 0, bounds = null) {
 // The kit fact of a view: class, level, worn gear, hennas, skills, the hot
 // capture (view.kitHashes: ColdCombatProfile.kitEvents, a hash of each of combatView's parts,
 // hashed once per view), the craft
-// (level, station), the soul crystal quest and the karma flip that closes the
+// (level, station), and the karma flip that closes the
 // towns. Effects and night are no economy input, so a buff or the day/night
 // flip moves no fact; the clan is a relations fact; the recipe book is its own
 // fact; the workshop's listing is the workshop decision's own answer (its fees
 // and fills move no gear). Its parts do not read the clock.
 function kitFact(view) {
+    // Keep the old inactive quest bit so saved gear decisions keep their hash.
     return hash([view.kitHashes, view.craftLevel, view.craftStationId,
-        view.soulCrystalQuest, view.closesTowns]);
+        false, view.closesTowns]);
 }
 // The kit part of the far reader (stateView), without the bag scan.
 function kitView(state) {
     const stats = state.stats || {};
     return { kitHashes: CombatProfile.kitEvents(state), gear: CombatProfile.gearOf(state),
         craftLevel: Number(state.craftLevel ?? stats.dwarvenCraftLevel) || 0, craftStationId: stats.craftStationId ?? null,
-        soulCrystalQuest: !!stats.soulCrystalQuest, closesTowns: Karma.closesTowns(stats.karma) };
+        closesTowns: Karma.closesTowns(stats.karma) };
 }
 function kit(state) {
     return kitFact(kitView(state));
@@ -126,8 +127,11 @@ function unspent(baseline, wallet, bag = wallet) {
 // bot's survival potions (the money for their missing line, the search's broke
 // rule: it re-opens buying them and the spots that need them), an unarmed bot's
 // weapon bridge (its price from the whole wallet, WishProviders' survival wish), its
-// focus (the goal's cumulative cost) or, when nearer, the gear plan's market piece (its
-// cumulative cost in the money queue); all wake the same decision, so all are kind focus.
+// focus (the goal's cumulative cost) or, when nearer, the gear plan's market piece or the
+// shot stock below its line the queue does not fund yet (their cumulative costs in the money
+// queue: a weapon of a new grade bought at 0 of its shots crosses no line, so without its
+// money nothing wakes the build that funds them); all wake the same decision, so all are
+// kind focus.
 // Re-armed by each build. wallet: PurchaseFunding.budget with the escrow in it.
 function affordAtOf(context, wallet) {
     const potions = context.stock?.('potions');
@@ -138,8 +142,9 @@ function affordAtOf(context, wallet) {
     }
     const bridge = context.weaponBridge;
     if (bridge?.price > wallet) return { at: bridge.price, kind: 'focus' };
-    // A C4 player goes to buy the piece he planned as soon as he can pay for it.
-    const at = Math.min(...[context.goalBudget, context.plannedBudget].filter(cost => cost > wallet));
+    // A C4 player goes to buy the piece he planned as soon as he can pay for it, and
+    // the shots his weapon has too few of.
+    const at = Math.min(...[context.goalBudget, context.plannedBudget, context.stockBudget].filter(cost => cost > wallet));
     return Number.isFinite(at) ? { at, kind: 'focus' } : null;
 }
 function baselineIdentity(baseline) {
@@ -315,6 +320,9 @@ function storesOf(owner) {
     const into = [demand && Object.keys(demand), ClanSupply.requestIdentity(owner), ClanSupply.hasWarehouse(owner)];
     const crystals = owner.stats?.equipmentPlan?.clanGoal?.clanId && require('./ClanCrystalSupply').identity(owner);
     if (crystals) into.push(crystals);
+    const dyes = require('../../Clan/ClanDyeStock').version(owner);
+    const refill = owner.stats?.clanShotRefill;
+    if (dyes || refill) into.push([dyes, refill || null]);
     return into;
 }
 // memory: the bot's interaction memory (the caller's deps.memory), null when

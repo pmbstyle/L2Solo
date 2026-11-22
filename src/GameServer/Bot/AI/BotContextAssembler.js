@@ -107,6 +107,7 @@ async function assemble(input = {}) {
         journal = await BotEventJournal.search({
             playerId: requestContext.playerSession?.actor?.fetchId?.() || requestContext.playerId,
             botId: session.actor.fetchId(),
+            includeCombat: false,
             limit: input.journalLimit || 10
         });
         if (merchantSlice) {

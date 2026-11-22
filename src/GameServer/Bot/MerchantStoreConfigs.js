@@ -7,7 +7,7 @@ const b = (selfId, count = BUY_CAP) => ({ selfId, count });
 // Resource sellers carry raw and refined stock; permanent resource buyers
 // take raw materials only. Crafted intermediates need actual market demand,
 // otherwise their guaranteed payouts displace shot production.
-// The active Adena rate is applied by TradeService.
+// The active Adena rate is applied by StaticMerchantPricing.configuredPrice.
 const RESOURCE_SELL_RATE = 1.20;
 const rs = (selfId, count) => s(selfId, RESOURCE_SELL_RATE, count);
 
@@ -27,20 +27,23 @@ const shotsForGrade = (grade) => (SHOT_IDS_BY_GRADE[grade] || SHOT_IDS_BY_GRADE[
 // C/B/A weapon and armour piece their gear planner can target (a named
 // template with a price and an acquisition source; never a grand boss's jewel,
 // which C4 drops from its boss alone), never in the player's
-// window (TradeService.nativeStoreItems): the player keeps C4's stores. Priced
-// at the NPC price scale. Each piece has two rows (our rule, standing for the
-// dwarf craft and resale a C4 server runs on), one pair of prices for every
-// grade: the crafter row sells to the Artisan/Warsmith line only (classId
-// 56/57, ProductionPolicy.allowsFixed reads buyerClasses) at 0.6x, stock it
-// resells on the board (CrafterStock); the valve row sells to anyone at 1.5x,
-// the ceiling of a crafter's ask, so a crafter's cheaper sell line wins, and one
-// piece of its grade per bot over its life (ProductionPolicy.valveAllowance).
-const CRAFTER_NPC_RATE = 0.6;
-const VALVE_NPC_RATE = 1.5;
-const CRAFTER_CLASSES = Object.freeze([56, 57]);
-const reserveGear = (ids, grade) => ids.flatMap((selfId) => [
-    { selfId, npcRate: CRAFTER_NPC_RATE, count: BUY_CAP, reserve: true, buyerClasses: CRAFTER_CLASSES },
-    { selfId, npcRate: VALVE_NPC_RATE, count: BUY_CAP, reserve: true, valve: grade }]);
+// window (TradeService.nativeStoreItems): the player keeps C4's stores. Each
+// piece has a crafter row and, in the towns whose station traders stock its grade, a
+// trader row (our rule: the suppliers, SupplierRoles, stand for a C4 market's
+// players). The crafter row sells to the crafter and spoiler lines (classId 54-57,
+// ProductionPolicy.allowsFixed reads buyerClasses), the trader row to the station
+// traders only (buyerRole), both at COST_RATE x the item's bot-side price anchor
+// (StaticMerchantPricing.configuredPrice: a reserve row's npcRate x PriceAnchor.anchor);
+// they resell it on the board (CrafterStock) at most at the anchor. Both are
+// consignment rows: a supplier takes them only as its resale stock, never as its own
+// purchase (ProductionPolicy.allowsFixed), so it buys its own gear on the board as
+// any bot does.
+const { ROLES, COST_RATE } = require('./Economy/SupplierRoles');
+const SUPPLIER_CLASSES = Object.freeze([...ROLES.spoiler.classes, ...ROLES.crafter.classes]);
+const reserveGear = (ids) => ids.map((selfId) => ({ selfId, npcRate: COST_RATE, count: BUY_CAP,
+    reserve: true, consignment: true, buyerClasses: SUPPLIER_CLASSES }));
+const traderGear = (ids) => ids.map((selfId) => ({ selfId, npcRate: COST_RATE, count: BUY_CAP,
+    reserve: true, consignment: true, buyerRole: 'trader' }));
 const RESERVE_GEAR_C = [
     60, 62, 64, 71, 72, 73, 74, 75, 76, 77, 84, 89, 94, 95,
     96, 103, 107, 119, 131, 133, 134, 135, 145, 160, 161, 162, 173, 174,
@@ -82,12 +85,14 @@ const RESERVE_GEAR_A = [
 const RESERVE_KIT_C = [499, 1120];
 const RESERVE_KIT_B = [104, 106, 117, 209, 404, 421, 610, 860, 891, 922];
 const RESERVE_KIT_A = [304, 868, 899, 930];
-// Every C, B and A reserve row, sold in each grade's shot store (Giran, Oren, Aden):
-// a crafter restocks any grade it crafts in whichever of them it stands.
-const RESERVE_GEAR = Object.freeze([
-    ...reserveGear([...RESERVE_GEAR_C, ...RESERVE_KIT_C], "C"),
-    ...reserveGear([...RESERVE_GEAR_B, ...RESERVE_KIT_B], "B"),
-    ...reserveGear([...RESERVE_GEAR_A, ...RESERVE_KIT_A], "A")]);
+const RESERVE_IDS = Object.freeze({
+    C: [...RESERVE_GEAR_C, ...RESERVE_KIT_C], B: [...RESERVE_GEAR_B, ...RESERVE_KIT_B], A: [...RESERVE_GEAR_A, ...RESERVE_KIT_A] });
+// Every C, B and A crafter row, sold in each grade's shot store (Giran, Oren, Aden):
+// a crafter or spoiler restocks any grade it stocks in whichever of them it stands.
+const RESERVE_GEAR = Object.freeze(reserveGear([...RESERVE_IDS.C, ...RESERVE_IDS.B, ...RESERVE_IDS.A]));
+// A town's trader rows: every reserve piece of the grades its station traders stock.
+const traderReserve = (town) => require('./Economy/SupplierRoles').traderGrades(town)
+    .flatMap((grade) => traderGear(RESERVE_IDS[grade]));
 // The grade's Scroll: Enchant Weapon (C4EnchantScrolls; C4 sells it nowhere: drop,
 // spoil and raid bosses only). The reserve sells it to the spoiler line only at
 // SCROLL_MARKUP x the board's median deal price (FixedShotOffers), SCROLL_RATE x the
@@ -443,7 +448,8 @@ module.exports = {
     },
 
     // Dedicated shot stores sell every player shot type at the town's exact
-    // progression grade. They deliberately do not carry lower grades.
+    // progression grade. They deliberately do not carry lower grades. They sell
+    // to players only: a bot's graded shots come from the crafters (CrafterStock).
     "Pingu": {
         title: "Shots: No Grade",
         town: "Talking Island",
@@ -484,69 +490,69 @@ module.exports = {
         town: "Gludin",
         storeType: 1,
         locX: -80620, locY: 150020, locZ: -3040,
-        items: shotsForGrade(1)
+        items: [...shotsForGrade(1), ...traderReserve("Gludin")]
     },
     "Musa": {
         title: "Shots: D Grade",
         town: "Gludio",
         storeType: 1,
         locX: -14480, locY: 123730, locZ: -3117,
-        items: shotsForGrade(1)
+        items: [...shotsForGrade(1), ...traderReserve("Gludio")]
     },
     "Reanimator": {
         title: "Shots: D Grade",
         town: "Dion",
         storeType: 1,
         locX: 15910, locY: 143200, locZ: -2707,
-        items: shotsForGrade(1)
+        items: [...shotsForGrade(1), ...traderReserve("Dion")]
     },
     "Squeesh": {
         title: "Shots: C Grade",
         town: "Giran",
         storeType: 1,
         locX: 83600, locY: 148300, locZ: -3406,
-        items: [...shotsForGrade(2), ...RESERVE_GEAR, enchantReserve(951, 20)]
+        items: [...shotsForGrade(2), ...RESERVE_GEAR, ...traderReserve("Giran"), enchantReserve(951, 20)]
     },
     "M3tLa": {
         title: "Shots: B Grade",
         town: "Oren",
         storeType: 1,
         locX: 83000, locY: 53400, locZ: -1488,
-        items: [...shotsForGrade(3), ...RESERVE_GEAR, enchantReserve(947, 10)]
+        items: [...shotsForGrade(3), ...RESERVE_GEAR, ...traderReserve("Oren"), enchantReserve(947, 10)]
     },
     "Petec": {
         title: "Shots: B Grade",
         town: "Hunter's Village",
         storeType: 1,
         locX: 117129, locY: 77137, locZ: -2696,
-        items: shotsForGrade(3)
+        items: [...shotsForGrade(3), ...traderReserve("Hunter's Village")]
     },
     "Original91": {
         title: "Shots: B Grade",
         town: "Heine",
         storeType: 1,
         locX: 111380, locY: 219174, locZ: -3536,
-        items: shotsForGrade(3)
+        items: [...shotsForGrade(3), ...traderReserve("Heine")]
     },
     "Lowfiles": {
         title: "Shots: A Grade",
         town: "Aden",
         storeType: 1,
         locX: 146497, locY: 25807, locZ: -2008,
-        items: [...shotsForGrade(4), ...RESERVE_GEAR, enchantReserve(729, 5)]
+        items: [...shotsForGrade(4), ...RESERVE_GEAR, ...traderReserve("Aden"), enchantReserve(729, 5)]
     },
     "TinWh1skey": {
         title: "Shots: S Grade",
         town: "Goddard",
         storeType: 1,
         locX: 148050, locY: -55340, locZ: -2728,
-        items: shotsForGrade(5)
+        items: [...shotsForGrade(5), ...traderReserve("Goddard")]
     },
     "Ora": {
         title: "Shots: S Grade",
         town: "Rune",
         storeType: 1,
         locX: 43950, locY: -47720, locZ: -792,
-        items: shotsForGrade(5)
+        items: [...shotsForGrade(5), ...traderReserve("Rune")]
     }
 };

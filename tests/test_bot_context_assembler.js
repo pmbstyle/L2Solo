@@ -41,6 +41,8 @@ async function main() {
         await BotEventJournal.record({ botId: 20, playerId: 10, eventType: 'level_up', summary: 'Reached level 20.', weight: 4 });
         await BotEventJournal.record({ botId: 20, playerId: 10, eventType: 'trade_completed', summary: 'Received healing potions from the player.', weight: 4 });
         await BotEventJournal.record({ botId: 20, playerId: 10, eventType: 'llm_decision', summary: 'Model proposed an invented drop.', weight: 4 });
+        await BotEventJournal.record({ botId: 20, eventType: 'raid_defeated', summary: 'Defeated raid boss Queen Ant.', weight: 8 });
+        await BotEventJournal.record({ botId: 20, eventType: 'pvp_encounter', summary: 'Confirmed PvP result.', weight: 8 });
         const assembled = await BotContextAssembler.assemble({
             session: { actor: { fetchId: () => 20 } },
             status: { available: true },
@@ -61,6 +63,8 @@ async function main() {
         assert(!assembled.fragments.some(fragment => ['recent_dialogue', 'conversation_summary'].includes(fragment.id)), 'history must have one canonical representation');
         assert(assembled.fragments.some((fragment) => fragment.id === 'authoritative_events'));
         assert(!JSON.stringify(assembled.fragments).includes('invented drop'), 'provider decisions are not authoritative world events');
+        assert(!JSON.stringify(assembled.fragments).includes('Queen Ant'), 'confirmed raid details are read on demand');
+        assert(!JSON.stringify(assembled.fragments).includes('Confirmed PvP result'), 'PvP memories stay on demand');
         assert(assembled.telemetry.skillIntent, 'skill intent should include the skill fragment path');
         assert(assembled.estimatedTokens <= assembled.hardMaxTokens);
         assert(BotContextAssembler.estimateTokens(assembled.fragments) <= 1800);

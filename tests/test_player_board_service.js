@@ -148,7 +148,8 @@ async function main() {
         kind: id % 2 ? 'sell_ad' : 'shop', custodyPolicy: id % 2,
         lines: [{ lineId: id, selfId: 1864, count: 10, price: id }] });
     const filtered = create({ afk: () => ({ isBoardReady: () => true, boardIndex: () => mixed,
-        offerOf: () => ({ sourceName: 'Merchant', itemName: 'Coal' }) }) });
+        offerOf: () => ({ sourceName: 'Merchant', itemName: 'Coal' }) }),
+    life: () => ({ cachedState: () => null }), meetings: () => ({ playerOfferAllowed: () => true }) });
     for (const tradeType of ['meeting', 'shop']) {
         let cursor = null;const seen = [];
         do {

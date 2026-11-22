@@ -43,7 +43,7 @@ function publish(session, result) {
     const response = invoke('GameServer/Network/Response');
     session.dataSendToMe?.(response.itemsList(backpack.fetchItems()));
     session.dataSendToOthers?.(response.charInfo(actor), actor);
-    invoke('GameServer/Inventory/ShotStock').restockAfterWeaponChange(actor, [result.slot], 'ClanGear');
+    invoke('GameServer/Clan/ClanConsumableSupply').afterWeaponChange(actor, [result.slot], 'ClanGear');
 }
 
 function coldAvailable(characterId) {

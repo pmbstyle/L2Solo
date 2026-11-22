@@ -307,6 +307,8 @@ try {
     assert.equal(finisher.partyPatch.stats.partyBreakReason, 'raid_defeated');
     assert.equal(secondParty.stats.raidEncounter.status, 'defeated');
     assert.equal(secondParty.stats.raidEncounter.winnerPartyId, 'raid-b');
+    assert.deepEqual(finisher.raidOutcome.participantIds, [...firstMembers, ...secondMembers].map(member => member.characterId));
+    assert.deepEqual(finisher.raidOutcome.winningParticipantIds, secondMembers.map(member => member.characterId));
     assert(finisher.memberResults.some(({ result }) => result.materialize.items.length > 0),
         'only the last-hit clan should roll the boss loot');
 
@@ -320,6 +322,7 @@ try {
         rng: () => 0.5
     });
     assert.equal(duplicate.debug.reason, 'raid_already_defeated');
+    assert.equal(duplicate.raidOutcome, undefined);
     assert.equal(duplicate.partyPatch.status, 'dissolved',
         'a persisted victorious raid must not remain active after restart');
     assert(duplicate.memberResults.every(({ result }) => result.materialize.items.length === 0),
@@ -330,7 +333,7 @@ try {
     const resetPartial = RaidEncounter.record(firstParty, resetShared, {
         won: false,
         encounter: { hp: 25000, mob: { selfId: 10372, maxHp: 100000 } }
-    }, 250001);
+    }, 250001, firstMembers.map(member => member.characterId));
     const failedSnapshot = RaidEncounter.fail(firstParty, resetPartial, 250002);
     assert.equal(failedSnapshot.status, 'failed');
     assert.equal(failedSnapshot.remainingHpRatio, 0.25,
@@ -341,6 +344,8 @@ try {
         'the next attempt must see a fully restored boss');
     assert.equal(restoredForCompetitor.encounter, null,
         'combat timers from the failed attempt must not leak into the reset boss');
+    assert.deepEqual(restoredForCompetitor.combatParticipantIds, [],
+        'a full reset drops contributions from the previous attempt on the same spawn');
 
     RaidEncounter.resetForTests();
     Combat.npcForSpot = () => ({
@@ -383,6 +388,7 @@ try {
     assert.equal(wipe.partyPatch.status, 'dissolved', 'death of a critical role must end the attempt');
     assert.equal(wipe.partyPatch.stats.partyBreakReason, 'raid_failed');
     assert.equal(wipe.partyPatch.stats.raidEncounter.status, 'failed');
+    assert.deepEqual(wipe.raidOutcome.participantIds, doomedMembers.map(member => member.characterId));
     assert(wipe.partyPatch.stats.raidEncounter.remainingHpRatio > 0.3,
         'a nearly untouched boss should be marked as an unsafe retry');
 

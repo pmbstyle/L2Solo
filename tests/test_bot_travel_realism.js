@@ -530,20 +530,22 @@ try {
     assert.strictEqual(unreachableGuideSession.roleDecision.reason, 'newbie_guide_route_unreachable');
     assert(unreachableGuideMessages.some((text) => text.includes('retry later')), 'an exhausted guide route should be visible to the party');
 
+    const { dion_town: dion, giran_town: giran } = invoke('GameServer/World/TownRespawn').towns;
+    const unreachableShopLeader = { ...bot({ ...dion, actorId: 2000098 }), fetchIsOnline: () => true };
     const unreachableShopTarget = {
         actorId: null,
-        name: 'Giran general shop',
-        locX: 1000,
-        locY: 1000,
-        locZ: -100,
-        town: 'Giran'
+        name: 'Dion general shop',
+        locX: dion.locX + 1000,
+        locY: dion.locY,
+        locZ: dion.locZ,
+        town: dion.name
     };
     const unreachableShopSession = {
         plan: 'shopping',
         partyCompanion: true,
-        followPlayerSession: { actor: shoppingLeader },
+        followPlayerSession: { actor: unreachableShopLeader },
         companionShopping: { kind: 'restock_shots' },
-        resumeAfterShopping: { plan: 'following', followPlayerSession: { actor: shoppingLeader } },
+        resumeAfterShopping: { plan: 'following', followPlayerSession: { actor: unreachableShopLeader } },
         shoppingTarget: unreachableShopTarget,
         lastPathfinding: {
             requestedTo: unreachableShopTarget,
@@ -557,12 +559,12 @@ try {
         lastFailureAt: 0,
         retryAt: 0
     };
-    const unreachableShopBot = bot({ locX: 0, locY: 0, locZ: -100 });
+    const unreachableShopBot = bot(dion);
     const unreachableShopMessages = [];
     publishTravelSession(unreachableShopSession, unreachableShopBot);
     ShoppingState.tick(unreachableShopSession, unreachableShopBot, noTeleportGenerics, {
         say(_session, text) { unreachableShopMessages.push(text); },
-        getClosestTown: () => ({ name: 'Dion', x: 1000, y: 1000, z: -100 })
+        getClosestTown: () => ({ name: dion.name, x: dion.locX, y: dion.locY, z: dion.locZ })
     });
     assert.strictEqual(unreachableShopSession.plan, 'following',
         'unreachable shot shopping without a static seller must return to following');
@@ -659,20 +661,21 @@ try {
         assert.strictEqual(inTown.townWalkFailed, undefined, 'and no walk hold is set');
     }
 
+    const buyerLeader = { ...bot({ ...giran, actorId: 2000098 }), fetchIsOnline: () => true };
     const buyerTarget = {
         actorId: 9001,
         name: 'BuyerBot',
-        locX: 9000,
-        locY: 9000,
-        locZ: -100,
-        town: 'Giran'
+        locX: giran.locX + 1000,
+        locY: giran.locY,
+        locZ: giran.locZ,
+        town: giran.name
     };
     const buyerFallbackSession = {
         plan: 'shopping',
         partyCompanion: true,
-        followPlayerSession: { actor: shoppingLeader },
+        followPlayerSession: { actor: buyerLeader },
         companionShopping: { kind: 'sell_resources' },
-        resumeAfterShopping: { plan: 'following', followPlayerSession: { actor: shoppingLeader } },
+        resumeAfterShopping: { plan: 'following', followPlayerSession: { actor: buyerLeader } },
         shoppingTarget: buyerTarget,
         lastPathfinding: {
             requestedTo: buyerTarget,
@@ -686,11 +689,11 @@ try {
         lastFailureAt: 0,
         retryAt: 0
     };
-    const buyerFallbackBot = bot({ locX: 0, locY: 0, locZ: -100 });
+    const buyerFallbackBot = bot(giran);
     publishTravelSession(buyerFallbackSession, buyerFallbackBot);
     ShoppingState.tick(buyerFallbackSession, buyerFallbackBot, noTeleportGenerics, {
         say() {},
-        getClosestTown: () => ({ name: 'Giran', x: 1000, y: 1000, z: -100 })
+        getClosestTown: () => ({ name: giran.name, x: giran.locX, y: giran.locY, z: giran.locZ })
     });
     assert.strictEqual(buyerFallbackSession.plan, 'shopping', 'an unreachable player buyer should fall back to the town shop');
     assert.strictEqual(buyerFallbackSession.shoppingTarget.actorId, null, 'buyer fallback should clear the unreachable player-store target');

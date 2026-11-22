@@ -260,23 +260,18 @@ test('native buyer window uses current bid and rejects stale native sale', async
     assert.strictEqual(records.length, 0, 'the board transaction journals its own deal once');
 });
 
-test('bot shots retain authored price after player refresh; other static purchases are denied', async () => {
-    // The author's fixed shot offers (off by default since T116: no C4 NPC sells D+ shots).
+test('a bot buys no shot and no material from a static store; ordinary purchases stay', async () => {
+    // Even with the crafters' shots on (off by default since T116), a configured shot row
+    // sells to players only: a bot's graded shots come from the crafters' board lines.
     const Population = invoke('GameServer/Bot/Population/PopulationConfig');
     const disabled = Population.staticShotsDisabled;
     Population.staticShotsDisabled = false;
     try {
     const session = await player('FBotShots', { bot: true });
     const store = staticStore(Configs.IslandMats, SHOT);
-    const source = Configs.IslandMats.items.find(item => item.selfId === SHOT);
-    const configured = Pricing.botPriceFor(Configs.IslandMats, source);
-    line(50, 1, configured + 400, { selfId: SHOT });
-    TradeService.refreshStorePrices(store);
-    assert.strictEqual(store.items[0].price, configured + 400);
     const money = wallet(session);
-    const result = await TradeService.buyFromStore(session.actor, store, SHOT, 1, { expectedUnitPrice: configured });
-    assert.strictEqual(result.totalAdena, configured);
-    assert.strictEqual(wallet(session), money - configured);
+    await assert.rejects(TradeService.buyFromStore(session.actor, store, SHOT, 1), /static.*unavailable/i);
+    assert.strictEqual(wallet(session), money, 'a refused shot purchase takes no money');
     const materialStore = staticStore(Configs.IslandMats);
     await assert.rejects(TradeService.buyFromStore(session.actor, materialStore, MATERIAL, 1), /static.*unavailable/i);
     const ordinary = { storeType: 1, items: [{ selfId: MATERIAL, price: 7, count: 2 }] };
@@ -290,19 +285,17 @@ test('bot shots retain authored price after player refresh; other static purchas
     } finally { Population.staticShotsDisabled = disabled; }
 });
 
-test('bot static buy-back remains old price; a failing player write restores stock and money', async () => {
+test('a fixed buyer refuses a bot (an Artisan too); a failing player write restores stock and money', async () => {
     const session = await player('FRollback');
     const store = staticStore(Configs['4manda']);
     line(60, 3, 888);
     const item = session.actor.backpack.fetchItemFromSelfId(MATERIAL);
-    const oldPrice = Pricing.botPriceFor(Configs['4manda'], materialLine(Configs['4manda']));
-    // The fixed buyers take a bot's materials from a gnome only: an Artisan sells here.
     const bot = await player('FBotLiquidation', { bot: true, classId: ARTISAN });
     const botMoney = wallet(bot);
     TradeService.refreshStorePrices(store);
-    const botSale = await TradeService.sellToStore(bot.actor, store, MATERIAL, 1);
-    assert.strictEqual(botSale.totalAdena, oldPrice);
-    assert.strictEqual(wallet(bot), botMoney + oldPrice);
+    await assert.rejects(TradeService.sellToStore(bot.actor, store, MATERIAL, 1), /static.*unavailable/i);
+    assert.strictEqual(wallet(bot), botMoney);
+    assert.strictEqual(amount(bot, MATERIAL), 20, 'the refused bot keeps its materials');
     const count = store.items[0].count;
     const money = wallet(session);
     Database.updateItemAmount = async (characterId, objectId, value) => {
@@ -340,7 +333,7 @@ test('fixed supply is cached by configuration/rate without world session reads',
         assert.strictEqual(reads, 2, 'a newly loaded config invalidates the supply table');
         ProgressionRates.profile = () => ({ multiplier: 1, adena: 2 });
         assert.strictEqual(Pricing.sellersOf(990001)[0].price, 19, 'explicit author price stays absolute');
-        assert.strictEqual(reads, 2, 'store prices are x1 at every preset: the Adena rate keeps the supply table');
+        assert.strictEqual(reads, 3, 'effective Adena rate invalidates the supply table');
         line(70, 1, 1234);
         assert(Pricing.priceFor(Configs.IslandMats, materialLine(Configs.IslandMats)) >= 1234);
     } finally {
@@ -381,7 +374,7 @@ test('bot gear sale to a static buyer is rejected before mutation; player and or
     assert.strictEqual(amount(bot, 219), 0);
 });
 
-test('hot buyer selection and inventory sale keep only static materials at the old bot price', async () => {
+test('hot buyer selection and inventory sale give a bot no static buyer', async () => {
     const bot = await player('FHotMixedSeller', { bot: true, classId: ARTISAN });
     await giveGear(bot);
     const gear = staticStore(Configs.Veteranas, 219);
@@ -392,18 +385,15 @@ test('hot buyer selection and inventory sale keep only static materials at the o
     const store = { storeType: 3, items: [...gear.items, ...materials.items] };
     line(80, 3, 9999);
     TradeService.refreshStorePrices(store);
-    const oldPrice = Pricing.botPriceFor(Configs['4manda'], materialLine(Configs['4manda']));
     const preview = TradeService.previewSaleToStore(bot.actor, store);
-    assert.deepStrictEqual(preview.lines.map(item => item.selfId), [MATERIAL]);
-    assert.strictEqual(preview.totalAdena, oldPrice * 20);
+    assert.deepStrictEqual(preview.lines.map(item => item.selfId), [], 'neither the gear nor the materials sell to it');
     const money = wallet(bot);
     const stock = gear.items[0].count;
     // This is ShoppingState's actual arrival executor for a non-AFK buyer.
     const result = await TradeService.sellInventoryToStore(bot.actor, store);
-    assert.strictEqual(result.itemsSold, 20);
-    assert.strictEqual(result.totalAdena, oldPrice * 20);
-    assert.strictEqual(wallet(bot), money + oldPrice * 20);
-    assert.strictEqual(amount(bot, MATERIAL), 0);
+    assert.strictEqual(result.itemsSold, 0);
+    assert.strictEqual(wallet(bot), money);
+    assert.strictEqual(amount(bot, MATERIAL), 20);
     assert.strictEqual(amount(bot, 219), 1);
     assert.strictEqual(gear.items[0].count, stock);
 });

@@ -12,8 +12,7 @@ const Forecast = require('../src/GameServer/Bot/Population/RaidCombatAssessment'
 const Estimate = require('../src/GameServer/Clan/ClanRaidEstimate');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Supply = require('../src/GameServer/Bot/Population/RaidSupplyPolicy');
-const Fixed = require('../src/GameServer/Bot/Economy/FixedShotOffers');
-Supply.useMarket(() => ({ npcOffersFor: id => Fixed.offers(id), tripFrom: () => () => 0 }));
+Supply.useMarket(require('./helpers/crafterShotBoard').crafterShotMarket());
 const at = Date.now();
 const state = { characterId: 990001, classId: 12, clanId: 77, level: 50, phase: 'cold', activity: 'hunting',
     stats: { classId: 12, money: [100000000,0,0,0] }, adena: 100000000, inventory: {} };

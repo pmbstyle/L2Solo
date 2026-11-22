@@ -292,27 +292,13 @@ async function run() {
         currentRegion: 'Talking Island',
         loc: islandLoc,
         inventory: LifeState.inventorySummaryFromItems(await originals.fetchItems(87)),
-        // A Scavenger: the fixed buyers take materials only from a gnome (classes 54-57).
+        // A Scavenger (a gnome): the fixed buyers take nothing from a bot.
         level: 20,
         stats: { ...state.stats, classId: 54, marketReturn: { ...state.stats.marketReturn,
             loc: { ...islandLoc }, regionName: 'Talking Island' } }
     }, 'static_buyer_owner_geometry');
     const buyerRouted = await ListingService.open(buyerRoutedState, { now: 1000, durationMs: 60000 });
-    assert.strictEqual(buyerRouted.listed, false, 'materials accepted by a static buyer must not create a dead private store');
-    assert.strictEqual(buyerRouted.reason, 'sold_to_static_buyer');
-    const staticPrice = invoke('GameServer/Bot/Economy/StaticBuyerService').candidatesFor(buyerRoutedState, 'Talking Island')[0].npcPrice;
-    assert.deepStrictEqual(buyerRouted.state.stats.lastNpcLiquidation.sold, [[1864, 10, staticPrice]]);
-    assert.strictEqual(buyerRouted.state.stats.lastNpcLiquidation.payout, 10 * staticPrice);
-    assert.deepStrictEqual(buyerRouted.state.stats.marketSellSeen?.items,
-        ItemDisposition.saleSeen(buyerRouted.state).items,
-        'a completed buyer sale without a private listing must defer the next market trip until new goods');
-    assert.strictEqual(GoalExecutor.beginMarketTravel({
-        ...buyerRouted.state,
-        activity: 'hunting'
-    }, {
-        type: 'sell_inventory',
-        plan: { expectedBenefit: 'market_sale_inventory' }
-    }, 1001), null, 'the deferred seller must resume hunting instead of starting another market loop');
+    assert.notStrictEqual(buyerRouted.reason, 'sold_to_static_buyer', 'no fixed buyer takes a Scavenger\'s Stem');
 
     const giranLoc = { locX: towns.giran_town.locX, locY: towns.giran_town.locY, locZ: towns.giran_town.locZ };
     await originals.execute(['UPDATE characters SET locX=?,locY=?,locZ=? WHERE id=?',
@@ -347,7 +333,6 @@ async function run() {
     const remotePhysicalAfter = await originals.fetchItems(86);
     try {
         assert.strictEqual(remoteBuyer.listed, true, 'unwanted stock with a valid native ask reaches the board');
-        assert.strictEqual(remoteBuyer.buyerSale.sold, false, 'the Giran owner does not sell to the remote static buyer');
         assert.strictEqual(remoteBuyer.dynamicBuyerSale.sold, false);
         assert.deepStrictEqual(remoteBuyer.market.answers, [], 'no buyer or receipts are invented for the quote');
         assert.deepStrictEqual(remoteBuyer.market.npc, []);

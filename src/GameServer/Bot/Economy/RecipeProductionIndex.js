@@ -26,8 +26,8 @@ function recipeCatalog() {
     return catalog;
 }
 class RecipeProductionIndex {
-    constructor(board, { fixedBuyer = () => false, accept = () => true } = {}) {
-        this.board = board; this.fixedBuyer = fixedBuyer; this.accept = accept;
+    constructor(board, { standingDemand = () => false, accept = () => true } = {}) {
+        this.board = board; this.standingDemand = standingDemand; this.accept = accept;
         this.catalog = recipeCatalog();
         this.rows = Array.from({ length: 10 }, () => new Set());
         this.revisions = new Uint32Array(10);
@@ -41,7 +41,7 @@ class RecipeProductionIndex {
     rowsFor(level) { return this.rows[Math.max(0, Math.min(9, Math.floor(Number(level) || 0)))].values(); }
     refresh(recipe, changed = new Set()) {
         if (!this.accept(recipe)) return changed;
-        const available = this.board.list(Number(recipe.productId), 3).length > 0 || this.fixedBuyer(recipe);
+        const available = this.board.list(Number(recipe.productId), 3).length > 0 || this.standingDemand(recipe);
         for (let level = Number(recipe.level); level <= 9; level++) {
             const rows = this.rows[level];
             if (available === rows.has(recipe)) continue;
@@ -61,10 +61,10 @@ class RecipeProductionIndex {
         const changed = [];
         for (let level = 1; level <= 9; level++) {
             if (!this.rows[level].size) continue;
-            // Snapshot replacement clears public bids, while enabled authored
-            // buyers still support the same indexed recipes without board rows.
+            // Snapshot replacement clears public bids, while a standing demand (the
+            // forecast shot trade) still supports its recipes without board rows.
             const rows = this.rows[level]; rows.clear();
-            for (const recipe of this.catalog.rows) if (recipe.level <= level && this.accept(recipe) && this.fixedBuyer(recipe)) rows.add(recipe);
+            for (const recipe of this.catalog.rows) if (recipe.level <= level && this.accept(recipe) && this.standingDemand(recipe)) rows.add(recipe);
             this.revisions[level]++;
             changed.push(this.scopeFor(level));
         }

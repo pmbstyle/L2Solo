@@ -145,7 +145,9 @@ function collect(state, options = {}) {
         const shot = Shot.planForState(current), offer = quoteFor(shot.selfId, town, null, options.seller);
         if (offer) {
             const context = economics();
-            const plan = Shot.restockPlan(current, { plan: shot, unitPrice: offer.price, potionUnitPrice: 0, context, kit: kit() });
+            const plan = Shot.restockPlan(current, { plan: shot, unitPrice: offer.price, potionUnitPrice: 0,
+                context, kit: options.shotRefillTarget === undefined ? kit()
+                    : invoke('GameServer/Clan/ClanConsumableSupply').refillKit(kit(), options.shotRefillTarget) });
             add(shot.selfId, plan.npcAmount, offer, {}, { survival: Funding.survivalTranche(context, shot.selfId, offer.price) });
         }
     }
@@ -176,6 +178,13 @@ async function purchase(state, options = {}) {
     return { state: current, receipts };
 }
 async function purchaseForActor(actor, options = {}) {
+    if (options.shots !== false && options.clanShots !== false && Number(actor.fetchClanId?.()) > 0) {
+        const plan = invoke('GameServer/Inventory/ShotStock').planForActor(actor);
+        if (!options.extras?.some(row => Number(row.selfId) === plan.selfId)) {
+            const withdrawal = await invoke('GameServer/Clan/ClanConsumableSupply').forActorShots(actor, { plan, kit: options.kit });
+            if (withdrawal) options = { ...options, shotRefillTarget: withdrawal.target };
+        }
+    }
     // The money packet of the decision the body holds (DecisionEvents.held).
     let statsPacket = DecisionEvents.held(actor.session)?.statsPacket;
     const state = Economy.stateForActor(actor);

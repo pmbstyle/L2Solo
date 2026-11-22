@@ -146,7 +146,7 @@ try {
     // in defense. The kill's journal row says B defended; A's death trace names A as opener.
     {
         const fs = require('fs'), vm = require('vm'), { createRequire } = require('node:module');
-        const traces = [], journal = invoke('PvpJournal');
+        const traces = [], memories = [], pkMerchants = [], journal = invoke('PvpJournal');
         const filename = require.resolve('../src/GameServer/Actor/Generics/Die.js');
         const dieDeps = {
             'GameServer/Network/Response': { die: () => Buffer.from([0]) },
@@ -165,9 +165,11 @@ try {
         patch(invoke(path.actor), 'die', box.exports);
         for (const key of ['userInfo', 'charInfo', 'relationChanged']) patch(invoke('GameServer/Network/Response'), key, () => Buffer.from([0]));
         patch(invoke('Database'), 'updateCharacterPvpPkKarma', () => Promise.resolve());
+        patch(invoke('GameServer/AfkTrade/AfkTradeService'), 'merchantBecamePk', id => pkMerchants.push(id));
+        patch(invoke('Database'), 'recordBotPvpOutcome', memory => { memories.push(memory); return Promise.resolve(); });
         patch(invoke('GameServer/Social/CombatHelpMemory'), 'recordDefeat', () => {});
-        const fighter = () => {
-            const a = Object.assign(actor(), { pvp: 0, pk: 0, karma: 0, fetchLevel: () => 40, isDead: () => false, destructor() {},
+        const fighter = (human = false) => {
+            const a = Object.assign(actor(human), { pvp: 0, pk: 0, karma: 0, fetchLevel: () => 40, isDead: () => false, destructor() {},
                 fetchKarma() { return this.karma; }, setKarma(v) { this.karma = v; }, fetchPk() { return this.pk; }, setPk(v) { this.pk = v; },
                 fetchPvp() { return this.pvp; }, setPvp(v) { this.pvp = v; }, setPvpFlag(v) { this.flag = v; } });
             Object.assign(a.state, { destructor() {}, setDead() {} });
@@ -176,16 +178,39 @@ try {
         };
         const opener = fighter(), defender = fighter();
         hit(opener, defender);
+        assert.deepStrictEqual(memories, [], 'nonlethal attacks do not become confirmed outcomes');
         opener.flag = 1; opener.hp = 1;
         hit(defender, opener);
         const kill = journal.snapshot().findLast(row => row.source === 'hot' && row.targetId === opener.fetchId());
         assert.strictEqual(kill?.initiatorId, defender.fetchId(), 'the defender\'s kill is journalled');
+        assert.equal(memories.length, 1);
+        assert.deepStrictEqual(memories[0].sides, [[defender.fetchId()], [opener.fetchId()]]);
+        assert.deepStrictEqual(memories[0].bots, [defender.fetchId(), opener.fetchId()]);
+        assert.deepStrictEqual(memories[0].kills, [{ killerId: defender.fetchId(), victimId: opener.fetchId(), outcome: 'pvp' }]);
         assert.strictEqual(kill.reason, 'defense:unprovoked', 'the kill row says the killer defended against an unprovoked opener');
         const death = traces.find(r => r.kind === 'death' && r.bot === opener.fetchId());
         assert.strictEqual(death?.killer, `char:${defender.fetchId()}`);
         assert.strictEqual(death.opener, `char:${opener.fetchId()}`, 'the death names who opened the fight');
         assert.strictEqual(death.role, 'aggression', 'and the dead one\'s part in it');
         assert.strictEqual(death.why, 'unprovoked');
+        const human = fighter(true);
+        human.hp = 1;
+        hit(defender, human);
+        assert.deepStrictEqual(memories[1].sides, [[defender.fetchId()], [human.fetchId()]]);
+        assert.deepStrictEqual(memories[1].bots, [defender.fetchId()], 'a human is recorded as a participant without bot memory');
+        assert(defender.fetchKarma() > 0);
+        assert.deepStrictEqual(pkMerchants, [defender.fetchId()], 'the hot kill publishes the first karma gain to the board');
+
+        const killer = fighter(), victim = fighter(), ally = fighter();
+        const encounter = { key: 'managed-kill', startedAt: Date.now() - 1000, expiresAt: Date.now() + 10000, seen: [],
+            sides: [{ memberIds: [killer.fetchId(), ally.fetchId()] }, { memberIds: [victim.fetchId()] }],
+            pvpParticipants: [killer.fetchId(), ally.fetchId(), victim.fetchId()] };
+        killer.session.pvpEncounter = victim.session.pvpEncounter = encounter;
+        victim.hp = 1;
+        hit(killer, victim);
+        assert.equal(memories[2].source, 'hot_encounter');
+        assert.equal(memories[2].key, encounter.key);
+        assert.deepStrictEqual(memories[2].sides, encounter.sides.map(side => side.memberIds));
     }
     console.log('Native PvP responsibility: real damage, misses/control, retaliation, party defense, third parties, aid, summons, managed sides, expiry, bounded writes, opener at kill and death passed');
 } finally { restores.reverse().forEach(restore => restore()); }

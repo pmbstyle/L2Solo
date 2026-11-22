@@ -3,6 +3,7 @@ const InventorySummary = require('./InventorySummary');
 const Episode = require('./ColdCompetitionEpisode');
 const EncounterBudget = require('./PvpEncounterBudget');
 const Journal = require('../../../PvpJournal');
+const BotPvpMemory = require('../AI/BotPvpMemory');
 const BotErrands = require('./BotErrands');
 const ColdClock = require('./ColdClock');
 // Main-process execution of one bounded encounter (at most two C4 parties).
@@ -95,6 +96,9 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
     const displaced = !deescalated && rng() < (pvp?.started ? 0.5 : pushChance);
     const losingIndex = pvp?.started ? pvp.losingSide : displaced ? 1 : 0;
     const outcome = pvp?.started ? `pvp_${pvp.outcome}` : deescalated ? 'deescalated' : displaced ? 'displaced' : 'held_ground';
+    const encounterSides = sides.map(s => ({ principalId: s.principal.characterId,
+        memberIds: s.members.map(m => m.characterId), partyId: s.party?.partyId || null }));
+    const pvpParticipants = pvp?.started ? BotPvpMemory.coldParticipants(resume, pvp) : [];
     const encounter = pvp?.ongoing ? EncounterBudget.extend({ key: event.key, startedAt: resume?.startedAt || timestamp,
         expiresAt: step.expiresAt, stepAt: timestamp, sequence: (resume?.sequence || 0) + 1,
         actions: (resume?.actions || 0) + pvp.actions,
@@ -102,7 +106,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         materialized: resume?.materialized === true,
         ...(revenge ? { reason: war ? 'clan_war' : 'revenge' } : {}),
         spotId: event.spotId, npcId: event.npcId,
-        sides: sides.map(s => ({ principalId: s.principal.characterId, memberIds: s.members.map(m => m.characterId), partyId: s.party?.partyId || null })),
+        sides: encounterSides, pvpParticipants,
         roles: [...roles], seen: [...(resume?.seen || [])], willing }, pvp, timestamp) : null;
     // No window after it: the pair meets again only at a later arrival (enemy_met).
     const episode = { key: event.key, at: resume?.startedAt || timestamp, action: revenge ? 'revenge' : 'contest', npcId: event.npcId, outcome };
@@ -172,7 +176,12 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
                 : aggressor ? revenge ? 'aggression' : 'provoked' : 'defense', positive || e.type === 'aided_opponent');
     }
     const warState = war ? memory.assess({ id: sides[0].principal.characterId }, { id: sides[1].principal.characterId }, {}, timestamp) : null;
+    const kills = pvp?.started ? pvp.fighters.flatMap(f => f.kills.map(k => ({ ...k, killerId: f.id }))) : [];
+    const pvpMemory = pvp?.started && !encounter ? BotPvpMemory.coldOutcome({
+        key: event.key, sides: encounterSides, pvpParticipants
+    }, outcome, timestamp, pvp.losingSide, kills) : null;
     const group = { id: event.key, memberIds: states.map(s => s.characterId),
+        ...(pvpMemory ? { pvpMemory } : {}),
         ...(war ? { warContext: { fromClanId: warState.sourceClanId, toClanId: warState.targetClanId, revision: warState.war.revision } } : {}),
         ...(pvp?.started ? { pvpContext: sides.map(side => side.members.map(s => ({ id: s.characterId,
             clanId: Number(s.stats?.clanId || s.clanId || 0), karma: Number(s.stats?.karma || 0) }))) } : {}),
@@ -203,7 +212,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         spotId: event.spotId, npcId: event.npcId, partyIds,
         sideSizes: sides.map(s => s.members.length), outcome, fought: !!pvp?.started,
         principals: sides.map(s => s.principal), combatants: states, personaFor, at: timestamp,
-        ...(pvp?.started ? { losingSide: pvp.losingSide, kills: pvp.fighters.flatMap(f => f.kills.map(k => ({ ...k, killerId: f.id }))),
+        ...(pvp?.started ? { losingSide: pvp.losingSide, kills,
             durationMs: Math.min(combatAt + pvp.durationMs, step?.expiresAt ?? Infinity) - startedAt,
             actions: (resume?.actions || 0) + pvp.actions } : {}) });
     return { ok: true, deescalated, outcome, pvp: !!pvp?.started,

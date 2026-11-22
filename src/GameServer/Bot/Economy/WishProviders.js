@@ -8,7 +8,6 @@ const Funding = require('./PurchaseFunding');
 const Equipment = require('../AI/BotEquipmentCompatibility');
 const Network = require('./WishNetwork');
 const Progression = require('../AI/PersonalGearProgression');
-const SoulCrystals = require('../../Items/SoulCrystalProgression');
 const DualSwords = require('../../Items/C4DualSwordCombinations');
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -606,11 +605,6 @@ function buildProjection(state, ctx, deps) {
             ...(observed || { availableUnits: 0 }) }];
         const drop = !scrapExchange && !marketOnly && sourcePath(id);
         if (drop) paths.push(drop);
-        if (SoulCrystals.catalog.crystals[id]) {
-            ctx.nodeInputs?.wholeBag();
-        }
-        const crystal = invoke('GameServer/Bot/Economy/BotImprovementPolicy').crystalPath(state, id, ctx, deps.spots || []);
-        if (crystal) paths.push(crystal);
         const recipes = Recipes.resolveVariantsByProductId(id);
         const targetTemplate = need('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(id));
         const unseal = targetTemplate?.etc?.rank === 'b' && [9, 12].includes(Number(targetTemplate.etc.slot))
@@ -765,16 +759,14 @@ function buildProjection(state, ctx, deps) {
             const material = String(ItemTemplates.find(items, id)?.template?.kind || '').startsWith('Other.Material');
             const shot = need('./ShotTradeDemand').isShot(id);
             const publicBids = ctx.board.list(id, 3);
-            const fixedBids = material ? deps.fixedProductionOffersFor?.(id, state) || [] : [];
             let best = exitCeiling(publicBids, ownSales, 0);
-            if (material) best = exitCeiling(fixedBids, ownSales, best);
             if (shot && need('./ShotTradeDemand').forecast(id, null, timestamp)) best = Math.max(best, positive(price(id)));
             if (!(best > 0)) continue;
             // A finite setup retains priority through recipe and material
             // purchases. Ordinary shots and materials compete on finite value.
             const earningPreference = shot && productionBatches(recipe) ? 2 : 0;
-            const demand = material ? [...publicBids.slice(0, 5), ...fixedBids.slice(0, 5)]
-                .reduce((max, offer) => offer.type !== 'static' && usableExit(offer, ownSales)
+            const demand = material ? publicBids.slice(0, 5)
+                .reduce((max, offer) => usableExit(offer, ownSales)
                     ? Math.max(max, Number(offer.count || 0)) : max, 0) : 0;
             const capacity = Math.max(1, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
             const lots = productionBatches(recipe) || (demand > oldUnits
@@ -798,15 +790,14 @@ function buildProjection(state, ctx, deps) {
         for (const { recipe, count, id, ownSales, oldUnits, material, shot, earningPreference } of admitted) {
         const asks = ctx.board.list(id, SELL);
         const publicOffers = ctx.board.list(id, 3).slice(0, 5);
-        const fixedOffers = material ? (deps.fixedProductionOffersFor?.(id, state) || []).slice(0, 5) : [];
         const listingOffers = need('./WealthCraftPolicy').drain(need('./ProductionSalePolicy').exits(state, recipe, {
             board: ctx.board, timestamp, trip: ctx.trip, npcOffersFor: ctx.npcOffersFor, existing: oldUnits }));
-        for (const source of [...publicOffers, ...fixedOffers, ...listingOffers]) {
+        for (const source of [...publicOffers, ...listingOffers]) {
             const preparedBatches = productionBatches(recipe);
             // Compare a real bounded material lot to a shot lot. A single
             // material unit systematically lost to a 476-shot recipe even
             // when the board needed hundreds of intermediates.
-            const demand = source.type === 'static' ? 0 : Math.max(0, Number(source.count || 0) - oldUnits);
+            const demand = Math.max(0, Number(source.count || 0) - oldUnits);
             const capacity = Math.max(1, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
             const batches = preparedBatches || (material && demand > 0
                 ? Math.min(need('./WealthCraftPolicy').MAX_BATCHES, capacity, Math.ceil(demand / count)) : 1);
@@ -824,7 +815,7 @@ function buildProjection(state, ctx, deps) {
                 return { status: before.known && after.known ? 'ready' : 'unknown', exit: offer,
                     before, after, gross: after.receipts - before.receipts };
             })() : Price.bidSale(state, offer, { board: ctx.board, persona: ctx.persona, timestamp, asks,
-                oldUnits, units, residualUnitValue: ctx.buyback(id), fixed: offer.type === 'static' });
+                oldUnits, units, residualUnitValue: ctx.buyback(id) });
             if (sale.status !== 'ready' || sale.exit.trial && !(sale.after.sold > sale.before.sold)) continue;
             const { gross } = sale;
             if (!(gross > 0)) continue;
@@ -911,21 +902,26 @@ function buildProjection(state, ctx, deps) {
             }
         }
     }
-    // Paid enchant, SA and henna are objects of the same power queue.
+    // Paid enchant and henna are objects of the same power queue.
     // Missing materials inherit that value; only a genuinely ready leaf applies.
     blocks?.lap('sources');
     for (const improvement of invoke('GameServer/Bot/Economy/BotImprovementPolicy').opportunities(state, ctx)) {
-        const materials = improvement.materials.map(material => ({ ...material, missing: Math.max(0,
-            material.amount - physical(material.selfId)) }));
+        const materials = improvement.materials.map(material => {
+            const gross = material.amount - positive(material.clanFree);
+            const missing = Math.max(0, gross - physical(material.selfId));
+            return { ...material, gross, missing, key: missing ? itemNode(material.selfId) : null };
+        });
         const requirements = materials.filter(material => material.missing > 0)
-            .map(material => ({ key: itemNode(material.selfId), amount: material.missing }));
+            .map(material => ({ key: material.key, amount: material.missing }));
         if (requirements.some(row => !row.key)) continue;
         const ready = !requirements.length && positive(state.adena) >= positive(improvement.fee);
         root({ key: improvement.key, need: 'power', object: { ...improvement, kind: 'improvement' },
             valueHours: improvement.valueHours, price: improvement.price,
             paths: [{ activity: ready ? 'improving' : null, kind: improvement.kind,
                 improvement, price: positive(improvement.fee), costHours: 1 / 3600,
-                riskHours: improvement.riskHours || 0, requirements }] });
+                riskHours: improvement.riskHours || 0, requirements,
+                ...(materials.some(material => material.clanFree) ? { grossRequirements: materials.filter(material => material.key)
+                    .map(material => ({ key: material.key, amount: material.gross })) } : {}) }] });
         for (const material of materials) values.set(material.selfId,
             positive(values.get(material.selfId)) + improvement.valueHours / Math.max(1, material.amount));
     }
@@ -1316,9 +1312,9 @@ function buildProjection(state, ctx, deps) {
     }
     // The kit in the field: a kind's root only below its line (one
     // hour of use), for one outing's refill; above it the money reserve holds that
-    // refill and the town visit buys it. Shots and potions are ordinary
-    // consumables: weighed by their value with the gear they serve (WishNetwork),
-    // their road taken only where its goods carry it (roadCarried). The Scroll of
+    // refill and the town visit buys it. Shots and potions are weighed by their
+    // value with the gear they serve, first when the reserve holds their whole refill
+    // (WishNetwork), their road taken only where its goods carry it (roadCarried). The Scroll of
     // Escape has no line: a visit's side purchase.
     for (const kind of ['shots', 'potions']) {
         const stock = ctx.stock(kind);

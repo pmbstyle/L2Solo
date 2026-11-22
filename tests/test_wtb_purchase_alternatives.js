@@ -189,7 +189,7 @@ const retainedBid = BuyAds.bidFor({ ...buyer, phase: 'cold', adena: 1000000,
     economy: { ...ctx.economy, worth: () => 0, trip: completeTrip, hourAdena: ctx.hour, moneyPrice: 1 / ctx.hour }, npcOffersFor: () => [] });
 assert(retainedBid?.price > 0 && retainedBid.price <= 74000,
     'a retained project uses its current funded value even while the active goal values the input at zero');
-assert.deepEqual(require('../src/GameServer/Bot/Population/ColdEconomyPlan').buyBatch([preparedBid]).buyCaps, [74000],
+assert.deepEqual(require('../src/GameServer/Bot/Population/ColdEconomyPlan').buyBatch({}, [preparedBid]).buyCaps, [74000],
     'native publication receives the prepared limit without rebuilding routes or pricing');
 assert.equal(Pricing.bid(ITEM, { ...ctx, travelDetails: partialTrip.details }, { units: 1,
     worth: 34454032, cap: 1000000, town: 'Dion', money: 1000000, rollKey: ['unknown-meeting'] }), null,

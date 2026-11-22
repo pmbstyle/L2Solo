@@ -10,7 +10,7 @@ useRate('x50');
 const fs = require('node:fs'), path = require('node:path'), { Worker } = require('node:worker_threads');
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
-assert.equal(Config.staticShotsDisabled, false, 'configured shot fallback is enabled for all bots by default');
+assert.equal(Config.staticShotsDisabled, false, 'the reserve switch is open by default');
 const Evidence = require('../src/GameServer/Bot/Economy/WishPurchaseEvidence');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 const Offers = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -24,63 +24,6 @@ const state = { characterId: 710071, name: 'ShotBuyer', level: 28, phase: 'cold'
 const empty = new BoardIndex();
 const read = (board = empty, cost = trip) => Evidence.reader(state, { board, trip: cost }, {
     npcOffersFor: Sources.npcOffersFor })(1463);
-async function nativePurchase(quote) {
-    const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
-    const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
-    const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
-    const { character, amount } = require('./helpers/nativeMarketFixture');
-    fixture.assertConfigured(options.default);
-    await Database.init();
-    try {
-        await character(Database, state.characterId, state.name, 'bot_shot_fallback', state.loc);
-        await Database.setItem(state.characterId, { selfId: 57, name: 'Adena', amount: state.adena });
-        await Database.setItem(state.characterId, { selfId: 167, name: 'Scalpel', amount: 1, equipped: true, slot: 7 });
-        await Life.init(); await Afk.init();
-        const buyer = await Life.upsertState({ ...state,
-            inventory: Life.inventorySummaryFromItems(await Database.fetchItems(state.characterId)),
-            stats: { ...state.stats, money: [state.adena, 0, 0, 0] } }, 'static_shot_fixture');
-        // Quote -> compact transport -> native goal -> physical transaction.
-        // The funded shopping leaf is explicit here; this is no live bot override.
-        const leaf = require('../src/GameServer/Bot/Population/ColdEconomyDecision').compact({ key: 'fixed-shots',
-            activity: { ...quote, rootKey: 'stock:shots', activity: 'shopping', itemId: 1463,
-                amount: 25, heldAtDecision: 0, price: 25 * quote.unitPrice } }).activity;
-        const goal = invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(buyer, { errand: null,
-            economy: { inputKey: 'fixed-shots', network: { activity: leaf } } })[0];
-        assert.equal(goal.plan.sourceType, 'configured_store');
-        assert.equal(goal.plan.marketTown, quote.town);
-        assert.equal(goal.target.adena, quote.unitPrice);
-        const Remote = invoke('GameServer/Bot/Economy/BotAfkMarketService');
-        const Bids = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
-        const originalBid = Bids.bidFor;
-        Bids.bidFor = () => ({ count: 25, price: quote.unitPrice });
-        try {
-            assert.equal(Remote.canTradeRemotely({ ...buyer, activity: 'hunting',
-                stats: { ...buyer.stats, generatedCold: true } }, goal), false,
-                'a configured shopping goal must travel to its seller instead of becoming a remote bid');
-        } finally { Bids.bidFor = originalBid; }
-        const BuyAds = require('../src/GameServer/Bot/Economy/BuyAdPolicy');
-        assert.equal(BuyAds.bidFor(buyer, goal), null,
-            'legacy goal publication cannot duplicate the native configured purchase');
-        assert.deepEqual(BuyAds.linesFor(buyer, goal, { watchList: [], townFor: () => quote.town }), [],
-            'the complete legacy buy batch cannot duplicate the native configured purchase');
-        const result = await Market.tryPurchase(buyer, goal);
-        assert.equal(result.purchased, true);
-        assert.equal(result.units, 25);
-        const items = await Database.fetchItems(buyer.characterId);
-        assert.equal(amount(items, 1463), 25);
-        assert.equal(amount(items, 57), state.adena - 25 * quote.unitPrice);
-        assert.equal(Life.cachedState(buyer.characterId).inventory[1463].amount, 25);
-        const trades = await Database.readHistory(['SELECT * FROM market_trades WHERE buyerCharacterId=? AND selfId=?',
-            [buyer.characterId, 1463]]);
-        assert.equal(trades.length, 1);
-        assert.equal(trades[0].sourceType, 'configured_store');
-        assert.equal(trades[0].sellerName, 'Reanimator');
-        assert.equal(trades[0].quantity, 25);
-        assert.equal(trades[0].unitPrice, quote.unitPrice);
-        assert.equal(trades[0].town, quote.town);
-        console.log('PASS selected configured quote reaches physical inventory/wallet and named market history');
-    } finally { await Afk._resetForTests(); await Database.close(); }
-}
 async function workerQuote() {
     const observer = String.raw`
         const fallbackTrip = town => town === 'Dion' ? 0 : Infinity;
@@ -112,43 +55,26 @@ async function workerQuote() {
 }
 (async () => {
     try {
+        // No static shot row sells to a bot (the configured shot stores are the
+        // players'): an empty market quotes no D soulshots; a crafter's board line is
+        // the bot's supply, on main and in the worker alike.
         assert.equal(Sources.npcOffersFor(1463).length, 0, 'D shots have no authored native NPC source');
-        const fixed = Offers.fixedStoreOffers(1463).find(offer => offer.town === 'Dion');
-        // Stores sell at the datapack price at every preset: D soulshots cost 10 at x50.
-        assert(fixed && fixed.price === 10, 'the real configured merchant is available at x50 at the datapack price');
-        const fallback = read();
-        assert(fallback, 'an empty market retains configured shot supply');
-        assert.equal(fallback.sourceType, 'configured_store');
-        assert.equal(fallback.availableUnits, Infinity);
-        assert.equal(fallback.unitPrice, fixed.price);
-        assert.equal(fallback.town, 'Dion');
+        assert.deepEqual(Offers.fixedStoreOffers(1463), [], 'no configured D soulshot row for a bot');
+        assert.equal(require('../src/GameServer/Bot/Economy/OfferQuery').sourceAllowed({ sourceType: 'configured_store',
+            selfId: 1463, sourceName: 'Reanimator' }), false, 'a static shot row is refused to a bot');
+        assert.equal(read(), null, 'an empty market quotes no static shot supply');
         const board = new BoardIndex();
         board.put({ id: 1, ownerId: 2, storeType: 1, kind: 'sell_ad', town: 'Dion',
-            lines: [{ lineId: 1, selfId: 1463, count: 36, price: 9 }] });
+            lines: [{ lineId: 1, selfId: 1463, count: 36, price: 85 }] });
         const live = read(board);
-        assert.equal(live.sourceType, 'afk', 'cheaper live supply remains the preferred offer');
+        assert.equal(live.sourceType, 'afk', 'the live line is the offer');
         assert.equal(live.availableUnits, 36, 'finite market stock stays finite');
-        assert.equal(live.unitPrice, 9);
-        assert.equal(read(empty, () => 0), null, 'no quote without a prepared route');
-        const unreachable = () => Infinity;
-        unreachable.details = () => ({ known: false, hours: NaN, fees: NaN });
-        assert.equal(read(empty, unreachable), null, 'configured supply cannot invent a reachable city');
-        Config.staticShotsDisabled = true;
-        assert.equal(read(), null, 'disabled fixed shot supply stays unavailable');
-        Config.staticShotsDisabled = false;
+        assert.equal(live.unitPrice, 85);
         assert.equal(Evidence.reader(state, { board: empty, trip }, { npcOffersFor: () => [] })(1869), null,
             'configured non-shot supply remains retired');
-        const intent = require('../src/GameServer/Bot/Economy/TradeIntent').project({}, {
-            quantityPrepared: true, queue: [{ key: 'stock:shots', object: { itemId: 1463 }, valueHours: 1, ratio: 1,
-                plan: { missingAmount: 25, requirements: [{ key: 'item:1463', amount: 25,
-                    plan: { ...fallback, executable: true, missingAmount: 25, requirements: [] } }] } }]
-        }, {}, () => 500);
-        assert.deepEqual(intent, [], 'an executable configured purchase retains its native owner');
         const native = await workerQuote();
-        assert.deepEqual(native.fallbackQuote, fallback, 'native worker and main share the same configured quote');
+        assert.deepEqual(native.fallbackQuote, null, 'the worker quotes no static shot supply either');
         assert.deepEqual(native.forbidden, [], 'the worker loads no World actor, database or network');
-        assert.equal(invoke('Database').isReady(), false);
-        await nativePurchase(fallback);
-        console.log('PASS configured D shot fallback, cheaper finite market, source policy, prepared route and native worker');
+        console.log('PASS no static D shot supply for bots, live market line, source policy and native worker');
     } finally { fs.rmSync(fixture.directory, { recursive: true, force: true }); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

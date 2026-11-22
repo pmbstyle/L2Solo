@@ -15,7 +15,7 @@ const TableChannel = require('../src/GameServer/Bot/Population/ColdTableChannel'
 const meetingRow = id => TableChannel.full(TableChannel.tables.get('meetings')).rows.find(([key]) => key === id)?.[1];
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const HtmlLink = invoke('GameServer/Network/Request/HtmlLink');
-const seller = 730501, buyer = 730502, follower = 730503;
+const seller = 730501, buyer = 730502, follower = 730503, spare = 730504;
 const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const point = { locX: 83396, locY: 147904, locZ: -3404 };
 const workerFaults = [];
@@ -32,12 +32,13 @@ const waitFor = async (predicate, label, timeoutMs = 30000) => {
 };
 (async () => {
     const fixture = await createWorld([{ id: seller, name: 'MeetingSeller', level: 20 },
-        { id: buyer, name: 'MeetingPlayer', level: 20 }, { id: follower, name: 'MeetingCompanion', level: 20 }], 'player-board-meeting');
+        { id: buyer, name: 'MeetingPlayer', level: 20 }, { id: follower, name: 'MeetingCompanion', level: 20 },
+        { id: spare, name: 'MeetingSpare', level: 20 }], 'player-board-meeting');
     let session;
     try {
         World.user = { sessions: [], revision: 0 };
         await Database.createAccount('bot_board_meeting', 'test');
-        await Database.execute(["UPDATE characters SET username='bot_board_meeting' WHERE id IN (?,?)", [seller, follower]]);
+        await Database.execute(["UPDATE characters SET username='bot_board_meeting' WHERE id IN (?,?,?)", [seller, follower, spare]]);
         for (const id of [seller, buyer]) await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 1000000, slot: 0 });
         await Database.setItem(seller, { selfId: 20, name: 'Buckler', amount: 1, slot: 8 });
         await Database.setItem(seller, { selfId: 1, name: 'Short Sword', amount: 1, equipped: true, slot: 7 });
@@ -292,7 +293,82 @@ const waitFor = async (predicate, label, timeoutMs = 30000) => {
             World.npc = oldNpc;
             npcIndex.reset(World); oldNpc?.spawns?.forEach(npc => npcIndex.add(World, npc));
         }
-        console.log('PASS player HTML links, large native bag, worker consent, rest, native travel, conserved delivery and cancelled priority');
+        Coordinator.setPauseReason('fixture', true);
+        Coordinator.population = invoke('GameServer/Bot/Population/PopulationService');
+        const groupId = 'ordinary-trade-party';
+        const groupLocation = { ...point, locX: point.locX - 420 };
+        await Database.execute(['DELETE FROM items WHERE characterId=? AND selfId=952', [seller]]);
+        for (const id of [follower, seller, spare]) {
+            const state = Life.cachedState(id);
+            await Database.setItem(id, { selfId: 20, name: 'Buckler', amount: 1, slot: 8 });
+            await Life.upsertState({ ...state, characterId: id, name: state?.name || 'MeetingSpare',
+                currentRegion: 'Giran', loc: groupLocation, phase: 'cold', activity: 'grouped', level: 20,
+                inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
+                vitals: { hp: 187, maxHp: 187, mp: 74, maxMp: 74 },
+                party: { partyId: groupId, leaderId: follower, role: 'dps' },
+                stats: { ...state?.stats, travel: null, marketReturn: null, restUntil: null, leaderId: follower, role: 'dps' } }, 'ordinary_trade_party');
+        }
+        const group = await PartyState.createOrUpdate({ partyId: groupId, leaderId: follower, memberIds: [follower, seller, spare],
+            status: 'active', spotId: 'meeting-fixture', nextResolveAt: Date.now() + 3600000,
+            roleCoverage: { dps: 3 }, stats: { pveEncounter: { hp: 10 } } });
+        const groupAds = new Map();
+        for (const id of group.memberIds) {
+            const item = (await Database.fetchItems(id)).find(row => row.selfId === 20);
+            const posted = await Database.createAfkTradeShop(id, { kind: 'sell_ad', storeType: 1, town: 'Giran', ...point,
+                lines: [{ objectId: item.id, selfId: 20, count: 1, price: 4082 }] });
+            Afk.refreshRecord(posted.shop);
+            groupAds.set(id, posted.shop.id);
+        }
+        const list = (town = 'Giran') => require('../src/GameServer/AfkTrade/PlayerBoardService').entries(session, { side: 1, town, selfId: 20 }).entries;
+        const offer = (town = 'Giran') => {
+            Board.show(session, { side: 1, town });
+            return new RegExp('action="bypass -h (board answer sell_ad ' + groupAds.get(seller) + ' [^"]+)"').exec(html())[1];
+        };
+        assert(!list().some(row => row.id === groupAds.get(follower)), 'a party leader is hidden from the board');
+        assert(list().some(row => row.id === groupAds.get(seller)), 'the ordinary party can spare this member after the fight');
+        await click(offer()); await click('board agree');
+        await waitFor(() => !session.playerBoardAgreePending, 'grouped merchant agreement');
+        const pending = (await Database.fetchTradeMeetingsForOwner(buyer))[0];
+        assert(pending, html());
+        assert.equal(Life.cachedState(seller).stats.partyMeeting, pending.id);
+        assert.equal(Life.cachedState(seller).party.partyId, groupId, 'the active fight keeps the merchant in its roster');
+        assert(!list().some(row => row.id === groupAds.get(spare)), 'a reserved departure hides the other member');
+        await PartyState.createOrUpdate({ ...PartyState.find(groupId), stats: { pveEncounter: null } });
+        await waitFor(() => Life.cachedState(seller).stats.partyMarketReturn, 'merchant departure after party fight');
+        assert.deepEqual(PartyState.find(groupId).memberIds, [follower, spare]);
+        assert.equal(Life.cachedState(seller).party.partyId, null);
+        await click('board cancel');
+        assert.equal(await fixture.amount(buyer, 20), 3, 'cancelling the party meeting delivers no merchandise');
+        Coordinator.setPauseReason('fixture', false);
+        await waitFor(() => Life.cachedState(seller).party.partyId === groupId, 'return to the same party on cancellation');
+        assert(!Life.cachedState(seller).stats.partyMarketReturn);
+        assert(!PartyState.find(groupId).stats.marketAbsences?.[seller]);
+        Coordinator.setPauseReason('fixture', true);
+        const floran = 'Floran Village';
+        const { center } = invoke('GameServer/Bot/Economy/MarketTownPolicy').marketTown(floran);
+        const field = { ...center, locX: center.locX - 420 };
+        const adId = groupAds.get(seller), originalAd = await Database.fetchAfkTradeShop(adId);
+        for (const id of [follower, spare, seller]) {
+            const state = Life.cachedState(id);
+            await Life.upsertState({ ...state, loc: field, stats: { ...state.stats, ...(id === seller ? { karma: 240 } : {}) } }, 'floran_trade_party');
+        }
+        await waitFor(() => list(floran).some(row => row.id === adId), 'the existing merchant ad moves to Floran');
+        assert(!list().some(row => row.id === adId));
+        const moved = await Database.fetchAfkTradeShop(adId);
+        assert.equal(moved.revision, originalAd.revision + 1);
+        assert.equal(moved.lines[0].id, originalAd.lines[0].id);
+        assert.deepEqual([moved.town, moved.locX, moved.locY, moved.locZ], [floran, center.locX, center.locY, center.locZ]);
+        session.actor.setLocXYZ(center);
+        await click(offer(floran)); await click('board agree');
+        await waitFor(() => !session.playerBoardAgreePending, 'PK merchant accepts a Floran agreement');
+        const floranMeeting = (await Database.fetchTradeMeetingsForOwner(buyer))[0];
+        assert.equal(floranMeeting?.town, floran, html());
+        assert.equal(JSON.parse(floranMeeting.routeA).method, 'walk');
+        Coordinator.setPauseReason('fixture', false);
+        await waitFor(async () => await fixture.amount(buyer, 20) === 4, 'delivery by the detached merchant in Floran');
+        await waitFor(() => Life.cachedState(seller).party.partyId === groupId, 'PK merchant returns to the same party after delivery');
+        assert.equal(Life.cachedState(seller).stats.karma, 240);
+        console.log('PASS player board meetings, worker consent, native delivery and party departure/return on completion or cancellation');
     } finally {
         Meetings.reset();
         if (Coordinator.started) await Coordinator.stop();

@@ -23,6 +23,7 @@ const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 // at every search while the values stay in the band). Our choice, not C4: a C4 player keeps his own camp
 // among equally good ones, so a band's bots do not all take its best camp at once.
 const HABIT_BAND = 0.12;
+const CRYSTAL_BAND = 0.03;
 
 const solo = (state, mode) => !['party', 'duo'].includes(LevelingRoutes.modeForState(state, { mode }));
 const spotOfCandidate = candidate => candidate.spot;
@@ -47,7 +48,7 @@ const spotIdOf = spot => spot.id;
 // value order until one passes, then in roll order only for the band's candidates rolling above it,
 // stopping at the first that passes. A counted pick not the best is situations spot:habit:other.
 function rank(state, goal, { excluded = null, repelled = null, allowed = null, maxChecks = Infinity, verdicts = new Map(),
-    habit = undefined, mode = undefined, count = false } = {}) {
+    habit = undefined, mode = undefined, count = false, preferred = null } = {}) {
     const spotOf = goal.spot || spotOfCandidate, idOf = goal.id || spotIdOf;
     const spots = new Map(), values = new Map();
     const ranked = [];
@@ -97,6 +98,16 @@ function rank(state, goal, { excluded = null, repelled = null, allowed = null, m
         result.pick = candidate;
         if (count) noteHabit();
         break;
+    }
+    // A side activity can use one additional safety verdict inside the existing band.
+    if (preferred && !preferred(spots.get(result.pick))) {
+        const minimum = Math.max(floor, valueOf(result.pick) * (1 - CRYSTAL_BAND));
+        for (let next = at; next < checked && valueOf(ranked[next]) >= minimum; next++) {
+            const candidate = ranked[next];
+            if (!preferred(spots.get(candidate)) || verdicts.get(candidate) === false) continue;
+            if (verdict(candidate)) result.pick = candidate;
+            break;
+        }
     }
     return result;
 }
@@ -191,7 +202,8 @@ function leveling(state, options = {}) {
     };
     // countHabit: the pick is the route's answer (BotRoute.choose); the list's `any` is counted only when taken.
     const ctx = { excluded, repelled: options.repelled || null, allowed: (candidate, spot) => allowed(spot), habit: soloSearch,
-        mode: options.mode, count: options.countHabit === true };
+        mode: options.mode, count: options.countHabit === true,
+        preferred: soloSearch && require('../Economy/BotSoulCrystal').spotPreference(state) };
     for (const shots of [true, false]) {
         const candidates = list.values(shots, targetLevel).map(row => ({ spot: SpotIndex.spotById(profiles, row.spotId), value: row.value }));
         const goal = fits => ({ candidates, sorted: true, value: candidate => candidate.value,

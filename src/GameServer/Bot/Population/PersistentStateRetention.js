@@ -14,6 +14,7 @@
 // deletes; an estimate (not measured) of a few ms from the page cache on the 2015
 // laptop. A pass ends when every policy finished its sweep (cycleComplete).
 const Database = invoke('Database');
+const { COMBAT_EVENT_TYPES } = require('../AI/BotCombatMemory');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WALK_ROWS = 2048;
@@ -215,7 +216,10 @@ const POLICIES = [
         [options.timestamp - options.activityRetentionMs, options.batchSize]
     ]),
     groupCap('activity_pair_cap', {
-        table: 'bot_activity_journal', filter: '', key: 'botId', subKey: 'playerId',
+        // Routine farming can fill the per-bot window in a single session.
+        // Confirmed combat still expires under the journal age and global caps.
+        table: 'bot_activity_journal', filter: `eventType NOT IN (${COMBAT_EVENT_TYPES.map(type => `'${type}'`).join(', ')})`,
+        key: 'botId', subKey: 'playerId',
         indexOrder: 'botId, playerId, updatedAt DESC, id DESC', partition: 'botId, playerId',
         rankOrder: 'updatedAt DESC, id DESC', columns: 'botId, playerId, updatedAt',
         keep: options => options.activityRowsPerPair

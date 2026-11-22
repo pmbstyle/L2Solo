@@ -10,9 +10,23 @@ const Hunting = invoke('GameServer/Bot/AI/States/HuntingState');
 const Automation = invoke('GameServer/Automation');
 const World = invoke('GameServer/World/World');
 const Towns = invoke('GameServer/Bot/AI/TownPathfinder');
+const Respawn = invoke('GameServer/World/TownRespawn');
+const Listings = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 
 invoke('GameServer/Geodata/VirtualObstacles/index').init();
 assert(Geodata.loadRegion(19, 21), 'the observed Gludio routes require real geodata');
+
+for (const town of Object.values(Respawn.towns)) {
+    const { locX, locY, locZ } = Listings.townCenter(town.name);
+    const cell = Geodata.getCellData(locX, locY, locZ);
+    assert(Geodata.hasGeo(locX, locY) && cell.nswe && Math.abs(cell.z - locZ) <= 200,
+        `${town.name} needs a walkable floor within meeting range`);
+}
+const floran = Listings.townCenter('Floran Village');
+const village = Respawn.towns.floran_village;
+assert(ShopPlaces.isOnSquare(village.name, floran), 'the Floran meeting belongs on the trading square');
+assert(Corridor.visible(village, floran), 'the Floran meeting is reachable from the village centre');
 
 let now = Date.now(), serial = 0, searches = 0;
 const timers = new Map();

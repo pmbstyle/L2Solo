@@ -53,6 +53,11 @@ function isIndexed(world) {
     return indexes.has(world?.npc);
 }
 
+function ofTemplate(world, id) {
+    const index = indexes.get(world?.npc);
+    return index ? index.byTemplate.get(id) || [] : (world?.npc?.spawns || []).filter(npc => npc.fetchSelfId?.() === id);
+}
+
 function nearTemplate(world, selfId, locX, locY, radius) {
     const index = indexes.get(world?.npc);
     const candidates = index ? index.byTemplate.get(selfId) || [] : world?.npc?.spawns || [];
@@ -93,4 +98,4 @@ function nearestOfTemplate(world, selfId, locX, locY) {
     return best;
 }
 
-module.exports = { reset, add, remove, find, nearTemplate, nearestOfTemplate, isIndexed };
+module.exports = { reset, add, remove, find, nearTemplate, nearestOfTemplate, isIndexed, ofTemplate };

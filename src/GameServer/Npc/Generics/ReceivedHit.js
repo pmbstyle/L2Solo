@@ -1,4 +1,6 @@
 const NpcAttacked = invoke('GameServer/Npc/Attacked');
+const BotRaidMemory = require('../../Bot/AI/BotRaidMemory');
+const IMPERIAL_GRAVEKEEPER_ID = 5181;
 
 function receivedHit(session, actor, npc, hit, options = {}) {
     if (invoke('GameServer/Effects/EffectStore').hasDebuff(npc, 'petrification')) return;
@@ -23,6 +25,7 @@ function receivedHit(session, actor, npc, hit, options = {}) {
         .filter((level) => Number.isFinite(level) && level > 0);
     const dropState = npc.model ?? npc;
     if (npc.fetchIsRaidBoss?.() === true) {
+        BotRaidMemory.recordHotHit(npc, actor, session, hit);
         if (!(dropState.raidAttackers instanceof Set)) dropState.raidAttackers = new Set();
         const actorId = Number(actor?.fetchId?.() || 0);
         const playerId = Number(session?.actor?.fetchId?.() || 0);
@@ -57,6 +60,8 @@ function receivedHit(session, actor, npc, hit, options = {}) {
         return;
     }
 
+    if (npc.fetchSelfId?.() === IMPERIAL_GRAVEKEEPER_ID && questSession?.actor)
+        invoke('GameServer/Clan/ClanAmbitionService').onAttack(questSession, npc);
     npc.automation.replenishVitals(npc);
     NpcAttacked(session, actor, npc, hit, options.npcAttacked);
     epic.onAttack(invoke('GameServer/World/World'), npc, actor, hit, session);

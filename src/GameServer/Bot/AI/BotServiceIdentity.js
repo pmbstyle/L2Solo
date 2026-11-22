@@ -14,7 +14,7 @@ function subjectName(subject = {}) {
 function hasStaticCraftMarker(subject = {}) {
     const candidate = subject || {};
     const statsSources = [candidate.stats, candidate.coldCraftState?.stats, candidate.coldLifeState?.stats];
-    return statsSources.some((stats) => stats?.craftStationId || stats?.craftShop)
+    return statsSources.some((stats) => stats?.craftStationId || stats?.craftShop || stats?.stationTrader)
         || Boolean(candidate.manufactureShop);
 }
 

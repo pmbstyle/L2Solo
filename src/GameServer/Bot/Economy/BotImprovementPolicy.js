@@ -88,10 +88,21 @@ function slotOf(item) {
 function wornRow(item, selfId, enchant, slot) {
     return { selfId: Number(selfId), objectId: Number(item.id), enchant: positive(enchant), slot };
 }
+function weaponAbilityGain(state) {
+    const profile = Profile.candidateProfiles(state, Date.now());
+    const caster = isCaster(state);
+    return (weapon, productId) => {
+        const slot = slotOf(weapon);
+        const before = profile.before;
+        const after = profile.after({ free: worn => worn === slot, wear: wornRow(weapon, productId, weapon.enchant || 0, slot) });
+        const effect = gainBetween(before, after, caster);
+        const critical = caster ? 0 : Math.max(0, (1000 + after.critical) / (1000 + before.critical) - 1);
+        return effect.attack + effect.defence + critical;
+    };
+}
 function opportunities(state, ctx) {
     const scrolls = invoke('GameServer/Items/C4EnchantScrolls').ENCHANT_SCROLLS;
     const Henna = invoke('GameServer/Henna/HennaRules');
-    const SA = invoke('GameServer/Items/C4WeaponSAExchange');
     const config = Rules.configWith(globalThis.options?.default?.Enchant);
     const horizon = Valuation.decisionHorizon(state, ctx);
     const weight = (ctx.persona.primaryDrive === 'progression' ? 1 : .5) + Valuation.trait(ctx.persona, 'caution');
@@ -151,24 +162,23 @@ function opportunities(state, ctx) {
                 price: selected.price, riskHours: selected.riskHours, valueHours: benefit * selected.cost.reach,
                 sale: !equipped });
         }
-        if (equipped && a.isWeapon()) for (const recipe of SA.options(7300, item.selfId, 'install')) {
-            const materials = SA.costs(recipe);
-            if (!Sources.hasSource(recipe.productId) || materials.some(mat => !Sources.hasSource(mat.selfId))) continue;
-            const benefit = value({ free, wear: wornRow(item, recipe.productId, from, slot) });
-            const price = materials.reduce((sum, mat) => sum + ctx.price(mat.selfId) * mat.amount, 0);
-            if (benefit > 0 && price > 0) result.push({ key: `sa:${item.id}:${recipe.id}`, kind: 'sa', objectId: item.id,
-                itemId: item.selfId, from, recipeId: recipe.id, npcId: 7300, materials, price, valueHours: benefit });
-        }
     }
     const slots = state.stats?.hennas || [];
     if (slots.filter(Boolean).length < Henna.slotsForClass(state.stats?.classId || state.classId)) {
+        const ClanDyes = require('../../Clan/ClanDyeStock');
         for (const symbol of Henna.availableForClass(state.stats?.classId || state.classId)) {
-            if (!Sources.hasSource(symbol.dyeSelfId) || slots.includes(symbol.id)) continue;
+            if (slots.includes(symbol.id)) continue;
+            const id = symbol.dyeSelfId;
+            const held = positive(state.inventory?.[id]?.amount);
+            const ordered = positive(state.acceptedIncoming?.[id]);
+            const free = Math.min(ClanDyes.amount(state, id), Math.max(0, symbol.dyeAmount - held - ordered));
+            if (!Sources.hasSource(id) && !(free && held + free >= symbol.dyeAmount)) continue;
             const benefit = value({ hennas: [...slots, symbol.id] });
             if (benefit <= 0) continue;
             result.push({ key: `henna:${symbol.id}`, kind: 'henna', symbolId: symbol.id,
-                materials: [{ selfId: symbol.dyeSelfId, amount: symbol.dyeAmount }], fee: symbol.price,
-                price: ctx.price(symbol.dyeSelfId) * symbol.dyeAmount + symbol.price, valueHours: benefit });
+                materials: [{ selfId: id, amount: symbol.dyeAmount, ...(free ? { clanFree: free } : {}) }], fee: symbol.price,
+                price: (free ? Math.max(0, symbol.dyeAmount - held - ordered - free) : symbol.dyeAmount)
+                    * ctx.price(id) + symbol.price, valueHours: benefit });
         }
     }
     return result.sort((a,b) => b.valueHours / Math.max(1, b.price) - a.valueHours / Math.max(1,a.price)).slice(0, 6);
@@ -184,42 +194,4 @@ function enchantedPrice(item, level, ctx) {
                 ? (base + price * cost.count) / cost.reach : Infinity; });
     return Math.min(...costs, Infinity);
 }
-function crystalPath(state, id, ctx, spots = []) {
-    if (!Sources.hasSource(id)) return null;
-    const Native = invoke('GameServer/Items/SoulCrystalProgression');
-    const target = Native.catalog.crystals[id];
-    if (!target || target.stage <= 0 || target.stage > 10 || state.level < 40) return null;
-    const held = Object.values(state.inventory || {}).filter(row => {
-        if (!Native.catalog.crystals[row.selfId] && ![4662,4663,4664].includes(Number(row.selfId))) return false;
-        return row.amount > 0;
-    });
-    if (held.length > 1 || held[0]?.amount > 1) return null;
-    const current = held[0] && (Native.catalog.crystals[held[0].selfId] || { color: {4662:'red',4663:'green',4664:'blue'}[held[0].selfId], stage: -1 });
-    if (current && current.color !== target.color || current?.stage >= target.stage) return null;
-    if (!state.stats?.soulCrystalQuest || !held.length || current?.stage < 0) return null;
-    let best = null;
-    for (const spot of spots) {
-        if (spot.raidBoss) continue;
-        const entries = spot.npcEntries || [];
-        const total = entries.reduce((n, npc) => n + Math.max(1, Number(npc.count || 1)), 0);
-        const valid = entries.filter(npc => { const rule = Native.catalog.npcs[npc.selfId];
-            return rule && rule.maxStage <= 10 && rule.maxStage >= target.stage; });
-        const eligible = valid.reduce((n, npc) => n + Math.max(1, Number(npc.count || 1)), 0);
-        const rate = ctx.spotValue(spot);
-        const kills = positive(rate?.kills) * eligible / Math.max(1, total);
-        if (!kills || !(rate?.exp > 0)) continue;
-        // Native .32 advance/.58 unchanged/.10 broken. A break restarts
-        // from stage zero; solve the whole renewal instead of pricing one kill.
-        let a = 0, b = 0, own;
-        for (let stage = target.stage - 1; stage >= 0; stage--) {
-            a = (1 + .32 * a) / .42; b = (.1 + .32 * b) / .42;
-            if (stage === current.stage) own = { a, b };
-        }
-        const zero = a / (1 - b), attempts = own.a + own.b * zero;
-        const costHours = attempts / kills;
-        if (!best || costHours < best.costHours) best = { kind: 'soul_crystal', activity: 'hunting', costHours,
-            spotId: spot.id, npcId: valid[0].selfId, itemId: Number(id), amount: 1 };
-    }
-    return best;
-}
-module.exports = { isCaster, enchantedPrice, crystalPath, opportunities, instances, adapter, enchantCost, stuckCost };
+module.exports = { isCaster, enchantedPrice, weaponAbilityGain, opportunities, instances, adapter, enchantCost, stuckCost };

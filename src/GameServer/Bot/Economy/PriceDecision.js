@@ -7,7 +7,9 @@
 // willingness at p; finite cheaper stock is deducted once before clipping
 // the physical owned stock. The NPC alternative retains perception width.
 // Receipts are discounted by the segment's known delay; unsold goods retain
-// their physical exit value. Missing demand evidence stays unknown. Traits
+// their physical exit value (the NPC buy-back; a supplier's consigned unit
+// its cost: it is owed only when sold and an unsold one stays its stock for
+// the next sale). Missing demand evidence stays unknown. Traits
 // are parameters only: assertiveness is the
 // optimism of the centre, caution the loss aversion against the bot's own
 // value (a sale below it is a loss weighted 1 + caution; waiting is no loss,
@@ -171,15 +173,14 @@ function exitCompetition(asks, { ownerId, price, enchant = 0, count }) {
 // (`oldUnits`) are counted once, so `gross` is only the gain of the new
 // units. `limit`: an uninspected cheaper tail may cover the bid.
 function bidSale(state, offer, { board, persona, timestamp = Date.now(), asks = [], oldUnits = 0, units,
-    residualUnitValue, fixed = false, belief = null } = {}) {
-    let exit = { conditional: offer.custodyPolicy === 1, price: offer.price, count: offer.count, offer };
-    if (!fixed) exit = prospectiveExit(state, exit, { board, persona, timestamp, belief });
+    residualUnitValue, belief = null } = {}) {
+    const exit = prospectiveExit(state, { conditional: offer.custodyPolicy === 1, price: offer.price, count: offer.count, offer },
+        { board, persona, timestamp, belief });
     const forecast = exit.prospective
         || (!exit.conditional ? { known: true, applicableUnits: offer.count, willingUnits: offer.count } : null);
     if (!forecast?.known) return { status: 'unknown', exit };
-    const { cheaperUnits, limit } = fixed ? { cheaperUnits: 0, limit: false }
-        : exitCompetition(asks, { ownerId: state?.characterId, price: offer.price, enchant: Number(offer.enchant || 0),
-            count: forecast.applicableUnits });
+    const { cheaperUnits, limit } = exitCompetition(asks, { ownerId: state?.characterId, price: offer.price, enchant: Number(offer.enchant || 0),
+        count: forecast.applicableUnits });
     if (limit) return { status: 'limit', exit, forecast, cheaperUnits };
     const input = { applicableUnits: forecast.applicableUnits, willingUnits: forecast.willingUnits, cheaperUnits, price: offer.price,
         residualUnitValue: Number(residualUnitValue ?? exit.residualUnitValue ?? 0) };
@@ -194,9 +195,10 @@ function bidSale(state, offer, { board, persona, timestamp = Date.now(), asks = 
 // buyersPerHour, lot, rivals [{ landed, units }], npcLanded, ownTrip }.
 // tripCost(town): a buyer's trip there in Adena (OfferOrder.tripCost of the
 // trader); npcOffers: the NPC shops selling the item ({ price, town }).
+// keepValue: what an unsold unit is worth to the seller (default the buy-back).
 function marketFor(selfId, { board = null, ownerId = 0, town = null, units = 1, tripCost = null,
     npcOffers = [], timestamp = Date.now(), enchant = 0, demand = null, ownUnits = null,
-    jointKnown = true } = {}) {
+    jointKnown = true, keepValue = 0 } = {}) {
     const id = Number(selfId);
     const trip = (where) => (tripCost ? Math.min(Number(tripCost(where)) || 0, Number.MAX_SAFE_INTEGER) : 0);
     const rivals = [];
@@ -228,8 +230,10 @@ function marketFor(selfId, { board = null, ownerId = 0, town = null, units = 1, 
         && Number.isFinite(demand.applicableUnits) && demand.applicableUnits >= 0
         && Number.isFinite(demand.availability?.from) && Number.isFinite(demand.availability?.until)
         && demand.availability.from <= timestamp && demand.availability.until >= timestamp);
+    const npc = buyback(id);
     return {
-        buyback: buyback(id),
+        buyback: npc,
+        keepValue: Number(keepValue) > npc ? Number(keepValue) : npc,
         known: supported && !truncated,
         applicableUnits: supported ? demand.applicableUnits : NaN,
         delayHours: supported ? Number(demand.delayHours ?? 0) : NaN,
@@ -264,11 +268,13 @@ function demandAtPrice(belief, market, trader, price) {
 }
 
 // The near-best roll: options within 2% of the best value share one roll by
-// how far above that line they are.
-function nearBest(candidates, rollKey) {
+// how far above that line they are. base: the value no choice changes (an ask's
+// unsold stack kept, nearFloor); the 2% are of the best value above it.
+const nearFloor = (best, base = 0) => best - NEAR_BEST * Math.abs(best - base);
+function nearBest(candidates, rollKey, base = 0) {
     let best = -Infinity;
     for (const candidate of candidates) best = Math.max(best, candidate.value);
-    const floor = best - NEAR_BEST * Math.abs(best);
+    const floor = nearFloor(best, base);
     const near = candidates.filter((candidate) => candidate.value >= floor);
     let total = 0;
     for (const candidate of near) total += candidate.value - floor + 1e-9;
@@ -282,7 +288,8 @@ function nearBest(candidates, rollKey) {
 
 // The ask: { price, value, money, npc } with npc true when the NPC buy-back
 // now is worth more than any ask (price is then the buy-back). value is the
-// bot's utility per unit, money the Adena per unit discounted by the wait.
+// bot's utility per unit, money the Adena per unit discounted by the wait;
+// a unit left unsold keeps the market's keepValue.
 // `current`: the line's ask now; it stands while it is still among the
 // near-best ones (the roll is for a new ask, not for a jitter of the old).
 function chooseAsk(belief, market, trader, rollKey, current = 0) {
@@ -292,6 +299,8 @@ function chooseAsk(belief, market, trader, rollKey, current = 0) {
         && Number.isSafeInteger(market.units) && market.units >= 0 && Number.isFinite(market.delayHours)
         && market.delayHours >= 0 && !market.truncated;
     const npcValue = saleUtility(market.buyback, reference, trader.caution);
+    const keep = market.keepValue > market.buyback ? market.keepValue : market.buyback;
+    const keepValue = keep === market.buyback ? npcValue : saleUtility(keep, reference, trader.caution);
     if (!known) {
         // An unavailable forecast does not invalidate an already accepted line.
         return current > market.buyback ? { price: current, value: NaN, money: NaN, npc: false, npcValue, known: false }
@@ -307,11 +316,11 @@ function chooseAsk(belief, market, trader, rollKey, current = 0) {
         for (const demand of demandAtPrice(belief, market, trader, price)) {
             const outcome = saleOutcome({ units: market.units, applicableUnits: demand.applicableUnits,
                 willingUnits: demand.willingUnits, cheaperUnits: ahead, price,
-                residualUnitValue: market.buyback, delayHours: demand.delayHours, discountRate: trader.wait });
+                residualUnitValue: keep, delayHours: demand.delayHours, discountRate: trader.wait });
             if (!outcome.known) continue;
             const discount = Math.exp(-trader.wait * demand.delayHours);
             const candidate = { price, value: market.units > 0 ? (outcome.sold * saleUtility(price, reference, trader.caution) * discount
-                + outcome.residual * npcValue) / market.units : 0,
+                + outcome.residual * keepValue) / market.units : 0,
                 money: market.units > 0 ? (outcome.receipts + outcome.residualValue) / market.units : 0,
                 sold: outcome.sold, residual: outcome.residual, known: true,
                 ...(market.demand?.atPrice || market.demand?.alternatives ? { demandOrigin: demand.source.origin,
@@ -333,9 +342,11 @@ function chooseAsk(belief, market, trader, rollKey, current = 0) {
     if (!candidates.length || bestValue <= npcValue) {
         return { price: market.buyback, value: npcValue, money: market.buyback, npc: true, npcValue, known: true };
     }
+    // Near-best is judged on what a sale adds over keeping the whole stack: a large stack's
+    // kept units would otherwise make every ask near-best and hold any standing one.
     const standing = current > market.buyback ? valueAt(current) : null;
-    if (standing && standing.value >= bestValue - NEAR_BEST * Math.abs(bestValue)) return { ...standing, npc: false, npcValue };
-    const best = nearBest(candidates, rollKey);
+    if (standing && standing.value >= nearFloor(bestValue, keepValue)) return { ...standing, npc: false, npcValue };
+    const best = nearBest(candidates, rollKey, keepValue);
     return { ...best, npc: false, npcValue };
 }
 

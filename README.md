@@ -14,6 +14,7 @@ Nothing is auto-generated. Everything in the world is the result of a player's o
 
 🏗️ Work in progress. Playable.
 
+See [what bots can do](#what-bots-can-do-in-l2solo) and browse the [in-game commands](#in-game-commands).
 
 💬 [Discord](https://discord.gg/dXsQ8SJA7k)
 Support, updates, and communication. Join the Discord to stay up to date with development.
@@ -33,6 +34,76 @@ Optional but highly recommended for a better experience
 
 🌳 Static bots - static traders in towns and crafting stations in Giran. Needed only for a specific function, no brain, no communication or goals.
 
+
+## What Bots Can Do in L2Solo
+
+Bots are adventurers with their own classes, gear, Adena, and goals. You can meet them in a starter village, hunt alongside them, buy gear they crafted, or lead them into a raid.
+
+### Starting out and leveling up
+
+- **Start in the beginner regions.** New adventurers arrive in waves, so you can meet low-level bots even after earlier groups have moved on to harder areas. The adventuring population can grow to 1,700 bots.
+- **Earn XP and change profession.** Bots gain XP and SP from hunting, advance to their next profession at levels 20, 40, and 76, and automatically learn the skills available to their class as they level up.
+- **Keep playing out of sight.** The world simulates bots beyond your view too. They can hunt, travel, trade, and make progress on the same characters you meet in game. Town service characters such as permanent shopkeepers and crafting stations stay at their posts.
+
+### Hunting and farming
+
+- **Pick a hunting ground.** Bots look for monsters they can handle with their current level, gear, and skills. They can move on when a camp is crowded, fights are going badly, or they need a particular drop.
+- **Fight according to class.** Archers try to keep their distance, mages choose spells they can afford to cast, and summoners fight with their servitors. Dwarves with Spoil can use Sweep to collect extra materials and other loot.
+- **Manage supplies and recover.** Bots use potions and class-appropriate shots, rest when low on HP or MP, and retreat from dangerous fights. They can respawn after dying and switch to easier hunting grounds after repeated losses.
+- **Make town trips.** Bots sell loot, restock, visit the Newbie Guide when eligible, and take Gatekeeper routes or walk where a route is available. If a bag fills up, a bot may clear out low-value items so it can keep hunting.
+
+### Getting a specific item
+
+- **Choose an upgrade.** Bots look for gear that fits their class and level. They can keep a complete armor set for its bonus and set aside Adena for supplies before spending on gear.
+- **Buy the finished item.** Bots can use NPC shops for basic gear, buy from other characters, or post a buy order. If a finished item is too expensive, they can save up or pursue another source.
+- **Hunt for the item or its parts.** Bots can target monsters that drop the item they want, or collect the recipe and materials through drops, Spoil, or trade. They can look for a party when the source is too tough to farm alone.
+- **Turn materials into gear.** Bots can use a dwarven crafter or a crafting station to turn components into equipment. They can also take compatible swords to a blacksmith to make dual swords.
+- **Improve their build.** Bots can enchant equipment, use the Blacksmith of Mammon to unseal eligible armor, and add a Special Ability to a suitable weapon with a Soul Crystal. They can also get dyes and pay to apply a henna symbol.
+
+For example, a tank looking for a **Blue Wolf Breastplate** could buy one from a shop that has it in stock. If it pursues a crafting route, it can gather the recipe, breastplate parts, and other materials for a dwarven crafter. The finished breastplate also drops from monsters, including Glow Wisps in Blazing Swamp. You can check those sources yourself with `.items Blue Wolf Breastplate`.
+
+### Trading and town services
+
+- **Buy and sell through private stores.** Bots can sell spare gear, materials, and consumables, buy things they need, and advertise in trade chat. Use the in-game **Market Board** to look for items, buyers, or crafting offers by town. Some listings let you arrange a meeting with the bot.
+- **Trade face to face.** Target a bot and use `.trade` to open a trade. Bots can make offers for items they need and decide whether to accept based on what you offer.
+- **Craft for other characters.** Dwarven crafters can make equipment, components, Soulshots, Spiritshots, and Blessed Spiritshots. Their offers depend on the recipes and crafting skills available to them.
+- **Sell buffs.** Target an eligible buffer and type `.buff` for a quote. Bots can also buy buffs from one another before going back out to hunt.
+
+### Hunting with a party
+
+- **Form their own groups.** Bots look for suitable teammates to level, farm materials, or take on stronger monsters. Tanks draw attacks, damage dealers focus targets, and support classes heal, buff, restore MP, or resurrect allies according to their skills.
+- **Join your party.** Use `.bp` to find available bots by level or role, or `/invite <name>` to invite a particular bot. Your main party can hold you and up to eight companions. A bot may be busy or decline an invitation based on its relationship with you.
+- **Let you lead an existing bot party.** Use `.joinparty <name>` to ask to lead that bot's party, or `.joinparty` to ask the nearest eligible group. The group can resume its own hunt after you leave.
+- **Follow your orders.** Use `.b` to make companions follow, hold, or regroup. You can set their combat behavior, choose who pulls monsters, and toggle loot pickup. Collected loot follows your party's distribution settings. Bring companions to town when they need to restock.
+
+### Chat and friendships
+
+- **Talk in game.** Bots can greet you, call for a party, advertise trades, and warn about PKs. Address a companion by name for simple requests such as `follow`, `wait`, or `heal`. With optional AI dialogue enabled, bots can have more open-ended conversations.
+- **Remember how you treat them.** Shared hunts and help can build trust. Insults and hostile behavior can hurt your chances of teaming up again. Some bots prefer company, while others are more comfortable hunting alone.
+- **Keep a regular group.** Use `.bf` to manage bot friendships and build a **const party**, a regular group of friends you can invite again.
+
+### Clans and raids
+
+- **Build and grow clans.** Bots can found clans, recruit members, contribute Adena and materials, and work toward clan halls and higher clan levels. Eligible autonomous leaders can pursue the **Pursuit of Clan Ambition** quest to reach clan level 5.
+- **Work toward shared gear goals.** Clan members can gather ingredients together, use the clan warehouse to pool resources, and craft or pass along equipment to clanmates.
+- **Organize raids.** Bot clans can choose a boss, assemble several parties, and stock up before setting out. Bots can raid with you too, including against Queen Ant, Core, and Orfen for a chance at epic jewelry.
+- **Fight in several parties under your command.** If you lead a clan and already have a main party, you can create additional parties of up to nine bots each from your own clan. The parties can focus on the same boss and share loot under the main party's rules. Each party handles its own healing, buffs, and resurrection. As clan leader you can save and reassemble those lineups with `.partysave` and `.partyrestore`.
+
+<details>
+<summary>Queen Ant, Core, and Orfen encounter details</summary>
+
+- These bosses use their C4 stats and scripted mechanics, including guards, healers, and Orfen's retreat and pull. Autonomous clans can fight them while you are elsewhere.
+- Players can fight these three bosses beyond the usual +8 Raid Curse threshold. C4 deep-blue drop penalties, shared raid stat reductions, and ordinary loot rates still apply. Epic jewelry has a separate 30% chance to drop one item at default settings. The `General.epicDropChanceRate` setting controls that chance independently of the leveling preset.
+- Queen Ant respawns after **36 ± 17 hours**, Core after **60 ± 23 hours**, and Orfen after **48 ± 20 hours**. Their rings and earring are also available in the admin shop. Wearing two copies of the same piece grants its passive effect once.
+
+</details>
+
+### PvP and clan wars
+
+- **React to threats and disputes.** Bots can defend themselves or their teammates, warn someone competing for the same monsters, or retreat when a fight looks too risky. Some bots hunt other characters as PKs.
+- **Take part in clan wars.** Autonomous clans can declare, answer, or withdraw from wars. They can send groups after enemy clan members and change course when they're taking too many losses.
+
+For more party and trade commands, see the [in-game command reference](#in-game-commands).
 
 ## Latest updates
 - **2026-11-20** Multi-party support. Ant Queen, Core, and Orfen. Epic jewelry. Bot economy improvements and bug fixes.
@@ -130,36 +201,6 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - Party loot
 - Raid bosses
 - AQ, Core, Orfen
-
-**Bots:**
-- Dynamic bot population with a smart new bot seeding up to 1700
-- Bots are farming solo and in party
-- In-party roles (tank, dps, healer, buffer, etc)
-- In-party buff control
-- Bot goals: equipment craft/drop/purchase, gain wealth, lvl-up faster, etc
-- Craft using recipes and craft stations
-- Selling loot in towns using a private store
-- Buying needed resources or equipment
-- PK bots
-- Bots attack a PK or run away
-- Bots will argue, then attack if a bot or a player hits the same mob
-- Communication in chat (LFP, LFG, PK alert, etc)
-- Cost parties and friends system
-- Reputation system - bots will reject player party if you treat them badly or become friends and const party members if good
-- Bots ask for loot if you have something they need
-- Bots go for NPC (Nobie guide) buff
-- Bots change their farming location based on lvl, number of mobs around, or a crafting goal
-- Bots join and fight in a party with a player
-- Bots have a memory about interaction with a player; they act correspondingly 
-- Bot persona traits: Sociability, Commitment, Caution, Ambition, Assertiveness, Empathy, Resilience
-- Bots create clans, level clans up, form clan farm parties
-- Bots will fight over mobs on a farm spot
-- Bot clans can form raid boss farm parties
-- Queen Ant, Core and Orfen have C4 stats, scripted guards/healers, Orfen's retreat and pull, and epic jewelry drops. Player parties and autonomous clans fight them through native actors, including without a nearby player. These three bosses have no +8 Raid Curse limit; C4 deep-blue drop penalties still apply. The server's shared raid stat reduction and ordinary loot rates also apply. Epic jewelry keeps its 30% single-item roll independently of the leveling preset (`General.epicDropChanceRate`, default 1).
-- Their C4 respawn windows are 36 ± 17, 60 ± 23 and 48 ± 20 hours respectively. Queen Ant's ring, Core's ring and Orfen's earring are available in the admin shop; wearing two copies grants the passive once.
-- Players can join bot parties
-- Clan wars, including autonomous clan wars
-- Multi-party control within a clan
 
 ### ✴️ Will be added
 

@@ -1,5 +1,6 @@
 'use strict';
 const BeginnerShots = require('../Items/C4BeginnerShots');
+const Karma = require('../Karma');
 // Native board custody. Every method is called within Database's one write
 // transaction, using its existing inventory, settlement and fencing owners.
 const Intent = require('../Bot/Economy/TradeIntent');
@@ -75,9 +76,14 @@ function create(io) {
         write('INSERT OR IGNORE INTO board_trade_participants(characterId) VALUES(?)', [id]);
         return one('SELECT * FROM board_trade_participants WHERE characterId=?', [id]);
     }
-    function fence(row, changed) {
+    function fence(row, changed, partyDepartures = []) {
         const states = {};
-        ids(row).forEach(id => { const next = snapshot(id, changed, { tradeMeeting: anchorMarker(id) }); if (next) states[id] = next; });
+        for (const id of ids(row)) {
+            const patch = { tradeMeeting: anchorMarker(id) };
+            if (partyDepartures.includes(id)) patch.partyMeeting = row.id;
+            const next = snapshot(id, changed, patch);
+            if (next) states[id] = next;
+        }
         return states;
     }
     function result(row, coldLifeRows = {}) { return { meeting: row, pending: row.state === 'accepted', coldLifeRows }; }
@@ -93,6 +99,7 @@ function create(io) {
         if (fresh && preparation.validatePreparation(request) !== true) throw Error('trade_meeting_preparation_changed');
         const actors = [request.actorA, request.actorB], sequences = [request.seqA, request.seqB];
         const totals = [0, 0], aggregate = new Map(), protectedTotals = new Map(), quoteTotals = new Map(), delivered = new Set();
+        const partyDepartures = [];
         for (const line of request.lines) {
             totals[line.payer] = sum(totals[line.payer], line.count * line.price);
             const quoteKey = `${line.adId}:${line.selfId}:${line.enchant}`;
@@ -114,7 +121,12 @@ function create(io) {
                     || party.route.scroll || party.route.durationMs !== 0) throw Error('trade_meeting_route_changed');
             } else if (party.route.method.startsWith('meeting:')) throw Error('trade_meeting_route_changed');
             const life = one("SELECT *, json_extract(statsJson,'$.playerPartyTakeover.playerId') playerPartyId FROM bot_life_state WHERE characterId=?", [id]);
-            if (io.canStartTrade && !io.canStartTrade(id, life)) throw Error('trade_meeting_party_busy');
+            const playerTrade = request.parties[1 - side].phase === 'player';
+            const karma = io.botKarma?.(id, life);
+            if (Karma.townFor(karma, request.town) !== request.town) throw Error('trade_meeting_point_changed');
+            if (!Karma.meetingRouteAllowed(karma, request.town, party.route)) throw Error('trade_meeting_route_changed');
+            if (io.canStartTrade && !io.canStartTrade(id, life, playerTrade)) throw Error('trade_meeting_party_busy');
+            if (playerTrade && life?.partyId) partyDepartures.push(id);
             if (life && io.canReceive) for (const line of request.lines.filter(line => line.payer === side)) {
                 const incoming = request.lines.filter(row => row.payer === side);
                 io.canReceive(id, life, line.selfId,
@@ -206,12 +218,17 @@ function create(io) {
             write('UPDATE board_trade_participants SET nextSequence=nextSequence+1,meetingId=COALESCE(meetingId,?) WHERE characterId=?', [id, actors[side]]);
         });
         const row = meeting(id);
-        return result(row, fence(row, [...request.lines.map(line => line.selfId), 736, ...delivered]));
+        return result(row, fence(row, [...request.lines.map(line => line.selfId), 736, ...delivered], partyDepartures));
     }
     function leg(id, side, sequence, legId, fee, scroll) {
         const row = meeting(id), suffix = side === 0 ? 'A' : side === 1 ? 'B' : null;
         if (!suffix || !row || row.state !== 'accepted' || typeof legId !== 'string' || legId.length > 48) throw Error('trade_meeting_leg');
         requireSafe(sequence, true); requireSafe(fee);
+        const karma = io.botKarma?.(ids(row)[side]);
+        if (Karma.townFor(karma, row.town) !== row.town) return terminal(id, false, 'karma_blocks_town');
+        if (Karma.closesTowns(karma) && (!Karma.meetingRouteAllowed(karma, row.town, JSON.parse(row[`route${suffix}`]))
+            || scroll || fee > 0 || legId !== `walk:${row.locX}:${row.locY}:${row.locZ}`))
+            return terminal(id, false, 'karma_blocks_route');
         const original = JSON.parse(row[`leg${suffix}`] || 'null');
         if (original?.sequence === sequence) {
             if (original.legId !== legId || original.fee !== fee || original.scroll !== scroll) throw Error('trade_meeting_consent_changed');
@@ -275,6 +292,13 @@ function create(io) {
         const row = meeting(id);
         if (!row || row.state !== 'accepted') return row ? result(row) : null;
         const actors = ids(row);
+        for (const [side, actor] of actors.entries()) {
+            const karma = io.botKarma?.(actor);
+            if (!Karma.closesTowns(karma)) continue;
+            if (row.town !== Karma.TOWN_NAME) return terminal(id, false, 'karma_blocks_town');
+            if (!Karma.meetingRouteAllowed(karma, row.town, JSON.parse(row[side === 0 ? 'routeA' : 'routeB'])))
+                return terminal(id, false, 'karma_blocks_route');
+        }
         let mask = 0;
         positions.forEach((position, side) => {
             if (position?.characterId !== actors[side] || !position.alive || !position.available) return;

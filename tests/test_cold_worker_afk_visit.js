@@ -13,10 +13,9 @@ const sellerId = 730184;
 const doneSellerId = 730185;
 const cleanerId = 730186;
 const archerId = 730187;
-const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
 
 (async () => {
-    const world = await createWorld([{ id, classId: 0, level: 20 }, { id: sellerId, classId: 54, level: 20 },
+    const world = await createWorld([{ id, classId: 0, level: 20 }, { id: sellerId, classId: 54, race: 4, level: 20 },
         { id: doneSellerId, classId: 0, level: 20 }, { id: cleanerId, classId: 0, level: 20 },
         { id: archerId, classId: 9, level: 20 }], 'native-afk-visit');
     try {
@@ -141,18 +140,12 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
         const saleNative = await nativeDecision(saleState, { townVisit: true });
         const salePlan = saleNative.plan.economyPlan;
         assert(salePlan && salePlan.sell.length >= 3, `a sale trip still carries the worker showcase: ${JSON.stringify(salePlan)}`);
-        const bagBefore = await bagOf();
-        const Static = invoke('GameServer/Bot/Economy/StaticBuyerService'), staticSell = Static.sell;
         const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService'), executePlan = Market.executePlan;
         const Listing = invoke('GameServer/Bot/Economy/ColdMarketListingService'), open = Listing.open;
-        const staticSales = [], opens = [];
+        const opens = [];
         let showcaseRuns = 0, saleOutcome;
         try {
             Market.executePlan = (...args) => { showcaseRuns++; return executePlan.apply(Market, args); };
-            Static.sell = (...args) => staticSell.apply(Static, args).then((result) => {
-                staticSales.push(result);
-                return result;
-            });
             Listing.open = (...args) => open.apply(Listing, args).then((result) => {
                 opens.push(result);
                 return result;
@@ -160,18 +153,11 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
             saleOutcome = await Population.resolveColdState(saleState, { precomputedPlan: saleNative.plan,
                 precomputedResult: { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
                     nextResolveAt: Date.now() + 30000, debug: {} } });
-        } finally { Static.sell = staticSell; Market.executePlan = executePlan; Listing.open = open; }
+        } finally { Market.executePlan = executePlan; Listing.open = open; }
         assert(saleOutcome.ok);
         assert.notEqual(saleOutcome.state.stats.lastReason, 'market_batch_continue',
             'the fixture must reach the listing gate, not the purchase batch return');
         assert.equal(showcaseRuns, 0, 'a sale trip skips the worker showcase: open alone decides the bag');
-        const bagAfter = await bagOf();
-        assert(staticSales.some(row => row.sold), `open reached the static buyers: ${JSON.stringify({
-            sales: staticSales.map(row => ({ sold: row.sold, itemCount: row.itemCount, adena: row.adena })),
-            lastReason: saleOutcome.state.stats.lastReason })}`);
-        assert(STATIC_BOUGHT.some(selfId => (bagAfter[selfId] || 0) < (bagBefore[selfId] || 0)),
-            'the static-bought materials left the bag');
-        assert((bagAfter[57] || 0) > (bagBefore[57] || 0), 'the static sale paid adena');
         const savedSeller = await Life.findByCharacterId(sellerId);
         const seen = saleOutcome.state.stats.marketSellSeen ?? savedSeller?.stats?.marketSellSeen ?? null;
         assert.deepEqual(seen?.items || [], invoke('GameServer/Bot/Economy/ItemDisposition').saleSeen(saleOutcome.state)?.items || [],
@@ -182,15 +168,14 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
         assert(saleShop && Number(saleShop.storeType) === Afk.SELL && saleShop.town === 'Elven Village', 'open opened the sell shop');
         const variant = item => `${Number(item.selfId)}:${Number(item.enchant || 0)}`;
         const sold = new Set([
-            ...staticSales.flatMap(row => (row.candidates || []).map(variant)),
             ...(opens[0].market?.npc || []).map(variant)
         ]);
-        assert(sold.size > 0);
         const offered = Afk.ownerRecords(sellerId).filter(row => row.kind === 'sell_ad').flatMap(row => row.lines)
             .concat(saleShop.lines);
+
         const unbacked = offered.filter(line => sold.has(variant(line)));
         assert.deepEqual(unbacked.map(variant), [], 'sold variants are gone; another enchant of the same item can remain offered');
-        console.log('PASS native sale town visit: worker showcase skipped, static buyers paid, sale retry written, open listed the rest');
+        console.log('PASS native sale town visit: worker showcase skipped, no fixed buyer sale, sale retry written, open listed the rest');
 
         assert.equal(Population.marketListingIntent({ ...saleState, stats: { ...saleState.stats,
             townVisit: { ...saleState.stats.townVisit, town: 'Gludin Village' } } }, { type: 'restock' }).saleVisit, false,

@@ -1,8 +1,11 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
+const { setTimeout: delay } = require('node:timers/promises');
+const Karma = require('../Karma');
 const { MAX_COMMITMENTS } = require('./TradeMeeting');
 const MeetingAnchor = require('./MeetingAnchor');
 const { partyTradeAllowed } = require('../Bot/Population/PartyAdmission');
+const PartyMarketBreak = require('../Bot/Population/PartyMarketBreak');
 const EconomyCommit = require('../Bot/Economy/EconomyCommit');
 const TableChannel = require('../Bot/Population/ColdTableChannel').shared;
 const Trace = require('../Bot/DecisionTrace');
@@ -57,12 +60,13 @@ function notifyPlayerTravel(row) {
             const finishingTrip = state.activity === 'traveling' && travel && travel.meetingId !== row.id && !atPoint(travel.to);
             const remaining = travel && atPoint(travel.to) ? Math.max(0, travel.arrivalAt - timestamp)
                 : Math.max(0, Number(route.durationMs) || 0) + Math.max(0, Number(state.stats?.restUntil || 0) - timestamp);
-            let text = state.activity === 'resting' ? "All set! I'll recover first, then come to you."
+            let text = state.stats?.partyMeeting === row.id ? "All set! I'll come as soon as I can leave my party."
+                : state.activity === 'resting' ? "All set! I'll recover first, then come to you."
                 : state.activity === 'fighting' ? "All set! I'll finish this fight, then come to you."
                     : finishingTrip ? "All set! I'll finish this trip, then come to you."
                     : "All set! I'm on my way to you.";
             text += ' Wait at the meeting point.';
-            if (remaining > 0 && state.activity !== 'fighting' && !finishingTrip) text += remaining < 60000
+            if (remaining > 0 && state.activity !== 'fighting' && !finishingTrip && state.stats?.partyMeeting !== row.id) text += remaining < 60000
                 ? ' About a minute.' : ` About ${Math.ceil(remaining / 60000)} min.`;
             player.dataSendToMe(invoke('GameServer/Network/Response').speak({
                 fetchId: () => id, fetchName: () => state.name
@@ -110,7 +114,7 @@ function unenroll(actor, id) {
 }
 const queue = new Set();
 const resultListeners = new Map();
-let pages = 0, transportPages = 0, transportBytes = 0, draining = false, unsubscribeLife, unsubscribeMarketLife, unsubscribePlayer, unsubscribeBoard;
+let pages = 0, transportPages = 0, transportBytes = 0, draining = false, unsubscribeLife, unsubscribeMarketLife, unsubscribePlayer, unsubscribeBoard, unsubscribeParty;
 const coordinator = () => invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const db = () => invoke('Database');
 const life = () => invoke('GameServer/Bot/Population/BotLifeState');
@@ -211,8 +215,10 @@ async function syncActors(row) {
             const current = life().cachedState(id);
             if (current && session.coldLifeState) {
                 const stats = { ...session.coldLifeState.stats };
-                if (current.stats?.tradeMeeting) stats.tradeMeeting = current.stats.tradeMeeting;
-                else delete stats.tradeMeeting;
+                for (const key of ['tradeMeeting', 'partyMeeting']) {
+                    if (current.stats?.[key]) stats[key] = current.stats[key];
+                    else delete stats[key];
+                }
                 session.coldLifeState = { ...session.coldLifeState, stats };
             }
             setPresenceMarker(session, id, anchor);
@@ -228,6 +234,16 @@ async function syncActors(row) {
         }
     }
 }
+function canStartTrade(id, source, playerTrade) {
+    const state = life().cachedState(id) || source, session = sessionFor(id);
+    if (state?.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting') return false;
+    if (partyTradeAllowed('trade', state, session)) return true;
+    if (!playerTrade || session || state?.playerPartyId || state?.stats?.playerPartyTakeover) return false;
+    const party = invoke('GameServer/Bot/Population/BackgroundPartyState').find(state?.party?.partyId || state?.partyId);
+    const stateFor = member => life().cachedState(member);
+    return !!party && PartyMarketBreak.canMeet(party, state, party.memberIds.map(stateFor), Date.now(), null, stateFor);
+}
+
 function stage(request) {
     const codec = require('./TradeMeetingCodec'), frames = codec.pages(request);
     const count = frames.length;
@@ -236,7 +252,8 @@ function stage(request) {
         if (JSON.stringify(existing.frames) !== JSON.stringify(frames)) throw Error('trade_meeting_consent_changed');
         return request.token;
     }
-    if ([request.actorA, request.actorB].some(id => !partyTradeAllowed('trade', life().cachedState(id), sessionFor(id)))) throw Error('trade_meeting_party_busy');
+    if ([request.actorA, request.actorB].some((id, side) => !canStartTrade(id, life().cachedState(id), request.parties[1 - side].phase === 'player')))
+        throw Error('trade_meeting_party_busy');
     if (count > 4 || pages + transportPages + count > 64) throw Error('trade_meeting_backpressure');
     if ([request.actorA, request.actorB].some(id => preparedActors.has(Number(id)))) throw Error('trade_meeting_preparation_busy');
     const id = request.token;
@@ -305,8 +322,10 @@ function paidPreparationEnd(characterId) {
 function preparationOf(characterId) {
     return preparedActors.get(Number(characterId)) || null;
 }
-function canJoinParty(characterId, state = life().cachedState(characterId), session = sessionFor(characterId)) {
+function canJoinParty(characterId, state = life().cachedState(characterId), session = sessionFor(characterId), returnPartyId = null) {
     const current = life()?.cachedState?.(characterId) || state;
+    const ticket = current?.stats?.partyMarketReturn;
+    if (ticket?.cleanupReason === 'trade_meeting' && ticket.partyId !== returnPartyId) return false;
     return partyTradeAllowed('party', current, session, hasPreparation(characterId), !!enrolled.get(Number(characterId))?.size);
 }
 function discard(id, notify = true) {
@@ -342,7 +361,18 @@ async function prepareActors(token) {
     const bots = entry.actors.filter((_, side) => request.parties[side].phase !== 'player');
     if (!bots.length) return;
     if (!coordinator()?.requestMeetingPreparation) throw Error('trade_meeting_preparation_pending');
-    const proofs = await Promise.all(bots.map(id => coordinator().requestMeetingPreparation(id, request)));
+    const proofs = await Promise.all(bots.map(async id => {
+        const state = life().cachedState(id);
+        const grouped = state?.party?.partyId || state?.partyId;
+        for (const wait of grouped ? [80, 240, 640, 0] : [0]) {
+            if (staged.get(token) !== entry) throw Error('trade_meeting_preparation_changed');
+            try { return await coordinator().requestMeetingPreparation(id, request); }
+            catch (error) {
+                if (!wait || error.message !== 'trade_meeting_worker_busy') throw error;
+                await delay(wait);
+            }
+        }
+    }));
     if (staged.get(token) !== entry) throw Error('trade_meeting_preparation_changed');
     entry.proofs = proofs;
     validatePrepared(entry, request);
@@ -457,7 +487,8 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         || options.expectedRevision !== undefined && record.revision !== options.expectedRevision) throw Error('trade_meeting_quote_changed');
     const buyer = record.storeType === 1 ? characterId : record.ownerId, seller = record.storeType === 1 ? record.ownerId : characterId;
     const actors = [buyer, seller].sort((a, b) => a - b), sides = await Promise.all(actors.map(id => db().prepareTradeParticipant(id)));
-    if (sides.some((side, index) => !partyTradeAllowed('trade', side, sessionFor(actors[index])))) throw Error('trade_meeting_party_busy');
+    if (sides.some((side, index) => !canStartTrade(actors[index], side, sides[1 - index].phase === 'player')))
+        throw Error('trade_meeting_party_busy');
     // The offer choosers read the same rule over the life-state markers; this
     // refusal is left for a race between two preparations.
     const anchors = sides.map(side => side.meetingId ? side.anchor || MeetingAnchor.UNKNOWN : null);
@@ -677,7 +708,8 @@ function presenceChanged(session) {
 function reset() {
     invoke('GameServer/Bot/Economy/MeetingPriceRefusals').clear();
     unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
-    unsubscribeLife = unsubscribeMarketLife = unsubscribePlayer = unsubscribeBoard = undefined;
+    unsubscribeParty?.();
+    unsubscribeLife = unsubscribeMarketLife = unsubscribePlayer = unsubscribeBoard = unsubscribeParty = undefined;
     for (const token of [...staged.keys()]) discard(token);
     for (const [token, listeners] of [...resultListeners])
         notifyResult(token, [...listeners].map(listener => listener.actorId), null);
@@ -734,6 +766,20 @@ async function processMeeting(id, meetingId) {
             const cancelled = await db().cancelTradeMeeting(row.id, 'player_left'); acceptRows(cancelled); wake(id); return;
         }
     }
+    if (state?.stats?.partyMeeting === row.id) {
+        const departure = await db().departTradeMeetingParty(id, row.id);
+        if (departure?.partyRow) {
+            const parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
+            const current = parties.find(departure.partyRow.partyId);
+            if (!current || current.revision <= departure.partyRow.revision) parties.acceptRow(departure.partyRow);
+            acceptRows(departure);
+            wake(id);
+        } else if (departure?.meeting && !departure.pending) {
+            acceptRows(departure);
+            wake(id);
+        }
+        return;
+    }
     const marker = session?.tradeMeetingPresence;
     // Cold acceptance has no session to mark. Restore the anchor when its
     // actor materializes, before starting a walk that must publish arrival.
@@ -772,6 +818,11 @@ async function processMeeting(id, meetingId) {
 // Only the existing participant event queue calls this; no travel polling.
 async function continueColdTravel(row, side, state) {
     const suffix = side ? 'B' : 'A', point = { locX: row.locX, locY: row.locY, locZ: row.locZ };
+    const pay = async (sequence, legId, fee, scroll) => {
+        const result = await db().payTradeMeetingLeg(row.id, side, sequence, legId, fee, scroll);
+        acceptRows(result);
+        if (result?.pending === false) wake(state.characterId);
+    };
     const saved = JSON.parse(row[`leg${suffix}`] || 'null');
     if (saved) {
         const [kind, ...values] = saved.legId.split(':'), coords = values.map(Number);
@@ -785,16 +836,15 @@ async function continueColdTravel(row, side, state) {
             await db().acknowledgeTradeMeetingLeg(row.id, side, saved.sequence);
             row = await db().fetchTradeMeeting(row.id);
         } else {
-            const resumed = await db().payTradeMeetingLeg(row.id, side, saved.sequence,
-                saved.legId, saved.fee, saved.scroll);
-            acceptRows(resumed); return;
+            await pay(saved.sequence, saved.legId, saved.fee, saved.scroll);
+            return;
         }
     }
     const Routes = require('../Bot/Travel/TravelRoutes');
     const route = JSON.parse(row[`route${suffix}`]);
-    if (route.method === 'walk') {
+    if (route.method === 'walk' || Karma.closesTowns(state.stats?.karma) && Karma.meetingRouteAllowed(state.stats.karma, row.town, route)) {
         const legId = `walk:${point.locX}:${point.locY}:${point.locZ}`;
-        acceptRows(await db().payTradeMeetingLeg(row.id, side, row[`nextLeg${suffix}`], legId, 0, false));
+        await pay(row[`nextLeg${suffix}`], legId, 0, false);
         return;
     }
     const native = Routes.between(state.loc, point);
@@ -819,7 +869,7 @@ async function continueColdTravel(row, side, state) {
         } else destination = gate;
     }
     const legId = `${kind}:${destination.locX}:${destination.locY}:${destination.locZ}`;
-    acceptRows(await db().payTradeMeetingLeg(row.id, side, row[`nextLeg${suffix}`], legId, fee, scroll));
+    await pay(row[`nextLeg${suffix}`], legId, fee, scroll);
 }
 async function drain() {
     const started = performance.now(); let count = 0;
@@ -832,6 +882,12 @@ async function drain() {
 }
 async function init() {
     unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); clearWaiters(); clearPlayerAnchors(); travelNotices.clear(); queue.clear();
+    unsubscribeParty?.();
+    unsubscribeParty = invoke('GameServer/Bot/Population/BackgroundPartyState').subscribeChanges((party, previous) => {
+        for (const id of new Set([...party.memberIds, ...(previous?.memberIds || [])])) {
+            if (life().cachedState(id)?.stats?.partyMeeting) wake(id);
+        }
+    });
     unsubscribeLife = life().subscribeChanges(change => {
         const id = Number(typeof change === 'number' ? change : change.characterId);
         // Only bounded unaccepted preparations are replaceable. The durable
@@ -882,6 +938,6 @@ async function init() {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
-module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, acceptRows, stage, discard, hasPreparation, paysInPreparation, paidPreparationEnd, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, breakChanged, init, reset, presenceChanged,
+module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, acceptRows, stage, discard, hasPreparation, paysInPreparation, paidPreparationEnd, preparationOf, canJoinParty, playerOfferAllowed: id => canStartTrade(id, null, true), prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, breakChanged, init, reset, presenceChanged,
     adjustTransportPages,
     counters: () => ({ preparations: staged.size, pages: pages + transportPages, bytes: transportBytes + [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };

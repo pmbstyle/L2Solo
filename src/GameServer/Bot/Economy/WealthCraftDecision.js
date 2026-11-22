@@ -7,36 +7,11 @@ const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
-const StaticMerchantPricing = require('./StaticMerchantPricing');
-const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const PurchaseFunding = require('./PurchaseFunding');
 const Karma = require('../../Karma');
-let staticIndex = null;
 // Lazy: ColdOccupationSources reads this module while it loads.
 function exitValue(...args) { return require('../Population/ColdOccupationSources').exitValue(...args); }
-// The fixed buyers' exits of a product for a seller they admit (ProductionPolicy.sellsToFixedBuyer).
-function staticExits(recipe, template, seller) {
-    if (!require('./ProductionPolicy').sellsToFixedBuyer(seller, template?.template?.kind)) return [];
-    if (!staticIndex) {
-        staticIndex = new Map();
-        for (const [buyerName, store] of Object.entries(MerchantStoreConfigs)) {
-            if (Number(store?.storeType) !== 3 || !store.town) continue;
-            for (const line of store.items || []) {
-                const id = Number(line.selfId);
-                if (!staticIndex.has(id)) staticIndex.set(id, []);
-                staticIndex.get(id).push({ buyerName, store, line });
-            }
-        }
-    }
-    const result = [];
-    for (const { buyerName, store, line } of staticIndex.get(Number(recipe.productId)) || []) {
-        const price = StaticMerchantPricing.botPriceFor(store, line);
-        if (Number.isFinite(price) && price > 0) result.push({ type: 'static', price,
-            count: Math.max(0, Number(line.count || 0)), town: store.town, buyerName, repeatable: true });
-    }
-    return result;
-}
 function exitsFor(state, recipe, template, trip, options, existingOutput) {
     const result = [];
     for (const offer of options.offersFor?.(recipe.productId, 3, state.characterId) || []) {
@@ -44,8 +19,6 @@ function exitsFor(state, recipe, template, trip, options, existingOutput) {
             town: offer.town, trip: trip(offer.town), tripDetails: trip.details?.(offer.town), repeatable: false };
         result.push(require('./PriceDecision').prospectiveExit(state, exit, { board: options.board, timestamp: options.timestamp }));
     }
-    for (const exit of (options.staticExits || staticExits)(recipe, template, state)) result.push({ ...exit,
-        trip: Number(exit.trip ?? trip(exit.town)), tripDetails: exit.tripDetails || trip.details?.(exit.town) });
     if (options.board) result.push(...Policy.drain(require('./ProductionSalePolicy').exits(state, recipe, {
         board: options.board, timestamp: options.timestamp, trip,
         npcOffersFor: id => require('../Population/ColdOccupationSources').npcOffersFor(id),
@@ -99,15 +72,14 @@ const refused = (state, recipeId) => refusals(state).includes(Number(recipeId));
 function refusedMark(state, recipeId) {
     return { look: lookOf(state) + Number(state.activity === 'shopping'), recipes: [...new Set([...refusals(state), Number(recipeId)])] };
 }
-// The exit a step chose, read anew: a bid by its line and revision, a fixed buyer by
-// its row, public interest by its town and origin (the price and the curve are today's).
+// The exit a step chose, read anew: a bid by its line and revision, public interest
+// by its town and origin (the price and the curve are today's).
 function chosenExit(exit, [recordId, lineId, price, revision]) {
     if (exit.offer) return Number(exit.offer.lineId) === Number(lineId) && Number(exit.offer.revision) === Number(revision)
         && (recordId === null || Number(exit.offer.recordId) === Number(recordId) && Number(exit.price) === Number(price));
-    if (recordId === -2 || recordId === -3) return exit.type === 'listing' && exit.town === townForCode(lineId)
+    return (recordId === -2 || recordId === -3) && exit.type === 'listing' && exit.town === townForCode(lineId)
         && exit.forecast?.origin === (recordId === -3 ? 'public_buy_interest' : 'public_item_trades')
         && (recordId === -3 || exit.forecast.authority.revision >= Number(revision));
-    return exit.type === 'static' && exit.staticId === Number(lineId) && Number(exit.price) === Number(price);
 }
 // lazy: cycle ShotCraftPolicy reads this module at its load
 const townForCode = code => require('./ShotCraftPolicy').townForCode(code);
@@ -285,5 +257,5 @@ function recipePaths(state, recipe, { known = false, route = null, acquisition =
         || row.kind === 'sale' && row.valueHours === best.valueHours) best = row;
     return { known: Number.isFinite(moneyPrice), rows, best, recipeId: Number(recipe.recipeId) };
 }
-module.exports = { staticExits, exitsFor, eligible, chooseOpportunity, createAction, stepAction,
+module.exports = { exitsFor, eligible, chooseOpportunity, createAction, stepAction,
     resultAction, recipePaths, freeAmount, freeOf, freeUnits, refused, refusedMark, stepStands };

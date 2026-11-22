@@ -106,6 +106,7 @@ const entries = [
     [420, "Q420_LittleWing"],
     [421, "Q421_LittleWingsBigAdventure"],
     [501, "Q501_ProofOfClanAlliance"],
+    [503, "Q503_PursuitOfClanAmbition"],
     [257, "Q257_TheGuardIsBusy"],
     [260, "Q260_OrcHunting"],
     [265, "Q265_BondsOfSlavery"],

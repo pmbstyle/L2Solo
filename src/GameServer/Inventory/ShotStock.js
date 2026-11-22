@@ -601,7 +601,9 @@ function potionRestockCost(value, inventory, adena, reserve, potionUnitPrice, co
 }
 
 // One restock rule for hot and cold bots, like HealingPotionStock.restockPlan:
-// below 1,000 shots a bot buys up to 3,000, first from players' shops cheaper
+// a bot in a town that sells its shots tops them up to its target (a C4 player
+// in town anyway refills to his usual stock; the one-hour line only sends it on
+// a trip of its own: KitRule's needed), first from players' shops cheaper
 // than the NPC (cheapest first, as many as needed), then from the NPC, and
 // spends only what is above its consumables reserve (PurchaseFunding) and the
 // cost of its healing-potion restock (survival first, user 2026-10-04).
@@ -638,13 +640,16 @@ function restockPlan(value, options = {}) {
     const allowanceAt = price => PurchaseFunding.stockAllowance(fundedState, wish, plan.selfId,
         PurchaseFunding.survivalTranche(context, plan.selfId, price), PurchaseFunding.quoteScale(estimate, price));
     const allowance = allowanceAt(npcPrice);
-    const maxPrice = npcPrice > 0 ? npcPrice - 1 : invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(state).worth(plan.selfId);
+    // A graded shot's unit price is the crafters' ask ceiling (no NPC sells it): a line
+    // at it is taken.
+    const graded = invoke('GameServer/Bot/Economy/ProductionPolicy').GRADED_SHOTS.has(Number(plan.selfId));
+    const maxPrice = npcPrice > 0 ? npcPrice - (graded ? 0 : 1) : invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(state).worth(plan.selfId);
     // The players' lines cheaper than the NPC, cheapest first, then the NPC:
     // the one rule for a stack purchase (OfferQuery.fill).
     const offers = [...(options.offers || [])].sort((a, b) => Number(a.price) - Number(b.price));
     const cheapest = offers.find(offer => Number(offer.price) > 0 && Number(offer.price) <= maxPrice);
     const boardAllowance = cheapest ? allowanceAt(Number(cheapest.price)) : allowance;
-    const needed = Math.max(allowance, boardAllowance) > 0 && currentAmount < (options.targetAmount !== undefined ? targetAmount : stock.survivalTarget);
+    const needed = Math.max(allowance, boardAllowance) > 0 && currentAmount < targetAmount;
     const left = needed ? Math.max(0, targetAmount - currentAmount) : 0;
     const potionCost = needed ? potionRestockCost(value, inventory, adena, reserve, options.potionUnitPrice, context) : 0;
     const free = Math.max(0, adena - potionCost);

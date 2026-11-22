@@ -4,15 +4,12 @@
 
 Keep server `package.json`/root lockfile and launcher `launcher/package.json`/its lockfile independent. Root `l2soloRelease.minimumLauncherVersion` describes the updater protocol actually needed by the server; do not automatically raise it on every server release. Root `l2soloRelease.runtimeVersion` is the exact tested server Node.js version. Launcher `serverRuntimeVersion` is its bundled bootstrap runtime. Release CI derives its build/test Node version from the component policy, so the runtime declared by a server release is the one its server tests exercise.
 
-The next stable versions are server `0.2.0` and launcher `0.2.4`. Schema-2 server packages require launcher `0.2.0` or newer. Integrate the reviewed changes into `develop`, then merge the release source into `main`. Publish the launcher first and wait for its native jobs and complete public release before publishing the server. The server publisher refuses to proceed without compatible published installers for every supported target.
+The next stable server version is `0.2.1`, reusing the published launcher `0.2.4` installers. Schema-2 server packages require launcher `0.2.0` or newer. Integrate the reviewed changes into `develop`, then merge the release source into `main`. If a release also updates the launcher, publish it first and wait for its native jobs and complete public release before publishing the server. The server publisher refuses to proceed without compatible published installers for every supported target.
 
 ```sh
-# After review, commit and integration of the intended release source:
-git tag launcher-v0.2.4
-git push origin launcher-v0.2.4
-# After the launcher release is published:
-git tag server-v0.2.0
-git push origin server-v0.2.0
+# After the release source is merged into main
+git tag server-v0.2.1
+git push origin server-v0.2.1
 ```
 
 Both stable tags may reference the same commit. Each GitHub release has exactly one tag. Stable release CI builds and publishes when a new component tag is pushed for a commit in `main`. Server-only releases reuse published launcher installers. Tags in the old `vX.Y.Z` form remain discoverable as legacy server releases.

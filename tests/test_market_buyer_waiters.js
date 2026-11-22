@@ -6,8 +6,8 @@
 // waits for the next card and a refused one stays. No clock.
 require('../src/Global');
 const assert = require('node:assert/strict');
-const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
-const { MarketBuyerWaiters, MAX_WANTS, lineEvents } = require('../src/GameServer/Bot/Economy/MarketBuyerWaiters');
+const { BoardIndex, rowOf, recordOf } = require('../src/GameServer/AfkTrade/BoardIndex');
+const { MarketBuyerWaiters, MAX_WANTS, lineEvents, recordClosed } = require('../src/GameServer/Bot/Economy/MarketBuyerWaiters');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const Situations = require('../src/GameServer/Bot/Situations');
 
@@ -139,6 +139,29 @@ async function main() {
         assert.deepEqual(raised, [], 'a reprice below its rivals raises none: they see it at their next look');
         put(stall(10, 300, 200, 'Giran', 1));
         assert.deepEqual(raised, [[300, 'goal_done:line']], 'its own line filled');
+        // A one-unit line sold out: the database keeps it at count 0 with its fill until the
+        // owner lists again, and the row names it soldOut; the owner hears goal_done:line
+        // once. The owner's own withdrawal deletes its line: no soldOut, no raise. A bot
+        // record that leaves the board (a deal closed it emptied, or its owner) raises it too.
+        raised.length = 0;
+        const shop = (lines) => recordOf(rowOf({ id: 70, ownerId: 700, storeType: 1, town: 'Giran', botOwned: true, revision: 1,
+            lines: lines.map(([id, count, fills]) => ({ id, selfId: 3000 + id, count, price: 500, fills })) }));
+        put(shop([[1, 1, 0], [2, 1, 0], [3, 1, 0]]));
+        assert.deepEqual(raised, [], 'a new shop with no rival is no news');
+        put(shop([[1, 0, 1], [2, 1, 0], [3, 1, 0]]));
+        assert.deepEqual(raised, [[700, 'goal_done:line']], 'its one-unit line sold out');
+        raised.length = 0;
+        put(shop([[1, 0, 1], [2, 1, 0], [3, 1, 0]]));
+        assert.deepEqual(raised, [], 'a line already heard sold out is no news');
+        put(shop([[2, 1, 0]]));
+        assert.deepEqual(raised, [], 'the owner\'s own withdrawal is no fill');
+        const closed = lines.records.get(70);
+        lines.remove(70);
+        recordClosed(closed, (id, name) => raised.push([id, name]));
+        assert.deepEqual(raised, [[700, 'goal_done:line']], 'its record left the board');
+        raised.length = 0;
+        recordClosed([], (id, name) => raised.push([id, name]));
+        assert.deepEqual(raised, [], 'no record, no raise');
         // A line priced against a rival at 150 (accepted noise 0.2, log): a new line at 140 is a
         // move its own look keeps its price through, so it raises none; one at 100 raises.
         raised.length = 0;

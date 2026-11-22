@@ -28,6 +28,7 @@ const entriesByOwner = new Map();
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const ColdOccupationSources = require('../Bot/Population/ColdOccupationSources');
 const PartyAdmission = require('../Bot/Population/PartyAdmission');
+const Karma = require('../Karma');
 const Trace = require('../Bot/DecisionTrace');
 const FailureLog = require('../../FailureLog');
 const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
@@ -116,7 +117,7 @@ function unindexProjection(projection) {
 function indexProjection(projection) {
     const store = entryStore(projection);
     if (![SELL, BUY].includes(Number(store?.storeType))) return;
-    const row = rowOf(store, projection.shop.escrowAdena);
+    const row = rowOf(store, projection.shop.escrowAdena, projection.shop.lines || []);
     if (!row[6].length) return;
     board.put(recordOf(row), projection);
     changedOwners.add(Number(projection.shop.ownerId));
@@ -1098,9 +1099,25 @@ function reconcileOwnStock({ characterId, state, previousState }) {
     }).catch(error => FailureLog.note('board.own_stock_trim', error));
 }
 
+function merchantBecamePk(characterId) {
+    const session = World.registeredActorById(characterId)?.session;
+    if (session) invoke('GameServer/Bot/Population/BotLifeState').notifyNearFacts(session, 'trade_karma');
+    require('./TradeMeetingService').wake(characterId);
+    return Database.withoutMutationAdmission(() => Database.moveKarmaMeetingAds(characterId)).then(ads => {
+        ads.forEach(refreshRecord);
+    }).catch(error => FailureLog.note('board.move_karma_ads', error));
+}
+
+function reconcileOwnerAds(publication) {
+    reconcileOwnStock(publication);
+    const { characterId, state, previousState } = publication;
+    if (Karma.closesTowns(state?.stats?.karma) && !Karma.closesTowns(previousState?.stats?.karma)
+        && entriesByOwner.has(characterId)) merchantBecamePk(characterId);
+}
+
 async function init() {
     clearBoard();
-    unsubscribeOwnStock ||= invoke('GameServer/Bot/Population/BotLifeState').subscribePublications(reconcileOwnStock);
+    unsubscribeOwnStock ||= invoke('GameServer/Bot/Population/BotLifeState').subscribePublications(reconcileOwnerAds);
     unsubscribeHandOver ||= invoke('GameServer/Bot/Population/BotLifeState').subscribeMarketReviewChanges(settleHandedOver);
     const migrated = await Database.migrateBoardWorld();
     // A cached bot state follows the bags and states the migration changed.
@@ -1127,6 +1144,9 @@ async function init() {
         }
         await new Promise(resolve => setImmediate(resolve));
     }
+    const repairedLocations = await Database.repairBoardMeetingOfferLocations();
+    if (repairedLocations) utils.infoSuccess('AfkTrade', 'repaired meeting locations for %d ads', repairedLocations);
+    await Database.moveKarmaMeetingAds();
     await Database.initializeBoardPricing();
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
     await require('./GiranShopDistribution').restore(shops);
@@ -1172,6 +1192,7 @@ module.exports = {
     isBoardReady: () => boardReady,
     subscribeBoardChanges,
     reconcileOwnStock,
+    merchantBecamePk,
     offerOf,
     itemName,
     activeDemandSelfIds,

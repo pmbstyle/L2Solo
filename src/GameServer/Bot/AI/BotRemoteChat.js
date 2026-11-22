@@ -144,7 +144,7 @@ function schema(shopAvailable = false) {
             action: {
                 type: 'string',
                 enum: ['say', 'none', 'come_to_player', 'request_player_join_party',
-                    ...(shopAvailable ? ['shop_offer', 'shop_accept', 'shop_decline', 'shop_status'] : []), ...DialogueKnowledge.ACTIONS]
+                    ...(shopAvailable ? ['shop_offer', 'shop_accept', 'shop_decline', 'shop_status'] : []), ...DialogueKnowledge.actionsFor()]
             },
             reply: {
                 type: 'string',
@@ -183,10 +183,10 @@ function systemPrompt(shopAvailable = false) {
         DialogueParty.PROMPT,
         'For claims about your game life, use only the provided state, persona, social memory, availability, conversation, and life events. This does not restrict ordinary conversation topics.',
         'The persona shapes tone and high-level preferences, never facts, safety, or available actions.',
-        'Do not invent items, rewards, locations, levels, party membership, combat results, or live observations.',
+        'You cannot observe your surroundings in this chat. Say you cannot see who or what is nearby. Read goals before stating a target, material count or blocker.',
         'Keep the reply short, grounded, and in character.',
-        'For a past raid/drop/trade/encounter, call recall_event first with a short keyword in query. Current state proves no past event. For drop/spoil sources use find_item_sources with the exact English item name in query.',
-        'Read missing facts with inspect_self (inventory, equipment, skills, party, goals, relationship, relationships, recent_events) or lookup_game (items, item, item_sources, npcs, npc, recipes). Leave query empty to read all equipment. Search English catalog names with query, then use entityId. Results come back before your next decision. Catalog spawns are not live sightings.',
+        'For past PvP/raids/drops/trades/fights, call recall_event with a short keyword or name. Current state proves no past event. For drop/spoil sources use find_item_sources with the exact English item name in query.',
+        'Read inventory, equipment, skills, party, goals (progress), clan (role and task), relationship, relationships or recent_events with inspect_self. Leave query empty for all equipment. lookup_game searches English catalog names with query and details by entityId. Catalog spawns are not live sightings.',
         'Use action=say for ordinary conversation and action=none when no reply is needed.',
         'Use action=come_to_player only when the player explicitly asks this bot to come, arrive, teleport, or meet them here.',
         'Use action=request_player_join_party only when the player asks to join this bot existing autonomous party. The server, not you, decides whether the party accepts and transfers the whole roster.',
@@ -206,6 +206,7 @@ async function requestLlmReply(payload, cfg, turn, state, playerSession) {
     const actor = playerSession.actor;
     const result = await DialogueRunner.run({
         messages: DialogueProtocol.messages(systemPrompt(Boolean(payload.shop)), payload),
+        initialRead: DialogueKnowledge.readForQuestion(payload.playerMessage),
         alive: () => playerSession.actor === actor,
         isRead: action => DialogueKnowledge.ACTIONS.includes(action),
         read: decision => DialogueKnowledge.execute(decision, { session: state, playerSession, playerMessage: payload.playerMessage }),

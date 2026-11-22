@@ -156,8 +156,8 @@ const SITUATIONS = Object.freeze({
     'stock_low:potions': link(NOW),
     bag_full: link(NOW),
     // The wallet reached the build's threshold (baseline.affordAt): a broke bot's survival
-    // potions, else an unarmed bot's weapon bridge, its focus or its gear plan's market
-    // piece (all wake the build only: one name).
+    // potions, else an unarmed bot's weapon bridge, its focus, its gear plan's market
+    // piece or its shots below their line (all wake the build only: one name).
     'goal_affordable:potions': link(NOW),
     'goal_affordable:focus': link(NOW),
     // A board offer its held build wants (MarketBuyerWaiters: a new SELL line, or a cheaper
@@ -167,8 +167,8 @@ const SITUATIONS = Object.freeze({
     offer_posted: link(NOW),
     // Its own board lines (the worker's board diff): a SELL line of the same item posted
     // or repriced below its own in its town (an unplaced ad counts in every town), as a
-    // C4 seller sees a cheaper store or WTS shout; one of its own lines filled (a sale, a
-    // bid answered). Heard at its next stop: a hunting player looks at his store when he
+    // C4 seller sees a cheaper store or WTS shout; one of its own lines filled or sold out
+    // (a sale, a bid answered), or its record left the board. Heard at its next stop: a hunting player looks at his store when he
     // sits down or reaches town.
     line_undercut: link(STOP),
     'goal_done:line': link(STOP),
@@ -225,7 +225,7 @@ const SITUATIONS = Object.freeze({
 // key: only its raises wake it.
 // own_lines: the prices of its own board lines (MarketPricing.look over every own
 // priced line), taken at a town arrival (it sees the stores), a line undercut, a
-// line filled and its last look lost where main writes it; held between: prices, deals and the clock wake it not. No held key.
+// line filled or sold out, its record closed, and its last look lost where main writes it; held between: prices, deals and the clock wake it not. No held key.
 // rebuff: how the bot renews its hunting buffs now (Bot/AI/Rebuff: none, the Newbie
 // Guide, its clan hall, a buffer), taken when its last buff ended and at a town
 // arrival; held between (stats.rebuff, carried out once). No held key: none held reads none.

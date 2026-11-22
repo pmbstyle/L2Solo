@@ -175,6 +175,7 @@ assert.strictEqual(
 );
 const elvenStall = ShopPlaces.take('Elven Village', 'test:elvenStall');
 assert(ShopPlaces.isStallArea('Elven Village', elvenStall), 'Elven Village no-grade listings must remain inside the captured trading square');
+assert.deepStrictEqual(ListingService.townCenter('Elven Village'), { locX: 46600, locY: 49700, locZ: -3060 });
 
 const darkElvenState = {
     ...noGradeState,
@@ -188,6 +189,7 @@ assert.strictEqual(
 );
 const darkElvenStall = ShopPlaces.take('Dark Elven Village', 'test:darkElvenStall');
 assert(ShopPlaces.isStallArea('Dark Elven Village', darkElvenStall), 'Dark Elven Village no-grade listings must remain inside the captured trading square');
+assert.deepStrictEqual(ListingService.townCenter('Dark Elven Village'), darkElvenState.loc);
 
 const orcState = {
     ...noGradeState,

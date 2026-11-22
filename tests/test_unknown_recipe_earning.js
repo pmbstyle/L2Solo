@@ -14,7 +14,7 @@ const trip = () => 0; trip.details = () => ({ hours: 0, fees: 0 });
 const context = { hourAdena: 1000, moneyPrice: .001, mpPerHour: 100000, maxBatches: 1, trip };
 let scrollPrice = 10, inputAvailable = true, buyerAvailable = true;
 const options = { unknownRecipes: () => [recipe],
-    staticExits: () => [], offersFor: id => id === recipe.productId && buyerAvailable
+    offersFor: id => id === recipe.productId && buyerAvailable
         ? [{ ownerId: 2, price: 1000, count: 1, town: 'Giran' }] : [],
     planPurchase: (owner, id, n) => inputAvailable ? { town: 'Giran', units: n, whole: true,
         cost: n * (id === recipe.recipeItemId ? scrollPrice : 1), landed: n * (id === recipe.recipeItemId ? scrollPrice : 1),

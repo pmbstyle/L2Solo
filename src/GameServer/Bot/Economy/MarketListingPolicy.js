@@ -10,6 +10,7 @@ const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const ColdEconomyDecision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
 const KnowledgeLearning = invoke('GameServer/Bot/AI/KnowledgeLearning');
 const { MAX_GEAR_COPIES_PER_TYPE } = require('./WarehouseRules');
+const { GRADED_SHOTS } = require('./ProductionPolicy');
 const TradeDemand = require('./MarketTradeDemand');
 const ArrowStock = require('../../Inventory/ArrowStock');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
@@ -25,6 +26,11 @@ function isGear(item = {}) {
 // Public interest and recent completed purchases earn scarce board space.
 // Quote depth is a ranking signal, never funded or guaranteed receipts.
 // Unobserved stock uses the old stable price order only for spare places.
+// A graded shot in demand comes before everything else, gear in the places
+// left (our rule): the crafters are the bots' only graded shot seller, and a
+// hunter without its shots loses part of every fight, while a gear buyer
+// waits for its piece; a crafter's full gear shop otherwise left its shots in
+// the bag (run 212be88cf: 25 of 53 crafters holding D soulshots listed none).
 function prioritizeListings(listings = [], { board, characterId = 0, timestamp = Date.now() } = {}) {
     const score = item => {
         let bidUnits = 0, bidPrice = 0;
@@ -34,13 +40,15 @@ function prioritizeListings(listings = [], { board, characterId = 0, timestamp =
         }
         const flow = !item.enchant ? TradeDemand.forecast(item.selfId, null, timestamp) : null;
         const count = Math.max(0, Number(item.count) || 0), price = Math.max(0, Number(item.price) || 0);
-        return [bidUnits > 0 && bidPrice >= price ? 2 : bidUnits > 0 || flow ? 1 : 0,
+        const interest = bidUnits > 0 && bidPrice >= price ? 2 : bidUnits > 0 || flow ? 1 : 0;
+        return [interest > 0 && !item.enchant && GRADED_SHOTS.has(Number(item.selfId)) ? 1 : 0, interest,
             Math.max(Math.min(count, bidUnits) * Math.min(price, bidPrice),
                 Math.min(count, flow?.applicableUnits || 0) * price)];
     };
     const scores = new Map(listings.map(item => [item, score(item)]));
     return listings.slice().sort((left, right) => scores.get(right)[0] - scores.get(left)[0]
         || scores.get(right)[1] - scores.get(left)[1]
+        || scores.get(right)[2] - scores.get(left)[2]
         || Number(right.price || 0) - Number(left.price || 0)
         || Number(right.enchant || 0) - Number(left.enchant || 0)
         || Number(isGear(right)) - Number(isGear(left))
@@ -107,9 +115,6 @@ function cardTraderContext(state, options = {}) {
         persona, preparedWorth: worth, preparedVersion: ColdEconomyDecision.usefulnessVersion(prepared),
         economy: { persona, hourAdena: Number(Packet.hourAdena(packet)), moneyPrice: Number(Packet.moneyPrice(packet)), gapHorizonHours: NaN, worth } });
 }
-
-// Board slots of a bot (user, 2026-10-05): 3 shop lines + 5 sell ads.
-const BOARD_SLOTS = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.sell_ad;
 
 function listedAmounts(lines) {
     const amounts = new Map();
@@ -306,7 +311,7 @@ function evaluate(state, options = {}) {
     }
     // The hold keeps only this sale's items: a sold, moved or repriced one leaves it.
     if (hold) for (const key of hold.keys()) if (!heldKeys.has(key)) hold.delete(key);
-    const slots = Math.max(0, Math.floor(Number(options.slots ?? BOARD_SLOTS)));
+    const slots = Math.max(0, Math.floor(Number(options.slots ?? BoardRules.sellSlots(state))));
     const chosen = new Set(prioritizeListings(decisions.filter(row => row.action === 'list').map(row => row.item), ctx).slice(0, slots));
     for (const decision of decisions) {
         if (decision.action !== 'list' || chosen.has(decision.item)) continue;
@@ -352,7 +357,7 @@ function ownSaleInputs(state, own, options = {}) {
     for (const line of own) if (line.storeType === BoardRules.SELL && line.custodyPolicy !== 1)
         conditionalKept.delete(`${line.selfId}:${line.enchant || 0}`);
     return { state: { ...state, inventory }, options: { ...options, stockQuotes: true,
-        slots: BOARD_SLOTS, kept, keptCounts: listedAmounts(own), conditionalKept, stored: options.stored || new Map() } };
+        slots: BoardRules.sellSlots(state), kept, keptCounts: listedAmounts(own), conditionalKept, stored: options.stored || new Map() } };
 }
 
 // Room to keep an item: gear keeps two copies in the warehouse
@@ -397,7 +402,6 @@ function npcSaleCandidatesForActor(session) {
 }
 
 module.exports = {
-    BOARD_SLOTS,
     classify,
     evaluate,
     ownSaleInputs,

@@ -43,9 +43,9 @@ function restockOf(state) {
     assert.strictEqual(OfferQuery.admits(cRow, fighter), false, 'the offer admission refuses a non-spoiler the 951 row');
     assert.strictEqual(OfferQuery.admits(cRow, spoiler), true, 'the offer admission takes a spoiler');
     // The spoiler pays 1.2x the board's median deal price (3.4x the datapack price before
-    // the board has deals): always more than the board pays it back.
+    // the board has deals, at any Adena rate): always more than the board pays it back.
     const datapack = Number(invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, 951).template.price);
-    assert.strictEqual(Number(cRow.price), Math.round(3.4 * datapack), 'without deals a C scroll costs 3.4x its datapack price');
+    assert.strictEqual(Number(cRow.price), Math.round(3.4 * datapack), 'without deals a C scroll costs 3.4x its datapack price, no Adena rate');
     const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
     const boardPrice = Math.round(2.8 * datapack);
     Counters.deal(951, boardPrice, 1, Date.now() - 2000, 11, 'Giran', 12);
@@ -256,13 +256,14 @@ function restockOf(state) {
     assert.strictEqual(count([...afterBatch, ...await Database.fetchWarehouseItems(character.id)], 956), 3);
     assert.strictEqual(resumed.state.adena, huntingState.adena);
 
-    // A Bounty Hunter on a town visit in Oren with 16M, wearing a B weapon priced far
-    // above its wallet: the visit's errands buy its three B scrolls (5.1M at 3.4x the
+    // A Bounty Hunter on a town visit in Oren with 16M, wearing a B weapon the reserve
+    // sells to its line: the visit's errands buy its three B scrolls (5.1M at 3.4x the
     // datapack price, no board deals yet; 2x left after) at the reserve (M3tLa) and the purchase is a fixed_wts trade.
     const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
     const spoilerWeapon = 91;
-    const spoilerWeaponPrice = Math.min(...MarketOpportunity.fixedStoreOffers(spoilerWeapon, { stats: { classId: 55 } }).map(offer => Number(offer.price)));
-    assert(Number.isFinite(spoilerWeaponPrice) && 3 * spoilerWeaponPrice > 16000000, 'three times the worn weapon is above the wallet');
+    const spoilerWeaponPrice = Math.min(...MarketOpportunity.fixedStoreOffers(spoilerWeapon, { stats: { classId: 55 } }, { consignment: true })
+        .map(offer => Number(offer.price)));
+    assert(Number.isFinite(spoilerWeaponPrice), 'the reserve stocks the worn weapon on the spoiler line (consignment)');
     const oren = invoke('GameServer/Bot/Economy/MarketTownPolicy').marketTown('Oren').center;
     await Database.createAccount('bot_s1c_spoiler', 'secret');
     await Database.createCharacter('bot_s1c_spoiler', {
@@ -272,7 +273,8 @@ function restockOf(state) {
     });
     const bountyHunter = (await Database.fetchCharacters('bot_s1c_spoiler')).find(row => row.name === 'SpoilerRestock');
     assert(bountyHunter?.id);
-    const adena = 16000000;
+    // Three B scrolls at 3.4x the datapack price x the x50 Adena rate, with 2x each purchase kept after it.
+    const adena = 16000000 * 50;
     await Database.setItem(bountyHunter.id, { selfId: 57, name: 'Adena', amount: adena, enchant: 0, equipped: false, slot: 0 });
     await Database.setItem(bountyHunter.id, { selfId: spoilerWeapon, name: 'Heavy War Axe', amount: 1, enchant: 0, equipped: true,
         slot: Number(DataCache.items.find(item => Number(item?.selfId) === spoilerWeapon).etc.slot) });

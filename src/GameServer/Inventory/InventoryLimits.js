@@ -13,14 +13,7 @@ function forActor(actor) {
 }
 
 function forState(state = {}, inputs = {}) {
-    const stats = state.stats || {};
-    const classId = stats.classId ?? stats.coldCombat?.classId ?? state.classId;
-    const template = typeof invoke === 'function'
-        ? invoke('GameServer/DataCache').classTemplates?.find(row => Number(row.classId) === Number(classId)) : null;
-    const race = inputs.race ?? template?.template?.race ?? stats.race ?? state.race;
-    const skills = inputs.skills ?? (typeof invoke === 'function'
-        ? invoke('GameServer/Bot/Population/ColdCombatProfile').skillsFor(state) : []);
-    return capacity(race, skills.find(skill => Number(skill.selfId) === 1372)?.level);
+    return capacity(Skills.stateRace(state, inputs), Skills.stateSkillLevel(state, 1372, inputs));
 }
 
 module.exports = { MAX_CAPACITY, capacity, forActor, forState };

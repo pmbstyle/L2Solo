@@ -55,11 +55,19 @@ async function run() {
     Data.init(); await DB.init(); await Life.init();
     invoke('GameServer/Bot/Population/ColdOccupationSources').initialise();
     await q("INSERT INTO clans(id,name,level,leaderId) VALUES(701,'CrystalSupply',3,98101)");
-    // A store sells the exchange target for less than its crystal chain (a
-    // 1.4M D staff to crystallize into 310 D crystals): the clan owner buys the
-    // gloves and spends nothing on crystals.
+    // A supplier's board shop sells the exchange target at its ask ceiling (the
+    // C anchor: no static store sells a bot C gear) for less than its crystal
+    // chain (a 1.4M D staff to crystallize into 310 D crystals): the clan owner buys
+    // the gloves and spends nothing on crystals.
+    const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
+    await Native.character(DB, 98190, 'ClanCrystalSeller', 'bot_clan_crystal_seller', town);
+    const gloves = Number((await DB.setItem(98190, { selfId: 608, name: 'Mithril Gauntlets', amount: 1 })).insertId);
+    await Afk.publishBot(98190, { kind: 'shop', storeType: Afk.SELL, town: 'Giran', title: 'Gloves',
+        locX: 83000, locY: 148000, locZ: -3400, appearance: { model: { name: 'ClanCrystalSeller' } },
+        lines: [{ objectId: gloves, selfId: 608, name: 'Mithril Gauntlets', count: 1,
+            price: invoke('GameServer/Bot/Economy/CrafterStock').askCeiling(608), stackable: false }] });
     let direct = await seed(98107, 608);
-    const directEconomy = context(direct), directLeaf = directEconomy.network.activity;
+    const directEconomy = context(direct, { board: Afk.boardIndex() }), directLeaf = directEconomy.network.activity;
     assert.deepEqual([directLeaf?.kind, directLeaf?.activity, directLeaf?.itemId], ['buy', 'shopping', 608],
         `the clan target's direct offer beats its crystal chain: ${JSON.stringify(directLeaf)}`);
     const directNeed = invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(direct, { economy: directEconomy })[0];
@@ -69,14 +77,14 @@ async function run() {
     const directPurchase = Market.planPurchase(direct, 608, 1, { money: direct.adena,
         r: invoke('GameServer/Bot/Economy/PurchaseFunding').leafRatio(directLeaf,
             directEconomy.network.queue.find(row => row.key === directLeaf.rootKey)) });
-    assert(directPurchase && directPurchase.cost < 1400000, `the store gloves cost less than the staff: ${JSON.stringify(directPurchase)}`);
+    assert(directPurchase && directPurchase.cost < 1400000, `the board gloves cost less than the staff: ${directPurchase?.cost} ${directPurchase?.town} ${directPurchase?.units}`);
     direct = (await Market.buyHere(direct, directPurchase)).state;
     assert.equal(direct.inventory[608]?.amount, 1, 'the clan owner holds the bought gloves');
     assert.equal(direct.adena, 30000000 - directPurchase.cost, 'only the gloves are paid for');
-    assert(!direct.inventory[90] && !direct.inventory[1458], 'no crystal input is bought for a target the store sells cheaper');
+    assert(!direct.inventory[90] && !direct.inventory[1458], 'no crystal input is bought for a target a seller sells cheaper');
     assert(!Supply.requirement(direct), 'the held target releases the crystal supply request');
-    // Without a store selling the target the exchange and its crystal chain
-    // are the cheapest way (the city reserve switched off).
+    // Without a seller of the target the exchange and its crystal chain are the
+    // cheapest way (the city reserve switched off, the gloves sold).
     invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = true;
     for (const [id, targetId] of [[98101, 608], [98102, 2406]]) {
         let state = await seed(id, targetId);

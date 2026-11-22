@@ -219,11 +219,18 @@ async function run() {
     const stocked = { ...state, inventory: Object.fromEntries(component.materials.map((m) => [m.selfId,
         { selfId: m.selfId, amount: m.amount }])) };
     const spots = [{ id: 'death-knight', avgLevel: 50, npcEntries: [{ selfId: 136, name: 'Death Knight', count: 8 }] }];
-    // The C reserve store sells bots the C blade: a bot that holds its price
-    // buys it before any craft or drop.
-    const bought = Planner.farmSourceForMaterial(75, stocked, spots, new Set([component.recipeId]));
-    assert.strictEqual(bought.kind, 'material_market', 'a funded bot buys the reserve store blade');
+    // A supplier's board shop sells the C blade at its ask ceiling (the reserve
+    // rows sell to the suppliers only): a bot that holds that price buys it
+    // before any craft or drop.
+    const ceiling = invoke('GameServer/Bot/Economy/CrafterStock').askCeiling(75);
+    const supplierLine = { findMarketOffer: () => ({ sourceType: 'afk_bot_store', sellerKind: 'bot', sourceId: 7001,
+        town: 'Giran', selfId: 75, price: ceiling, count: 1, available: true }) };
+    const bought = Planner.farmSourceForMaterial(75, stocked, spots, new Set([component.recipeId]), 1, new Set(), supplierLine);
+    assert.strictEqual(bought.kind, 'material_market', 'a funded bot buys the blade from a supplier\'s board line');
     assert.strictEqual(bought.effort, 4, 'a payable offer costs the bot one shopping trip');
+    // The reserve store itself sells this bot nothing: with no board line the ready craft is its route.
+    const storeOnly = Planner.farmSourceForMaterial(75, stocked, spots, new Set([component.recipeId]));
+    assert.notStrictEqual(storeOnly.kind, 'material_market', 'no reserve store row sells a bot the blade');
     // Where no seller offers the blade, the ready craft beats its rare drop.
     const unsold = { findMarketOffer: () => null };
     const route = Planner.farmSourceForMaterial(75, stocked, spots, new Set([component.recipeId]), 1, new Set(), unsold);

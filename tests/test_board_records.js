@@ -133,8 +133,8 @@ async function run() {
     assert.deepStrictEqual(await bag(mover), before);
     assert.strictEqual((await Database.fetchAfkTradeShops(mover)).length, 2);
 
-    // Caps: 5 sell ads, 5 buy ads, 1 order, 3 shop lines; over a cap the
-    // record is refused and the item or the money stays.
+    // Caps: 5 sell ads, 5 buy ads, 1 order, and a shop of a player's store
+    // lines; over a cap the record is refused and the item or the money stays.
     for (const selfId of MATERIALS.slice(1, 5)) await AfkTrade.publishBot(mover, await sellAd(mover, selfId));
     assert.strictEqual(AfkTrade.ownerRecords(mover).filter((record) => record.kind === 'sell_ad').length, BoardRules.BOT_RECORDS.sell_ad);
     await assert.rejects(AfkTrade.publishBot(mover, await sellAd(mover, MATERIALS[5])), /board_cap_reached/);
@@ -145,17 +145,17 @@ async function run() {
     assert.strictEqual((await bag(mover))[57], wallet, 'a refused buy ad leaves its money in the wallet');
     await AfkTrade.publishBot(mover, buyAd(1876, 1, 100, 'order'));
     await assert.rejects(AfkTrade.publishBot(mover, buyAd(1877, 1, 100, 'order')), /board_cap_reached/);
-    // A dwarf may show 4 lines in a store (C4); a bot's shop still holds 3.
+    // A bot's shop holds a player's store lines (C4): a dwarf's 4, a fifth is refused.
     const shopper = await makeBot(MATERIALS.map((selfId) => ({ selfId, name: `Item ${selfId}`, amount: 20 })));
     await Database.execute(['UPDATE characters SET race = 4 WHERE id = ?', [shopper]]);
-    const shopLines = await Promise.all(MATERIALS.slice(0, 4).map(async (selfId) => (await sellAd(shopper, selfId)).lines[0]));
-    await assert.rejects(Database.createAfkTradeShop(shopper, { storeType: 1, town: 'Giran', lines: shopLines }), /board_cap_reached/);
+    const shopLines = await Promise.all(MATERIALS.slice(0, 5).map(async (selfId) => (await sellAd(shopper, selfId)).lines[0]));
+    await assert.rejects(Database.createAfkTradeShop(shopper, { storeType: 1, town: 'Giran', lines: shopLines }), /at most 4 item slots/);
     assert.deepStrictEqual(await bag(shopper), Object.fromEntries(MATERIALS.map((selfId) => [selfId, 20])));
 
     // The leave rule: every record of every kind closes; items and escrow go
     // back; nothing waits on the board.
     await AfkTrade.publishBot(shopper, { storeType: 1, town: 'Giran', locX: 81000, locY: 148000, locZ: -3466,
-        appearance: {}, lines: shopLines.slice(0, 3) });
+        appearance: {}, lines: shopLines.slice(0, 4) });
     assert.strictEqual(AfkTrade.ownerRecords(mover).length, 11, "5 sell ads, 5 buy ads, 1 order");
     await AfkTrade.leave(mover);
     await AfkTrade.leave(shopper);
@@ -169,16 +169,76 @@ async function run() {
     // No lifetime: a record older than 12 hours of uptime stays open, across
     // a restart too; a deadline a world ran with is gone (migration 56).
     const keeper = await makeBot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
-    const ad = await AfkTrade.publishBot(keeper, await sellAd(keeper, 1864));
+    const ad = await AfkTrade.publishBot(keeper, { ...await sellAd(keeper, 1864),
+        town: 'Elven Village', locX: 46600, locY: 49700, locZ: 0 });
     assert.strictEqual(Number(ad.expiresAt), 0, 'a new record has no deadline');
     await Database.execute(['UPDATE afk_trade_shops SET createdAt = ?, updatedAt = ? WHERE id = ?',
         [Date.now() - 13 * HOUR, Date.now() - 13 * HOUR, ad.id]]);
     await AfkTrade._resetForTests();
     assert.strictEqual(await AfkTrade.init(), 1);
-    assert.strictEqual((await Database.fetchAfkTradeShops(keeper)).length, 1, 'a record 13 hours old stays open');
-    assert(AfkTrade.ownerRecords(keeper).length === 1 && AfkTrade.offers(1864, AfkTrade.SELL).length === 1,
-        'and stays on the board');
+    const [restoredAd] = await Database.fetchAfkTradeShops(keeper);
+    assert.strictEqual(restoredAd.id, ad.id, 'a record 13 hours old stays open');
+    assert.strictEqual(restoredAd.revision, ad.revision + 1, 'repair invalidates the old offer');
+    assert.strictEqual(restoredAd.locZ, -3060, 'the repaired height is persisted');
+    const [restoredLine] = AfkTrade.boardIndex().records.get(ad.id);
+    const restoredOffer = AfkTrade.offerOf(restoredLine);
+    assert.strictEqual(restoredOffer.locZ, -3060, 'the board publishes the repaired meeting point');
     assert.strictEqual((await bag(keeper))[1864], 10, 'the continuing conditional quote holds no extra stock');
+
+    const outlaw = await makeBot([{ selfId: 57, name: 'Adena', amount: 100000 }], true);
+    const bid = await AfkTrade.publishBot(outlaw, buyAd(1864));
+    const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
+    const floran = invoke('GameServer/Bot/Economy/MarketTownPolicy').marketTown('Floran Village');
+    const oldFloran = await AfkTrade.publishBot(outlaw, { ...buyAd(1866), town: floran.name,
+        ...ShopPlaces.fillCenter(floran.name), locZ: ShopPlaces.PLAZAS[floran.name].locZ });
+    const beforeKarma = LifeState.cachedState(outlaw);
+    await LifeState.upsertState({ ...beforeKarma, stats: { ...beforeKarma.stats, karma: 240 } }, 'test_karma');
+    await AfkTrade._resetForTests();
+    // Simulate an old stored location on a save from before ads moved on karma changes.
+    await Database.execute(["UPDATE afk_trade_shops SET town='Giran',locX=0,locY=0,locZ=0 WHERE id=?", [bid.id]]);
+    await AfkTrade.init();
+    const movedBid = await Database.fetchAfkTradeShop(bid.id);
+    assert.strictEqual(movedBid.town, floran.name);
+    assert.strictEqual(movedBid.lines[0].id, bid.lines[0].id);
+    assert.strictEqual(movedBid.lines[0].price, bid.lines[0].price);
+    const newBid = await AfkTrade.publishBot(outlaw, buyAd(1865));
+    assert.deepStrictEqual([newBid.town, newBid.locX, newBid.locY, newBid.locZ],
+        [floran.name, floran.center.locX, floran.center.locY, floran.center.locZ]);
+    const repaired = await Database.fetchAfkTradeShop(oldFloran.id);
+    assert.deepStrictEqual([repaired.locX, repaired.locY, repaired.locZ], [floran.center.locX, floran.center.locY, floran.center.locZ]);
+    assert.strictEqual(repaired.revision, oldFloran.revision + 1);
+    assert.strictEqual(await Database.repairBoardMeetingOfferLocations(), 0, 'the startup repair is idempotent');
+
+    const hotId = await makeBot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
+    const hotAd = await AfkTrade.publishBot(hotId, await sellAd(hotId, 1864));
+    const hotState = LifeState.cachedState(hotId);
+    await LifeState.upsertState({ ...hotState, phase: 'hot' }, 'test_hot_merchant');
+    const merchant = { accountId: hotState.accountName, fetchAccountId() { return this.accountId; } };
+    let liveKarma = 0;
+    merchant.actor = { session: merchant, fetchId: () => hotId, fetchKarma: () => liveKarma, fetchIsOnline: () => true,
+        fetchLocX: () => hotState.loc.locX, fetchLocY: () => hotState.loc.locY, fetchLocZ: () => hotState.loc.locZ };
+    World.insertUser(merchant);
+    try {
+        const Board = require('../src/GameServer/AfkTrade/PlayerBoardService');
+        const player = { accountId: 'test_customer', actor: { fetchId: () => 999 } };
+        const listed = town => Board.entries(player, { town, side: 1, selfId: 1864 }).entries.some(row => row.id === hotAd.id);
+        assert(listed('Giran'));
+        liveKarma = 240;
+        assert(!listed('Giran'), 'the hot actor immediately hides its old offer before the async move');
+        const notify = LifeState.notifyNearFacts;
+        try {
+            let posts = 0;
+            LifeState.notifyNearFacts = (session, reason) => { if (session === merchant && reason === 'trade_karma') posts++; };
+            await AfkTrade.merchantBecamePk(hotId);
+            assert.strictEqual(posts, 1, 'the worker gets a live-state update');
+        } finally {
+            LifeState.notifyNearFacts = notify;
+        }
+        assert.strictEqual(Number(LifeState.cachedState(hotId).stats.karma || 0), 0, 'the move does not need another life snapshot');
+        assert(listed(floran.name));
+    } finally {
+        World.user = { sessions: [], revision: 0 };
+    }
 
     // What the board owes a far bot waits for the bot's own step commit and
     // survives a restart: main never merges it (that would move the row under
@@ -195,6 +255,7 @@ async function run() {
     Database.init();
     assert(Database.boardSettlementOwners().includes(holder), 'the settlement is still known after a restart');
     await AfkTrade.init();
+    assert.strictEqual((await Database.fetchAfkTradeShop(ad.id)).revision, restoredAd.revision, 'repair only changes the broken offer once');
     assert.strictEqual((await bag(holder))[57], undefined, 'the board does not merge a far bot\'s settlement');
     const [row] = await Database.execute(['SELECT simulationRevision FROM bot_life_state WHERE characterId = ?', [holder]]);
     assert.strictEqual(Number(row.simulationRevision), stepFrom.simulation.revision, 'the deal and the board left the seller\'s row alone');
