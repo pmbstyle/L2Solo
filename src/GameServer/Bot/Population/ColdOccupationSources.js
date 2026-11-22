@@ -4,7 +4,6 @@
 // expansion are streamed; no owner holds a recipe/town graph or whole board.
 const Data = invoke('GameServer/DataCache');
 const ItemIndex = require('../../Item/ItemTemplateIndex');
-const StaticPricing = require('../Economy/StaticMerchantPricing');
 const Packet = require('../Economy/StatsPacket');
 const Routes = require('../Travel/TravelRoutes');
 const Towns = require('../../World/TownRespawn');
@@ -15,12 +14,12 @@ const OfferQuery = require('../Economy/OfferQuery');
 const ShotSalePolicy = require('../Economy/ProductionSalePolicy');
 const { QUOTE_DEPTH } = Price;
 const EMPTY = Object.freeze([]);
-let fixedBuy, npcOfferView, mpRates, townByName, townOrdinal, gearByRank;
+let npcOfferView, mpRates, townByName, townOrdinal, gearByRank;
 const npcOffersFor = id => npcOfferView?.offersFor(id) || EMPTY;
 
 function initialise() {
-    if (fixedBuy) return;
-    fixedBuy = new Map(); mpRates = new Map();
+    if (mpRates) return;
+    mpRates = new Map();
     gearByRank = new Map();
     townByName = new Map(); townOrdinal = new Map();
     for (const town of Object.values(Towns.towns)) { townOrdinal.set(town.name, townOrdinal.size); townByName.set(town.name, town); }
@@ -29,16 +28,6 @@ function initialise() {
     npcOfferView = require('../../Knowledge/GameDataCatalogue').native().npcTownOffers();
     require('../../Knowledge/CrystalCatalog').coldGearByRank(Data.items || [],
         item => invoke('GameServer/Bot/Economy/MarketCounters').counterOf(item.selfId), gearByRank);
-    for (const [buyerName, store] of Object.entries(invoke('GameServer/Bot/MerchantStoreConfigs'))) {
-        if (Number(store.storeType) !== 3 || !store.town) continue;
-        for (const line of store.items || []) {
-            const id = Number(line.selfId), price = StaticPricing.botPriceFor(store, line);
-            if (!(price > 0) || !Number.isFinite(price)) continue;
-            if (!fixedBuy.has(id)) fixedBuy.set(id, []);
-            fixedBuy.get(id).push(Object.freeze({ type: 'static', buyerName, town: store.town,
-                staticId: fixedBuy.get(id).length + 1, price, count: Math.max(0, Number(line.count || 0)), repeatable: true }));
-        }
-    }
     // Exact native seated recovery is static in class/level on this branch.
     const Rest = invoke('GameServer/Bot/Population/ColdRest');
     require('../../Knowledge/RecoveryCatalog').seatedMpRates(Data.classTemplates, Rest, mpRates);
@@ -81,25 +70,12 @@ const { regionalTown, details: tripDetails } = EconomicTrip;
 function recipeIndex(board) {
     initialise();
     return invoke('GameServer/Bot/Economy/RecipeProductionIndex').forBoard(board, {
-        fixedBuyer: recipe =>
-        !!require('../Economy/ShotTradeDemand').forecast(recipe.productId)
-        || !Production.buyersDisabled() && String(ItemIndex.find(Data.items, recipe.productId)?.template?.kind || '').startsWith('Other.Material')
-            && !!fixedBuy.get(Number(recipe.productId))?.length });
-}
-
-// The same enabled fixed material buyers feed production actions, the
-// finite wish graph and an owned item's value, for a seller the fixed
-// buyers admit (ProductionPolicy.sellsToFixedBuyer). These are supported
-// authored exits, not player forecasts.
-function fixedBuyerOffersFor(id, seller) {
-    initialise();
-    return Production.sellsToFixedBuyer(seller, ItemIndex.find(Data.items, Number(id))?.template?.kind)
-        ? fixedBuy.get(Number(id)) || EMPTY : EMPTY;
+        standingDemand: recipe => !!require('../Economy/ShotTradeDemand').forecast(recipe.productId) });
 }
 
 // One value of an owned item for the wish and the producer:
 // what the bot gets selling one unit now. NPC buyback, the top
-// QUOTE_DEPTH board bids of others and the enabled fixed buyers.
+// QUOTE_DEPTH board bids of others (a bot sells to no fixed buyer).
 function* exitValue(state, id, board = null) {
     initialise();
     const item = ItemIndex.find(Data.items, Number(id));
@@ -110,7 +86,6 @@ function* exitValue(state, id, board = null) {
         if (Number(line.ownerId) === Number(state.characterId)) { yield 'quote'; continue; }
         value = Math.max(value, Number(line.price || 0)); yield 'quote';
     }
-    for (const exit of fixedBuyerOffersFor(id, state)) { value = Math.max(value, exit.price); yield 'quote'; }
     return Number.isFinite(value) ? Math.max(0, value) : NaN;
 }
 
@@ -201,10 +176,6 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
                 trip: trip(line.town), tripDetails: details, repeatable: false });
             yield 'quote';
         }
-        for (const exit of fixedBuyerOffersFor(recipe.productId, owner)) {
-            const details = yield* ensureTrip(exit.town);
-            result.push({ ...exit, trip: trip(exit.town), tripDetails: details }); yield 'quote';
-        }
         for (const exit of result) {
             if (exit.type !== 'afk') { yield 'exit'; continue; }
             const { cheaperUnits, limit } = Price.exitCompetition(board?.list(recipe.productId, 1) || [],
@@ -283,9 +254,8 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
 }
 
 module.exports = { initialise, prepare, exitValue, craftLabour, reservations, canSell, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
-    fixedBuyerOffersFor,
     hasNpcSellerInTown: town => { initialise(); return npcOfferView?.hasSellerInTown(town) || false; },
     npcOffersFor,
     catalogCounts: () => ({ npcItems: npcOfferView?.itemCount || 0,
         npcQuotes: npcOfferView?.quoteCount || 0,
-        staticBuyItems: fixedBuy?.size || 0, teleportEdges: Routes.teleportPoints().length, townPairs: townByName?.size || 0 }) };
+        teleportEdges: Routes.teleportPoints().length, townPairs: townByName?.size || 0 }) };

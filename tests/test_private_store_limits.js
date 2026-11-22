@@ -26,6 +26,8 @@ try {
     DataCache.items = originalItems;
 }
 
+// A bot's race is its class's (the class templates).
+DataCache.init();
 for (const [race, sell, buy] of [[0, 3, 4], [1, 3, 4], [2, 3, 4], [3, 3, 4], [4, 4, 5]]) {
     for (const level of [0, 3, 8]) {
         const actor = { fetchRace: () => race, fetchId: () => 1, fetchName: () => 'Trader',
@@ -66,6 +68,13 @@ for (const [race, sell, buy] of [[0, 3, 4], [1, 3, 4], [2, 3, 4], [3, 3, 4], [4,
                 assert(!sent.some(packet => packet[0] === 0x4a), 'overflow does not send overhead speech');
             } finally { Store[name] = original; }
         }
+        // A bot's shop holds the same lines, read from its state: its class's race and
+        // the Expand Trade level its kit learned.
+        const classId = { 0: 0, 1: 18, 2: 31, 3: 44, 4: 53 }[race];
+        const bot = { characterId: 9000 + race, level: 40, stats: { classId,
+            coldCombat: { skillSource: 'database', skills: level ? [{ selfId: 1370, level }] : [] } } };
+        assert.strictEqual(Limits.forState(bot, 1), sell + level, `a bot of race ${race} sells on the player's lines`);
+        assert.strictEqual(Limits.forState(bot, 3), buy + level, `a bot of race ${race} buys on the player's lines`);
     }
 }
 console.log('Private store limit and packet checks passed');

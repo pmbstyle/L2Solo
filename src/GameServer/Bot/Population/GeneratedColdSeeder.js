@@ -47,6 +47,13 @@ const STARTER_REGION_RACES = Object.freeze({
 const CRAFT_SERVICE_PROFILE = { race: 4, classId: CraftShopService.STATION_CRAFTER.classId, role: 'crafter', serviceCrafter: true };
 const CRAFT_SERVICE_COUNT = CraftShopService.CraftStations.length;
 const CRAFT_SERVICE_INDEX_BASE = 10000;
+// The station traders (SupplierRoles.SEATS): a first-class dwarf each (our choice: a
+// trader needs no level, C4 trade has none), seated in its town for good. Its shop holds
+// a dwarf's 4 sell lines at any level (PrivateStoreLimits): no class's skill tree
+// teaches Expand Trade.
+const TRADER_PROFILE = { race: 4, classId: 53, role: 'trader' };
+const TRADER_LEVEL = 19;
+const TRADER_INDEX_BASE = 11000;
 
 function pick(index, list) {
     return list[index % list.length];
@@ -645,6 +652,48 @@ const GeneratedColdSeeder = {
                             if (saved && shouldSeedState) seeded += 1;
                             return saved;
                         });
+                }));
+        }).then(() => this.ensureStationTraders()).then((traders) => ({
+            created: created + traders.created, seeded: seeded + traders.seeded }));
+    },
+
+    // One bot per trader seat (SupplierRoles.SEATS), made once on the craft services' pass:
+    // its account slot is its seat; it stands at its town's centre as a merchant with its
+    // shop opened there (stats.shopTown), and never hunts. A seat's existing row is kept
+    // as it is (its stock and wallet are its own).
+    ensureStationTraders() {
+        const SupplierRoles = invoke('GameServer/Bot/Economy/SupplierRoles');
+        const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+        let created = 0;
+        let seeded = 0;
+        return cooperativeEach(SupplierRoles.SEATS, ({ slot, town }) => {
+            const index = TRADER_INDEX_BASE + slot;
+            const username = `bot_trade_${String(slot + 1).padStart(2, '0')}`;
+            const base = { ...TRADER_PROFILE, sex: sexForIndex(index) };
+            const center = ListingService.townCenter(town);
+            const seedProfile = { level: TRADER_LEVEL, band: 'station_trader', spot: { id: null, center } };
+            return ensureAccount(username)
+                .then(() => ensureCharacter(username, index, base, seedProfile))
+                .then((result) => LifeState.findByCharacterId(result.character.id).then((existing) => {
+                    if (existing) return existing;
+                    const initial = stateFor(result.character, index, { ...result, base, seedProfile });
+                    return LifeState.upsertState({
+                        ...initial,
+                        activity: 'merchant', homeRegion: town, currentRegion: town, loc: { ...center },
+                        timing: { ...initial.timing, nextResolveAt: null },
+                        // A service, not the generated population (generatedCold): no party,
+                        // clan or population count takes it, as no craft station.
+                        stats: { ...initial.stats, generatedCold: false, stationTrader: { slot, town },
+                            shopTown: { town, at: Date.now() } }
+                    }, 'generated_station_trader').then(async (saved) => {
+                        if (saved && result.created) created += 1;
+                        if (!saved) return saved;
+                        seeded += 1;
+                        // Seated, it stands in its town: its first step stocks and lists its stall.
+                        await invoke('GameServer/Bot/AI/DecisionEvents').raiseFar(saved.characterId,
+                            [{ name: 'arrived_town' }], 'station_trader_seated');
+                        return saved;
+                    });
                 }));
         }).then(() => ({ created, seeded }));
     },

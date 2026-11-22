@@ -32,7 +32,6 @@ const TradeMeetingService = require('../../AfkTrade/TradeMeetingService');
 const BuyAdPolicy = require('./BuyAdPolicy');
 const ArrowStock = require('../../Inventory/ArrowStock');
 const BeginnerShots = require('../../Items/C4BeginnerShots');
-const MAX_LINES = BoardRules.BOT_SHOP_LINES;
 const reviewedInventory = new Map();
 const pending = new Map();
 
@@ -203,8 +202,9 @@ const lineKey = line => `${Number(line.selfId)}:${Number(line.enchant || 0)}`;
 // The bot's shop lines and what it lists past them (sell ads), from the
 // sale decision (MarketListingPolicy.evaluate) on its bag and its shop: a kept
 // line keeps its price (the bot's own look reprices it, MarketPricing.look); a new
-// one is listed at the bot's ask. The most valuable unit asks fill the shop
-// first; the rest become ads. Returns { lines, listed, listings }.
+// one is listed at the bot's ask. The listings in their board order
+// (MarketListingPolicy.prioritizeListings) fill the shop first; the rest become
+// ads in the same order. Returns { lines, listed, listings } (listings ranked).
 function sellLines(state, stock, inventory, evaluateOptions = {}) {
     const existing = stock?.storeType === AfkTrade.SELL
         ? stock.lines.filter((line) => Number(line.count) > 0).map((line) => ({
@@ -226,9 +226,9 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
     const listed = new Map((classified.decisions || [])
         .filter((decision) => decision.action === 'list')
         .map((decision) => [lineKey(decision.item), decision]));
-    const next = [];
+    const next = [], maxLines = BoardRules.shopLines(state, AfkTrade.SELL);
     const keepExisting = (line) => {
-        if (next.length >= MAX_LINES) return;
+        if (next.length >= maxLines) return;
         const available = Math.max(0, Number(remaining.get(lineKey(line)) || 0));
         if (!available) return;
         const count = Math.min(line.count, available);
@@ -236,7 +236,7 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
         remaining.set(lineKey(line), available - count);
     };
     const appendListing = (listing) => {
-        if (next.length >= MAX_LINES) return;
+        if (next.length >= maxLines) return;
         const available = inventory.filter((row) => Number(row.selfId) === Number(listing.selfId)
             && !row.equipped && Number(row.amount) > 0 && Number(row.enchant || 0) === Number(listing.enchant || 0));
         for (const row of available) {
@@ -267,12 +267,13 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
             break;
         }
     };
-    for (const listing of ListingPolicy.prioritizeListings(listings, { board: AfkTrade.boardIndex(),
-        characterId: state.characterId, timestamp: evaluateOptions.now })) {
+    const ranked = ListingPolicy.prioritizeListings(listings, { board: AfkTrade.boardIndex(),
+        characterId: state.characterId, timestamp: evaluateOptions.now });
+    for (const listing of ranked) {
         existing.filter(line => lineKey(line) === lineKey(listing)).forEach(keepExisting);
         appendListing(listing);
     }
-    return { lines: next.filter(viableSellLine).slice(0, MAX_LINES), listed, listings };
+    return { lines: next.filter(viableSellLine).slice(0, maxLines), listed, listings: ranked };
 }
 
 // The sale decision (MarketListingPolicy.evaluate) over the bot's bag and its
@@ -636,7 +637,7 @@ async function publishSellShop(ownerId, state, stock, lines, town, row, inventor
 
 // The record-backed equivalent of the author's market stall: a
 // bot in a market town lists what the listing policy would put on a stall.
-// Its shop takes up to MAX_LINES lines (kept lines first, as a review keeps
+// Its shop takes its private store's lines (BoardRules.shopLines; kept lines first, as a review keeps
 // them); each listing past the shop becomes a sell ad, up to the bot's cap;
 // what fits nowhere stays in the bag. A shop stands where it was opened; a
 // new one opens in the town the bot chose for it (MarketTownPolicy.openingTown,
@@ -664,15 +665,18 @@ async function listOnBoard(state, options = {}) {
     let shopTown = null;
     const visitTown = state.activity === 'shopping' && ShopPlaces.hasPlaza(state.currentRegion)
         && invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state) ? state.currentRegion : null;
-    const town = sale.lines.length ? stock?.town || options.planTowns?.get(lineKey(sale.lines[0]))
-        || options.planTowns?.get(Number(sale.lines[0].selfId))
+    // A worker plan names its shop's town (executePlan checked it); a supplier's shop stands
+    // in its held store town (stats.storeTown, SupplierRoles.storeTown); any other standing
+    // shop stays where it stands.
+    const town = sale.lines.length ? options.planTowns?.get(lineKey(sale.lines[0]))
+        || options.planTowns?.get(Number(sale.lines[0].selfId)) || state.stats?.storeTown?.town || stock?.town
         || state.stats?.shopTown?.town || visitTown || MarketTownPolicy.openingTown(state, sale.lines, options.now).town : null;
-    if (town && !stock && town !== state.currentRegion) {
-        // The shop opens in its own town: the bot goes there with its lines.
+    if (town && town !== state.currentRegion && stock?.town !== town) {
+        // The shop opens (or a supplier's moves) in its own town: the bot goes there with its lines.
         shopTown = town;
         shop = { lines: sale.lines };
     } else if (town) {
-        if (stock && sameSellOrder(stock, sale.lines)) {
+        if (stock && stock.town === town && sameSellOrder(stock, sale.lines)) {
             listed += sale.lines.length;
         } else {
             const published = await publishSellShop(ownerId, state, stock || current, sale.lines, town, row, inventory);
@@ -821,7 +825,7 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
     }
     if (plan.bidLimits?.length) await run(async () => {
         if (!stillPrepared()) throw Error('economy_plan_need_changed');
-        if (!Array.isArray(plan.bidLimits) || plan.bidLimits.length > MAX_LINES + BoardRules.BOT_RECORDS.buy_ad) throw Error('economy_plan_bid_cap');
+        if (!Array.isArray(plan.bidLimits) || plan.bidLimits.length > BoardRules.buyWants(state)) throw Error('economy_plan_bid_cap');
         const reprices = [], withdrawals = [], seen = new Set(), ads = buyAds(ownerId);
         for (const row of plan.bidLimits) {
             if (!Array.isArray(row) || row.length !== 6 || !row.every(Number.isSafeInteger)
@@ -969,9 +973,10 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
         const current = AfkTrade.findOwnerProjection(ownerId)?.shop;
         const shop = Number(current?.storeType) === AfkTrade.SELL ? current : null;
         if (plan.shop) {
-            if (state.phase !== 'cold' || (current ? current.town !== plan.shop
-                : state.activity !== 'shopping' || state.currentRegion !== plan.shop
-                    || !invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state)))
+            // Its standing shop's town, or the town it stands in (a new shop, or a supplier's
+            // shop moving to its store town: SupplierRoles.storeTown).
+            if (state.phase !== 'cold' || current?.town !== plan.shop && (state.activity !== 'shopping'
+                || state.currentRegion !== plan.shop || !invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state)))
                 return { state, reason: 'shop_visit_changed' };
             return listOnBoard(state, { decided: { listings }, planTowns, priority: plan.buyShop });
         }
@@ -983,7 +988,7 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
     // An earlier native improvement/craft may have filled the root or
     // changed its inputs. Publishing its old certificate at the new revision
     // would manufacture fresh authority from stale need. Keep it pending.
-    const filledAd = () => (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).some(row => filledSince(row[0]));
+    const filledAd = () => (plan.buyAds || []).slice(0, BoardRules.buyWants(state)).some(row => filledSince(row[0]));
     let buyPending = Object.hasOwn(plan, 'buyAds') && (!stillPrepared() || filledAd());
     const published = Object.hasOwn(plan, 'buyAds') && !buyPending ? await run(async () => {
         if (!stillPrepared()) throw Error('economy_plan_need_changed');
@@ -1001,7 +1006,7 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
         // A survival item's ad may spend its kit cost from the survival
         // reserve, as the meeting and the NPC restock do (each item once):
         // the tranche the worker decided the bid with (plan.buyKit).
-        let wanted = (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).map((row, at) => {
+        let wanted = (plan.buyAds || []).slice(0, BoardRules.buyWants(state)).map((row, at) => {
             const [selfId, count, price] = row;
             const intent = row.length === 9 ? require('./TradeIntent').decode(row) : null;
             const survivalCost = Math.max(0, Math.round(Number(plan.buyKit?.[at]) || 0));
@@ -1026,7 +1031,7 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
         wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(Packet.moneyPrice(state.stats?.money)), escrow,
             BuyAdPolicy.heldPurchaseRoot(invoke('GameServer/Bot/Goals/NeedsEvaluator').goal(state)));
         let town = buyAdTown(state, ads, wanted);
-        for (let pass = 0; pass <= MAX_LINES + BoardRules.BOT_RECORDS.buy_ad; pass++) {
+        for (let pass = 0; pass <= BoardRules.buyWants(state); pass++) {
             wanted = BuyAdPolicy.retainedLines(budgetState, wanted, owned, town);
             const nextTown = buyAdTown(state, ads, wanted);
             if (!wanted.length || nextTown === town) break;

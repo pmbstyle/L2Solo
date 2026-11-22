@@ -32,6 +32,8 @@ const { SELL } = require('../../AfkTrade/BoardIndex');
 const BoardRules = require('../../AfkTrade/BoardRules');
 const Diagnostics = require('./EconomyDiagnostics');
 const PriceBelief = require('./PriceBelief');
+const { GRADED_SHOTS } = require('./ProductionPolicy');
+const ShotPricing = require('./StaticMerchantPricing');
 const { fnv1a32 } = require('../Fnv1a');
 const engine = new WishNetwork();
 const Trip = require('./EconomicTrip');
@@ -468,7 +470,6 @@ function resolved(state, deps, production = true) {
     // Production sources and recipe books belong to the full wish review.
     if (production) {
         if (typeof deps.knownRecipes === 'function') deps.knownRecipes = deps.knownRecipes(state.characterId);
-        if (!deps.fixedProductionOffersFor) deps.fixedProductionOffersFor = invoke('GameServer/Bot/Population/ColdOccupationSources').fixedBuyerOffersFor;
         if (!deps.producerSource && deps.board) deps.producerSource = defaultProducerSource;
         if (typeof deps.producerSource === 'function') {
             const source = deps.producerSource(state, deps.board);
@@ -512,6 +513,11 @@ function personaOf(state, deps) {
 // its prices with it: WishProviders). A belief peeked first serves the price
 // read after it: price(id) reads id itself, so the watched board's read of
 // the belief adds nothing.
+// A graded shot has no belief: its price is what the bot pays for it
+// (StaticMerchantPricing.botBuyPrice: the board's cheapest ask, at most the
+// crafters' ask ceiling), the one price its hunt hour, shot use, kit reserve,
+// stock wish and crafters' demand row read. Past deals and the craft estimate
+// are no price a bot can buy it at.
 function pricing(state, persona, board, timestamp, deps, read = () => {}, prices = new Map(), peekBoard = board) {
     const knowledgeEnabled = deps.knowledgeEnabled ?? Knowledge.knowledgeEnabled();
     const priceCtx = { characterId: state.characterId, understanding: persona.understanding ?? 0.3,
@@ -524,14 +530,18 @@ function pricing(state, persona, board, timestamp, deps, read = () => {}, prices
     return { knowledgeEnabled, prices, beliefs, beliefFor, price: id => {
         read(id);
         if (!prices.has(Number(id))) {
-            if (peeked.has(Number(id)) && !beliefs.has(Number(id))) beliefs.set(Number(id), peeked.get(Number(id)));
-            const belief = beliefFor(id);
-            prices.set(Number(id), belief ? Math.exp(belief.mu) : 0);
+            if (GRADED_SHOTS.has(Number(id))) prices.set(Number(id), ShotPricing.botBuyPrice(id));
+            else {
+                if (peeked.has(Number(id)) && !beliefs.has(Number(id))) beliefs.set(Number(id), peeked.get(Number(id)));
+                const belief = beliefFor(id);
+                prices.set(Number(id), belief ? Math.exp(belief.mu) : 0);
+            }
         }
         return prices.get(Number(id));
     }, peek: id => {
         id = Number(id);
         if (prices.has(id)) return prices.get(id);
+        if (GRADED_SHOTS.has(id)) return ShotPricing.botBuyPrice(id);
         if (!beliefs.has(id) && !peeked.has(id)) peeked.set(id, PriceBelief.prior(id, { ...priceCtx, board: peekBoard }) || null);
         const belief = beliefs.has(id) ? beliefs.get(id) : peeked.get(id);
         return belief ? Math.exp(belief.mu) : 0;
@@ -1249,7 +1259,7 @@ function buildForState(state, deps) {
     Object.assign(context, valueReaders(state, network, projection.values, persona, knowledgeEnabled,
         base.kitCost, () => context.statsPacket.money));
     context.watchList = TradeIntent.project(state, network, projection, id => context.worth(id) ?? price(id),
-        BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad, context.board, context.trip?.details, base.survivalReserve);
+        BoardRules.buyWants(state), context.board, context.trip?.details, base.survivalReserve);
     context.intentPending = context.watchList === null;
     context.watchList ||= [];
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
@@ -1273,8 +1283,11 @@ function buildForState(state, deps) {
                 build: [network.activity?.key || network.focus?.[0], held?.plan.network?.activity?.key || held?.plan.network?.focus?.[0]],
                 bag: bag.bagClear ? ['clear', bag.bagClear.freed, bag.bagClear.value] : [bag.cleanupDue?.reason || 'none'] } }) };
     // The money queue's cumulative costs (its money thresholds, Sections.snapshot): the
-    // focus's and the gear plan's market piece's (goal_affordable:focus), the held leaf's
-    // funded row's (out_of_money).
+    // focus's, the gear plan's market piece's and the unfunded shot stock's (its root stands
+    // only below its line: goal_affordable:focus), the held leaf's funded row's (out_of_money).
+    // A shot stock the reserve holds whole (kitCost) is funded first once the wallet holds its
+    // price (WishNetwork reservePaid), wherever the queue ranks it below that: its threshold
+    // is that price, never the gear ranked ahead of it.
     const gearPlan = state.stats?.equipmentPlan;
     const planned = gearPlan?.strategy === 'market' && gearPlan.status === 'active' ? Number(gearPlan.target?.selfId) || 0 : 0;
     let cumulative = base.refillReserve;
@@ -1282,6 +1295,8 @@ function buildForState(state, deps) {
         cumulative += cashCharge(wish);
         if (wish.key === network.focus?.[0]) context.goalBudget = cumulative;
         if (planned && !context.plannedBudget && Network.rootItem(wish.key) === planned) context.plannedBudget = cumulative;
+        if (wish.key === 'stock:shots' && !wish.funded) context.stockBudget = base.kitCost(wish.object?.itemId) >= wish.price
+            ? Math.min(cumulative, wish.price) : cumulative;
         if (wish.key === network.activity?.rootKey && wish.funded) context.leafBudget = cumulative;
     }
     // The build's facts for its baseline, read over the state it leaves: the bag its clearing
@@ -1591,7 +1606,7 @@ function view(state, plan, deps, built = {}) {
         || state.stats?.equipmentPlan?.strategy === 'craft' && state.stats?.equipmentPlan?.status === 'active'
         || state.stats?.equipmentPlan?.status === 'deferred' && state.stats?.equipmentPlan?.reason === 'wish_focus') {
         const watch = TradeIntent.project(state, network, context.projection,
-            id => context.worth(id) ?? price(id), BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad,
+            id => context.worth(id) ?? price(id), BoardRules.buyWants(state),
             context.board, context.trip?.details, context.survivalReserve);
         if (watch) context.watchList = Agenda.bidsAfter(watch, network.filled);
     }

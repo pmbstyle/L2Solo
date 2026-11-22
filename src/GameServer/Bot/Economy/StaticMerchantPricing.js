@@ -1,6 +1,7 @@
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
+const PriceAnchor = require('./PriceAnchor');
 // The NPC side is the one NPC price table (town sellers, cheapest row), main's
 // and the workers' snapshot of it.
 const { npcPriceOf } = invoke('GameServer/Bot/Economy/BotMarketPricing');
@@ -11,8 +12,6 @@ const production = require('./ProductionPolicy');
 const FixedShotOffers = require('./FixedShotOffers');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const { isMainThread } = require('node:worker_threads');
-const NpcShopPriceScale = require('../../World/Generics/NpcShopPriceScale');
-const ProgressionRates = invoke('GameServer/ProgressionRates');
 
 const BUYBACK_RATIO = 0.9;
 let boardSource = null;
@@ -21,30 +20,39 @@ function basePrice(selfId) {
     return Number(ItemTemplateIndex.find(DataCache.items, selfId)?.template?.price || 0);
 }
 
-// A configured store sells at the datapack price, x1 at every preset (the
-// maintainer's rule, econ decision 450: shop prices do not follow the server's
-// adena rate). The gear reserve (npcRate) sells at npcRate x the datapack price.
+// A configured store line (the player's) sells at the datapack price x its priceRate
+// x the server's Adena rate (BotEconomyPricing): x50 at x50, like the hunt Adena that
+// pays for it. A hidden reserve row (a bot's only static row) sells at its npcRate x
+// the bot-side anchor (PriceAnchor), a spoiler scroll row (boardMarkup) at its npcRate
+// x the datapack price until the board has deals (FixedShotOffers.priced). Our rule;
+// the NPC shops keep C4's datapack price.
 function configuredPrice(line) {
     if (line.price !== undefined) return Number(line.price);
     const base = basePrice(line.selfId);
-    if (line.npcRate !== undefined) return Math.max(1, Math.round(base * line.npcRate));
-    return Math.max(1, Math.round(base > 0 ? base * (line.priceRate ?? 1) : 1));
+    if (line.reserve === true && line.npcRate !== undefined)
+        return Math.max(1, Math.round(line.npcRate * (line.boardMarkup ? base : PriceAnchor.anchor(line.selfId))));
+    return BotEconomyPricing.scalePrice(Math.max(1, Math.round(base > 0 ? base * (line.priceRate ?? 1) : 1)));
 }
 
 // What a fixed buy line pays, one price for a bot and a player. Our choice,
 // not C4 (C4 gives only the NPC buy-back at half the datapack price): the
-// merchant pays half again the NPC buy-back, or a quarter of the datapack
-// price at the adena rate where that is more, so a buy store reads as a
-// plausible buyer at x1 and at x50 alike. An explicit line price replaces
-// both. It stays under 0.9 of the cheapest repeatable NPC or fixed-store
-// supply, so nobody buys an item to sell it straight back here.
+// merchant pays half again the NPC buy-back x the server's Adena rate, so a
+// buy store reads as a plausible buyer at x1 and at x50 alike. An explicit
+// line price replaces it. It stays under 0.9 of the cheapest repeatable NPC or
+// fixed-store supply, so nobody buys an item to sell it straight back here.
 const BUY_OVER_NPC = 1.5;
-const BUY_BASE_SHARE = 0.25;
 function buyLinePrice(line) {
     const base = basePrice(line.selfId);
     const price = line.price !== undefined ? Number(line.price)
-        : Math.max(Math.floor(NpcSellRules.npcBuyPrice(base) * BUY_OVER_NPC), BotEconomyPricing.scalePrice(base * BUY_BASE_SHARE));
-    return Math.min(price, Math.floor(cheapestPurchase(line.selfId) * BUYBACK_RATIO));
+        : BotEconomyPricing.scalePrice(Math.floor(NpcSellRules.npcBuyPrice(base) * BUY_OVER_NPC));
+    return Math.min(price, buyCeiling(line.selfId));
+}
+
+// The most any standing bid pays for an item (a fixed buy line, a crafter's material
+// bid): under 0.9 of its cheapest repeatable NPC or fixed-store supply, so nobody buys
+// it to sell it straight back; Infinity where nothing sells it.
+function buyCeiling(selfId) {
+    return Math.floor(cheapestPurchase(selfId) * BUYBACK_RATIO);
 }
 
 // A bot is paid the line price alone: it reaches a board bid through its own
@@ -53,22 +61,18 @@ function botPriceFor(store, line) {
     return Number(store.storeType) === BUY ? buyLinePrice(line) : configuredPrice(line);
 }
 
-// Configured supply is independent of the board: bots keep its original
-// price until 3.6. Index it once per loaded config, effective Adena rate and
-// progression multiplier (the NPC price scale of npcRate lines).
+// Configured supply is independent of the board. Index it once per loaded config
+// and rate profile (the Adena rate of the player's rows, the anchor's rates).
 let fixedConfig = null;
 let fixedRate = null;
-let fixedMultiplier = null;
 let sellers = new Map();
 let fixedMinimums = new Map();
 function refreshFixedOffers() {
     const config = invoke('GameServer/Bot/MerchantStoreConfigs');
-    const rate = BotEconomyPricing.economyRate();
-    const multiplier = ProgressionRates.profile().multiplier;
-    if (fixedConfig === config && fixedRate === rate && fixedMultiplier === multiplier) return;
+    const rates = invoke('GameServer/ProgressionRates').profile(), rate = `${rates.adena}:${rates.exp}`;
+    if (fixedConfig === config && fixedRate === rate) return;
     fixedConfig = config;
     fixedRate = rate;
-    fixedMultiplier = multiplier;
     sellers = new Map();
     fixedMinimums = new Map();
     const openMinimums = new Map();
@@ -78,15 +82,16 @@ function refreshFixedOffers() {
             if (!(Number(line.count ?? 1) > 0)) continue;
             const id = Number(line.selfId);
             const price = configuredPrice(line);
-            // A row sold to named classes only (a crafter's gear row) is no buyer's price
-            // where an open row sells the item; a scroll sold to the spoiler line only keeps its.
-            if (!line.buyerClasses) openMinimums.set(id, Math.min(openMinimums.get(id) ?? Infinity, price));
+            // A row sold to named classes or a role only (a crafter's or trader's gear row) is no
+            // buyer's price where an open row sells the item; a scroll sold to the spoiler line only keeps its.
+            if (!line.buyerClasses && !line.buyerRole) openMinimums.set(id, Math.min(openMinimums.get(id) ?? Infinity, price));
             fixedMinimums.set(id, Math.min(fixedMinimums.get(id) ?? Infinity, price));
             if (store.town) {
                 if (!sellers.has(id)) sellers.set(id, []);
                 sellers.get(id).push({ town: store.town, price, sourceName: name, reserve: line.reserve === true,
                     ...(line.buyerClasses ? { buyerClasses: line.buyerClasses, hourlyStock: Number(line.hourlyStock) } : {}),
-                    ...(line.valve ? { valve: line.valve } : {}),
+                    ...(line.buyerRole ? { buyerRole: line.buyerRole } : {}),
+                    ...(line.consignment ? { consignment: true } : {}),
                     ...(line.boardMarkup ? { boardMarkup: Number(line.boardMarkup) } : {}) });
             }
         }
@@ -95,13 +100,19 @@ function refreshFixedOffers() {
 }
 
 // The cheapest repeatable supply of an item: NPC shops and the configured city
-// stores. forBot: only where a bot may buy it (the configured reserve rows,
-// FixedShotOffers: a city store sells a bot its shots and its reserve gear
-// lines), the one price every bot purchase path reads.
+// stores. forBot: only where a bot may buy it (the NPC, the configured reserve
+// rows: FixedShotOffers), the one price every bot purchase path reads; a graded
+// shot's is the crafters' ask ceiling (CrafterStock.shotCeiling: they alone sell
+// it to bots).
 function cheapestPurchase(selfId, { forBot = false } = {}) {
     refreshFixedOffers();
     const id = Number(selfId);
+    if (forBot && production.GRADED_SHOTS.has(id)) return require('./CrafterStock').shotCeiling(id);
     const minimum = forBot ? FixedShotOffers.lowestPrice(id) : fixedMinimums.get(id) ?? Infinity;
+    // A reserve piece reaches a bot only through a supplier's board line, priced up to
+    // the suppliers' ask ceiling (its anchor), never at the suppliers' consignment cost.
+    if (forBot && Number.isFinite(minimum) && require('./PriceAnchor').anchor(id) > 0)
+        return require('./CrafterStock').askCeiling(id);
     return forBot && !production.allowsNpcShot(id) ? minimum : Math.min(minimum, npcPriceOf(id));
 }
 
@@ -173,16 +184,17 @@ function botNpcListPrice(selfId) {
     return require('./ProductionPolicy').allowsNpcShot(id) ? npcPriceOf(id) : Infinity;
 }
 
-// A graded shot's replacement cost is the public stock price, else recent
-// paid trades, else the native materials-and-labour estimate. These are
-// valuations, not an unlimited supply or permission to buy from a fixed shop.
-function shotPrice(id, npc) {
+// A graded shot's replacement cost: the board's cheapest public ask, at most the
+// crafters' ask ceiling (`ceiling`: cheapestPurchase's); with no ceiling (the switch
+// removes the crafters' shots) and no ask, recent paid trades, else the native
+// materials-and-labour estimate. A valuation, not a supply.
+function shotPrice(id, ceiling) {
     const board = boardSource ? boardSource()
         : isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null;
     const ask = board?.first(id, SELL, { enchant: 0,
         accept: row => ['shop', 'sell_ad'].includes(row.kind) && Number(row.count) > 0
             && Number(row.price) > 0 && Number.isFinite(Number(row.price)) });
-    const quoted = Math.min(npc, Number(ask?.price || Infinity));
+    const quoted = Math.min(ceiling, Number(ask?.price || Infinity));
     if (Number.isFinite(quoted)) return quoted;
     const counters = require('./MarketCounters');
     const evidence = counters.itemPriceEvidence(id);
@@ -194,9 +206,9 @@ function shotPrice(id, npc) {
 // The common consumable valuation of the hunt model, stock and shot-use policy.
 function botBuyPrice(id) {
     const npc = cheapestPurchase(id, { forBot: true });
-    if (require('./ProductionPolicy').GRADED_SHOTS.has(Number(id))) return shotPrice(Number(id), npc);
-    return Number.isFinite(npc) ? npc : Math.max(0, Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0));
+    const price = production.GRADED_SHOTS.has(Number(id)) ? shotPrice(Number(id), npc) : npc;
+    return Number.isFinite(price) ? price : Math.max(0, basePrice(id));
 }
 
-module.exports = { BUYBACK_RATIO, botPriceFor, configuredPrice, buyQuote, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), botNpcListPrice, botBuyPrice,
+module.exports = { BUYBACK_RATIO, botPriceFor, buyCeiling, configuredPrice, buyQuote, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), botNpcListPrice, botBuyPrice,
     priceFor, sellersOf, useBoard: source => { boardSource = source; } };

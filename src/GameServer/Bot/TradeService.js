@@ -57,15 +57,13 @@ function nativeStoreItems(store) {
     return (store?.items || []).filter(item => item.reserve !== true && WireD.isRepresentable(item.price));
 }
 
-// A static buyer takes anything a player sells it; a bot passes the fixed
-// buyers' one seller gate (ProductionPolicy.sellsToFixedBuyer: a gnome's
-// materials). Preview and queued execution share this gate so neither buyer
-// selection nor a direct/stale arrival bypasses it.
-function acceptsSellerItem(actor, storeItem, inventoryItem) {
+// A static buyer takes anything a player sells it and nothing from a bot (our
+// rule: the configured city stores serve players; a bot sells to the board, a
+// crafter's bid or the NPC). Preview and queued execution share this gate so
+// neither buyer selection nor a direct/stale arrival bypasses it.
+function acceptsSellerItem(actor, storeItem) {
     if (BeginnerShots.isRestricted(storeItem.selfId)) return false;
-    return !storeItem[staticPriceSource] || !isBotActor(actor)
-        || require('./Economy/ProductionPolicy').sellsToFixedBuyer(actor,
-            inventoryItem?.fetchKind?.() || itemTemplate(storeItem.selfId)?.template?.kind);
+    return !storeItem[staticPriceSource] || !isBotActor(actor);
 }
 
 async function withTradeQueues(store, selfId, actors, operation) {
@@ -337,7 +335,7 @@ function previewSaleToStore(actor, store, options = {}) {
             const storeItem = store.items.find((item) => item.selfId === inventoryItem.fetchSelfId() && item.count > 0);
             if (!storeItem) return;
             if (store.kind === 'player' && Number(inventoryItem.fetchEnchantLevel?.() || 0) !== Number(storeItem.enchant || 0)) return;
-            if (!acceptsSellerItem(actor, storeItem, inventoryItem)) return;
+            if (!acceptsSellerItem(actor, storeItem)) return;
 
             const price = storeItemPrice(store, storeItem, actor);
             const already = lines.filter(line => line.selfId === inventoryItem.fetchSelfId()).reduce((sum, line) => sum + line.qty, 0);
@@ -382,10 +380,10 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
             if (options.expectedRevision !== undefined && Number(store.revision || 1) !== Number(options.expectedRevision)) {
                 throw new Error("Store listing changed.");
             }
-            // A reserve piece has a crafter row (sold to named classes only) and a valve
-            // row: a bot takes the first row of the item sold to it.
+            // A reserve piece has a crafter row (sold to named classes only) and, in a
+            // trader town, a trader row: a bot takes the first row of the item sold to it.
             const storeItem = store.items.find((item) => Number(item.selfId) === Number(selfId)
-                && !(isBotActor(actor) && item[staticPriceSource]?.line?.buyerClasses
+                && !(isBotActor(actor) && (item[staticPriceSource]?.line?.buyerClasses || item[staticPriceSource]?.line?.buyerRole)
                     && !require('./Economy/ProductionPolicy').allowsFixed(item[staticPriceSource].line, actor)));
             if (!storeItem) {
                 throw new Error("Item is not available.");
@@ -482,7 +480,7 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
             if (!Number.isSafeInteger(requestedQty) || requestedQty <= 0) {
                 throw new Error("Invalid quantity.");
             }
-            if (!acceptsSellerItem(actor, storeItem, actorItem)) {
+            if (!acceptsSellerItem(actor, storeItem)) {
                 throw new Error('Static buyer item is unavailable to bots.');
             }
             const actorCount = actorItem ? actorItem.fetchAmount() : 0;

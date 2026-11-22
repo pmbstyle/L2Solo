@@ -122,8 +122,13 @@ function lineObservations(line, belief, ctx) {
     if (price > 0) {
         const direction = line.storeType === BUY ? -1 : 1;
         const width = sigma(belief);
-        if (fills > 0) observations.push([Math.log(price) + direction * 0.5 * width, fills]);
-        if (passed > 0) observations.push([Math.log(price) - direction * 0.5 * width, passed]);
+        // A fill says the price is at least the line's, a pass that it is below it: neither
+        // moves a belief that already agrees (a pass never raises one under the line).
+        const toward = Math.log(price) + direction * 0.5 * width, away = Math.log(price) - direction * 0.5 * width;
+        const atLeast = (value, bound) => direction > 0 ? Math.max(value, bound) : Math.min(value, bound);
+        const atMost = (value, bound) => direction > 0 ? Math.min(value, bound) : Math.max(value, bound);
+        if (fills > 0) observations.push([atLeast(belief.mu, toward), fills]);
+        if (passed > 0) observations.push([atMost(belief.mu, away), passed]);
     }
     return observations;
 }

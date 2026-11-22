@@ -502,6 +502,7 @@ function arrive(session, bot) {
     const town = TownTransitPolicy.townAt(bot);
     if (!town) return;
     session.townArrival = session.shopTimer;
+    invoke('GameServer/Bot/Economy/TownArrivals').arrived(LifeState.cachedState(bot.fetchId()), town);
     const own = invoke('GameServer/Bot/Economy/DecisionSections').leafTrip(held(session)?.network?.activity, town,
         session.townTripForced === true);
     raiseDecision(session, own ? 'arrived_town:own' : 'arrived_town');

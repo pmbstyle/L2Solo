@@ -765,16 +765,14 @@ function buildProjection(state, ctx, deps) {
             const material = String(ItemTemplates.find(items, id)?.template?.kind || '').startsWith('Other.Material');
             const shot = need('./ShotTradeDemand').isShot(id);
             const publicBids = ctx.board.list(id, 3);
-            const fixedBids = material ? deps.fixedProductionOffersFor?.(id, state) || [] : [];
             let best = exitCeiling(publicBids, ownSales, 0);
-            if (material) best = exitCeiling(fixedBids, ownSales, best);
             if (shot && need('./ShotTradeDemand').forecast(id, null, timestamp)) best = Math.max(best, positive(price(id)));
             if (!(best > 0)) continue;
             // A finite setup retains priority through recipe and material
             // purchases. Ordinary shots and materials compete on finite value.
             const earningPreference = shot && productionBatches(recipe) ? 2 : 0;
-            const demand = material ? [...publicBids.slice(0, 5), ...fixedBids.slice(0, 5)]
-                .reduce((max, offer) => offer.type !== 'static' && usableExit(offer, ownSales)
+            const demand = material ? publicBids.slice(0, 5)
+                .reduce((max, offer) => usableExit(offer, ownSales)
                     ? Math.max(max, Number(offer.count || 0)) : max, 0) : 0;
             const capacity = Math.max(1, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
             const lots = productionBatches(recipe) || (demand > oldUnits
@@ -798,15 +796,14 @@ function buildProjection(state, ctx, deps) {
         for (const { recipe, count, id, ownSales, oldUnits, material, shot, earningPreference } of admitted) {
         const asks = ctx.board.list(id, SELL);
         const publicOffers = ctx.board.list(id, 3).slice(0, 5);
-        const fixedOffers = material ? (deps.fixedProductionOffersFor?.(id, state) || []).slice(0, 5) : [];
         const listingOffers = need('./WealthCraftPolicy').drain(need('./ProductionSalePolicy').exits(state, recipe, {
             board: ctx.board, timestamp, trip: ctx.trip, npcOffersFor: ctx.npcOffersFor, existing: oldUnits }));
-        for (const source of [...publicOffers, ...fixedOffers, ...listingOffers]) {
+        for (const source of [...publicOffers, ...listingOffers]) {
             const preparedBatches = productionBatches(recipe);
             // Compare a real bounded material lot to a shot lot. A single
             // material unit systematically lost to a 476-shot recipe even
             // when the board needed hundreds of intermediates.
-            const demand = source.type === 'static' ? 0 : Math.max(0, Number(source.count || 0) - oldUnits);
+            const demand = Math.max(0, Number(source.count || 0) - oldUnits);
             const capacity = Math.max(1, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
             const batches = preparedBatches || (material && demand > 0
                 ? Math.min(need('./WealthCraftPolicy').MAX_BATCHES, capacity, Math.ceil(demand / count)) : 1);
@@ -824,7 +821,7 @@ function buildProjection(state, ctx, deps) {
                 return { status: before.known && after.known ? 'ready' : 'unknown', exit: offer,
                     before, after, gross: after.receipts - before.receipts };
             })() : Price.bidSale(state, offer, { board: ctx.board, persona: ctx.persona, timestamp, asks,
-                oldUnits, units, residualUnitValue: ctx.buyback(id), fixed: offer.type === 'static' });
+                oldUnits, units, residualUnitValue: ctx.buyback(id) });
             if (sale.status !== 'ready' || sale.exit.trial && !(sale.after.sold > sale.before.sold)) continue;
             const { gross } = sale;
             if (!(gross > 0)) continue;
@@ -1321,9 +1318,9 @@ function buildProjection(state, ctx, deps) {
     }
     // The kit in the field: a kind's root only below its line (one
     // hour of use), for one outing's refill; above it the money reserve holds that
-    // refill and the town visit buys it. Shots and potions are ordinary
-    // consumables: weighed by their value with the gear they serve (WishNetwork),
-    // their road taken only where its goods carry it (roadCarried). The Scroll of
+    // refill and the town visit buys it. Shots and potions are weighed by their
+    // value with the gear they serve, first when the reserve holds their whole refill
+    // (WishNetwork), their road taken only where its goods carry it (roadCarried). The Scroll of
     // Escape has no line: a visit's side purchase.
     for (const kind of ['shots', 'potions']) {
         const stock = ctx.stock(kind);

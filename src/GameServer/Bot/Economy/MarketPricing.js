@@ -201,9 +201,12 @@ function priceForSale(selfId, ctx, { town = null, units = 1, enchant = 0, curren
     return { belief, market, ask: PriceDecision.chooseAsk(belief, market, ctx.trader, rollKey, current) };
 }
 
+// A supplier's consigned stock (ItemDisposition.gnomeStock) keeps its cost per unsold unit.
 function marketFor(selfId, ctx, { town = null, units = 1, enchant = 0 } = {}) {
     const stock = ctx.ownStock?.groups?.get(`${Number(selfId)}:${Number(enchant)}`);
+    const consigned = enchant > 0 ? null : invoke('GameServer/Bot/Economy/ItemDisposition').gnomeStock(ctx.state, selfId);
     return PriceDecision.marketFor(selfId, {
+        keepValue: Number(consigned?.cost) || 0,
         board: ctx.board, ownerId: ctx.characterId, town, units, enchant, tripCost: ctx.tripCost,
         npcOffers: ctx.npcOffersFor(selfId), timestamp: ctx.timestamp,
         demand: ctx.demandFor?.(Number(selfId), Number(enchant), town) || null,

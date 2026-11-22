@@ -2,7 +2,7 @@ const assert = require('assert');
 process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 
 require('../src/Global');
-// The author's fixed shot merchant sells shots here (off by default since T116).
+// The crafters' shots on (off by default since T116): even so no configured row sells a bot shots.
 invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 
 const DataCache = invoke('GameServer/DataCache');
@@ -59,23 +59,10 @@ async function main() {
 
         assert.strictEqual(MarketOpportunity.bestSupplyOffer(1864), null,
             'group F retires configured material supply even while its actor is live');
-        const offer = MarketOpportunity.bestSupplyOffer(1463);
-        assert(offer, 'configured shots remain in the fixed supply table until 3.6');
-        assert.strictEqual(offer.sourceType, 'configured_store');
-        assert.strictEqual(offer.sourceId, offer.sourceName);
-        assert.strictEqual(offer.count, Infinity);
-        assert(offer.price > 0);
+        assert.strictEqual(MarketOpportunity.bestSupplyOffer(1463), null,
+            'a configured shot row sells to players only: a bot buys graded shots from the crafters');
 
-        TradeService.buyFromStore = async (_bot, liveStore, selfId, amount, options) => {
-            calls += 1;
-            assert.notStrictEqual(liveStore, store, 'shot supply uses the server-owned table, not a material merchant');
-            assert.strictEqual(selfId, 1463);
-            assert.strictEqual(options.expectedUnitPrice, offer.price);
-            const line = liveStore.items.find((entry) => entry.selfId === selfId);
-            line.count -= amount;
-            botItem.setAmount(botItem.fetchAmount() + amount);
-            return { qty: amount, totalAdena: amount * options.expectedUnitPrice, name: 'Soulshot: D-grade' };
-        };
+        TradeService.buyFromStore = async () => { calls += 1; return { qty: 0, totalAdena: 0 }; };
 
         const overdraw = await BotSupplyErrand.purchaseAtDestination(bot, {
             workflowId: 'workflow-stock-reject',
@@ -91,20 +78,19 @@ async function main() {
         assert.strictEqual(calls, 0, 'a stale configured material errand must be rejected before TradeService');
         assert.strictEqual(store.items[0].count, 2);
 
-        const bought = await BotSupplyErrand.purchaseAtDestination(bot, {
-            workflowId: 'workflow-stock-ok',
+        const shotErrand = await BotSupplyErrand.purchaseAtDestination(bot, {
+            workflowId: 'workflow-stock-shot',
             sourceType: 'configured_store',
-            sourceId: offer.sourceId,
-            sourceName: offer.sourceName,
+            sourceId: 'IslandMats',
+            sourceName: 'IslandMats',
             itemId: 1463,
             amount: 1,
-            unitPrice: offer.price
+            unitPrice: 50
         });
-        assert.strictEqual(bought.ok, true);
-        assert.strictEqual(calls, 1);
-        assert.strictEqual(store.items[0].count, 2, 'player-facing material stock is untouched');
-        assert.strictEqual(botItem.fetchAmount(), 1);
-        assert(observations.some((entry) => entry.name === 'bot.workflow.supply.purchase' && entry.metadata.workflowId === 'workflow-stock-ok'));
+        assert.strictEqual(shotErrand.ok, false);
+        assert.strictEqual(shotErrand.reason, 'configured_supply_retired');
+        assert.strictEqual(calls, 0, 'a stale configured shot errand is rejected before TradeService');
+        assert.strictEqual(botItem.fetchAmount(), 0);
         console.log('Configured supply store checks passed');
     } finally {
         DataCache.items = originalItems;

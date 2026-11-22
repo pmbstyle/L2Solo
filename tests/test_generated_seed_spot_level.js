@@ -32,7 +32,8 @@ async function run() {
     const created = [];
     const createCharacter = Database.createCharacter;
     Database.createCharacter = (username, charData) => {
-        created.push({ username, ...charData });
+        // The station traders of the same pass are created in their towns.
+        if (username.startsWith('bot_craft_')) created.push({ username, ...charData });
         return createCharacter.call(Database, username, charData);
     };
     try {

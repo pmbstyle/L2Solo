@@ -3,7 +3,6 @@ const assert = require('node:assert/strict');
 process.env.L2NODE_PROGRESSION_RATE = 'x50';
 require('./helpers/databaseIsolation');
 require('../src/Global');
-invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 const Data = invoke('GameServer/DataCache'); Data.init({ validate: false });
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Policy = require('../src/GameServer/Bot/Population/OpportunisticRaidPolicy');
@@ -15,7 +14,7 @@ const { OpportunisticRaidDirector } = require('../src/GameServer/Bot/Population/
 const { RaidSearchCounters, LIMITS } = require('../src/GameServer/Bot/Population/RaidSearchCounters');
 const fixture = require('./fixtures/raid_priority_world.json');
 const at = fixture.at;
-Supply.useMarket(() => ({ npcOffersFor: id => invoke('GameServer/Bot/Economy/FixedShotOffers').offers(id), tripFrom: () => () => 0 }));
+Supply.useMarket(require('./helpers/crafterShotBoard').crafterShotMarket());
 const members = fixture.expected.map(id => {
     const row = fixture.members.find(s => s.characterId === id);
     return { ...structuredClone(row), level: id === 2006587 ? 50 : row.level, accountName: `bot_${id}`,

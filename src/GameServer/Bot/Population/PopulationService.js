@@ -2630,6 +2630,20 @@ const PopulationService = {
                 return { ok: true, state: current, debug: result.debug };
             });
         }
+        // A station trader's step is its stall's review, nothing else: it never leaves its town.
+        // Its round (the merchant round, the worker's or the same resolver's here) is saved
+        // first, as any cold step's: that save takes into its bag what its sales and closed
+        // records left for it on the board, so the review's settlement pays the store from
+        // that money before it restocks.
+        if (invoke('GameServer/Bot/Economy/SupplierRoles').isStationTrader(state)) {
+            const round = workerRequest?.precomputedResult
+                || BackgroundResolver.resolveSolo({ state, spot: null, elapsedMs: 0, timestamp: startedAt });
+            return LifeState.applyResolve(state, round, options)
+                .then((saved) => saved ? ColdMarketService.stationTraderReview(saved, startedAt)
+                    .then((reviewed) => ({ ok: true, state: reviewed, debug: { activity: 'station_trader' } }))
+                    : { ok: false, reason: 'state_write_rejected', state })
+                .finally(() => Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt));
+        }
         const entryResult = this.resolveColdEntryBranch(state, options, startedAt, workerRequest?.hallVisit === true);
         if (entryResult !== COLD_RESOLVE_NEXT) return entryResult;
         const precomputedResult = workerRequest?.precomputedResult || null;
