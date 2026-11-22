@@ -55,7 +55,7 @@ const dion = { locX: 17000, locY: 145000, locZ: -3000 };
         Opportunity.bestOffer = () => offer;
         Coordinator.economyDecisions.decided = () => null;
         const refreshed = [];
-        Events.raiseOn = id => { refreshed.push(id); return true; };
+        Events.raiseOn = async id => { refreshed.push(id); return Life.cachedState(id); };
         remember(buyerState);
         const gear = await Market.tryPurchase(buyerState, goal);
         assert.equal(gear.purchased, false);

@@ -1390,8 +1390,9 @@ const optionalGeodataTests = new Set([
     'tests/test_pathfinding_worker_pool.js'
 ]);
 const geodataOnly = process.argv.includes('--geodata');
-// Disposable recovery and market fixtures use the default configuration.
+// Fixtures that rely on the checked-in configuration.
 const defaultConfigTests = new Set([
+    'tests/test_clan_war_operations.js',
     'tests/test_bot_background_drops.js',
     'tests/test_spot_value_table.js',
     'tests/test_opportunistic_raids.js',

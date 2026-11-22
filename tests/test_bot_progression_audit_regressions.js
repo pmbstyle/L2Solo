@@ -1,6 +1,3 @@
-// The author's fixed shot merchant sells shots here (off by default since T116); set in the
-// environment, which the economy worker copies.
-process.env.BOT_STATIC_SHOTS_DISABLED = 'false';
 const assert = require('assert');
 const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 require('./helpers/databaseIsolation');
@@ -179,6 +176,8 @@ async function checkColdCommands() {
     const { ColdEconomyDecisions, compact } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
     const nativeBuyer = { ...polearm, characterId: 100, phase: 'cold', activity: 'party_wait', updatedAt: at,
         loc: provider.loc, vitals: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 1000 },
+        // Its current weapon's shots are already stocked, so this case exercises the gear purchase.
+        inventory: { ...polearm.inventory, 1463: { selfId: 1463, amount: 8000, stackable: true } },
         stats: { ...polearm.stats, exp: Data.experience[polearm.level - 1] + 1,
             equipment: [{ selfId: 129, slot: 7, rank: 'd' }], equipmentPlan: Gear.npcWeaponBridgePlan(polearm) } };
     // ARCH-NOTE: C1 defers a cold voluntary goal until the actual worker
@@ -190,6 +189,7 @@ async function checkColdCommands() {
     const buyer = { ...nativeBuyer, stats: { ...nativeBuyer.stats, ...native.statsPacket } };
     const leaf = compact(native.decision).activity;
     assert.strictEqual(leaf?.activity, 'shopping', 'the real funded buyer selects a native shopping leaf');
+    assert.strictEqual(leaf.itemId, nativeBuyer.stats.equipmentPlan.target.selfId, 'the shopping leaf is for the weapon bridge');
     const decisions = new ColdEconomyDecisions();
     decisions.accept(buyer.characterId, native.decision);
     let selectedGoal;
