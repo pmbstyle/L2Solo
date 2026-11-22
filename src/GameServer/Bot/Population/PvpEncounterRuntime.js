@@ -4,6 +4,7 @@ const { STEP_MS, PASS_MS } = require('./PvpEncounterBudget');
 const Database = invoke('Database');
 const ColdPartyConflict = require('./ColdPartyConflict');
 const PvpJournal = require('../../../PvpJournal');
+const BotPvpMemory = require('../AI/BotPvpMemory');
 // Only active encounters are indexed. No per-tick scan of the population.
 const encounters = new Map();
 const pending = new Set();
@@ -34,7 +35,13 @@ function restoreTargets(e, roster) {
     }
 }
 async function finish(e, actions, reason = 'pvp_interrupted') {
-    const result = await Database.endPvpEncounter(e.key, ids(e), reason);
+    // The timer can confirm an ending without a winner. A native kill for
+    // this encounter already in the journal takes precedence.
+    const at = Date.now();
+    const memory = BotPvpMemory.coldOutcome({
+        ...e, pvpParticipants: BotPvpMemory.coldParticipants(e)
+    }, reason, at);
+    const result = await Database.endPvpEncounter(e.key, ids(e), reason, memory);
     for (const row of result.rows) {
         const state = actions.life.acceptLifecycleRow(row);
         actions.onState(state.characterId);
@@ -44,7 +51,6 @@ async function finish(e, actions, reason = 'pvp_interrupted') {
     actions.recordPvpStep({ ok: true, key: e.key, encounter: null, outcome: reason });
     // The fight's journal row: it ends here without a losing side or a kill
     // (a kill ends it in a step), at its deadline or earlier.
-    const at = Date.now();
     PvpJournal.coldConflict({ key: e.key, revenge: e.reason === 'revenge',
         reason: e.reason === 'clan_war' ? 'clan_war' : e.reason === 'revenge' ? 'revenge' : 'contest', spotId: e.spotId, npcId: e.npcId,
         partyIds: e.sides.map(s => s.partyId), sideSizes: e.sides.map(s => s.memberIds.length),

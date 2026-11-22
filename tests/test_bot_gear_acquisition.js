@@ -1275,13 +1275,9 @@ assert.strictEqual(
 );
 
 {
-    // The gear reserve: a funded level-40 Warrior in Giran in his D kit buys his C weapon
-    // (Flamberge) at the Giran reserve store, 1.5x the NPC price scale.
+    // A funded Warrior buys C gear from the board after a supplier lists it.
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-    const NpcShopPriceScale = invoke('GameServer/World/Generics/NpcShopPriceScale');
-    const multiplier = invoke('GameServer/ProgressionRates').profile().multiplier;
     const template = id => DataCache.items.find(item => item.selfId === id);
-    const reservePrice = id => NpcShopPriceScale.price(template(id).template.price * 1.5, multiplier);
     const funded = (items) => {
         const inventory = { ...BotLifeState.inventorySummaryFromItems(items), 57: { selfId: 57, amount: 50000000 } };
         return { level: 40, adena: 50000000, currentRegion: 'Giran', loc: { locX: 83400, locY: 148600, locZ: -3400 }, stats: { classId: 1, role: 'dps',
@@ -1289,31 +1285,35 @@ assert.strictEqual(
     };
     const kit = BotGear.planFor({ classId: 1, level: 39 }).items;
     const warrior = funded(kit);
-    const storePlan = GearAcquisitionPlanner.planFor(warrior, { spots: [] });
-    assert.deepStrictEqual([storePlan.strategy, storePlan.target?.selfId, storePlan.market?.sourceType,
-        storePlan.market?.town, storePlan.market?.price], ['market', 71, 'configured_store', 'Giran', reservePrice(71)],
-    'a funded level-40 bot buys its C weapon at the Giran reserve store');
-    // C armour likewise: in a Flamberge, his next piece is C armour from the store.
-    const armed = funded(kit.map(item => item.slot === 14 ? { ...item, selfId: 71, name: 'Flamberge' } : item));
-    const armourPlan = GearAcquisitionPlanner.planFor(armed, { spots: [] });
-    assert.strictEqual(template(armourPlan.target.selfId).etc.rank, 'c');
-    assert.match(template(armourPlan.target.selfId).template.kind, /^Armor\./);
-    assert.deepStrictEqual([armourPlan.strategy, armourPlan.market.sourceType, armourPlan.market.price],
-        ['market', 'configured_store', reservePrice(armourPlan.target.selfId)], 'C armour comes from the reserve store too');
-    // A crafter's (a bot's) sell line below the store price wins by the one offer order.
-    const crafterPrice = Math.round(template(71).template.price * 1.1);
-    AfkTrade.refreshRecord({ id: 994001, ownerId: 994001, ownerName: 'Smith', ownerAccount: 'bot_994001', kind: 'shop',
-        storeType: 1, status: 'active', town: 'Giran', title: '', custodyPolicy: 0, revision: 1, expiresAt: 0,
-        locX: 83000, locY: 148000, locZ: -3400, appearance: {},
-        lines: [{ id: 9940010, selfId: 71, name: 'Flamberge', enchant: 0, count: 1, price: crafterPrice }] });
-    const crafterPlan = GearAcquisitionPlanner.planFor(funded(kit), { spots: [] });
-    AfkTrade._resetForTests();
-    assert.deepStrictEqual([crafterPlan.strategy, crafterPlan.target.selfId, crafterPlan.market.sourceType, crafterPlan.market.price],
-        ['market', 71, 'afk_bot_store', crafterPrice], 'the cheaper crafter line is bought, not the store');
+    const flamberge = 71, fullPlate = 356;
+    const reserveOnly = GearAcquisitionPlanner.planFor(warrior, { spots: [] });
+    assert.equal(reserveOnly.target.selfId, flamberge);
+    assert.equal(reserveOnly.market, null, 'the Warrior cannot buy a consignment row directly');
+
+    const list = (id, items) => AfkTrade.refreshRecord({ id, ownerId: id, ownerName: `Smith${id}`, ownerAccount: `bot_${id}`,
+        kind: 'shop', storeType: 1, status: 'active', town: 'Giran', title: '', custodyPolicy: 0, revision: 1, expiresAt: 0,
+        locX: 83000, locY: 148000, locZ: -3400, appearance: {}, lines: items.map(([selfId, price], index) => ({
+            id: id * 10 + index, selfId, name: template(selfId).template.name, enchant: 0, count: 1, price
+        })) });
+    const weaponPrice = template(flamberge).template.price;
+    const armourPrice = template(fullPlate).template.price;
+    try {
+        list(994001, [[flamberge, weaponPrice], [fullPlate, armourPrice]]);
+        list(994002, [[flamberge, weaponPrice + 500000]]);
+        const weaponPlan = GearAcquisitionPlanner.planFor(warrior, { spots: [] });
+        assert.deepStrictEqual([weaponPlan.strategy, weaponPlan.target.selfId, weaponPlan.market?.sourceType,
+            weaponPlan.market?.town, weaponPlan.market?.price], ['market', flamberge, 'afk_bot_store', 'Giran', weaponPrice],
+            'a funded level-40 bot chooses the cheaper Giran board listing for its C weapon');
+
+        const armed = funded(kit.map(item => item.slot === 14 ? { ...item, selfId: flamberge, name: 'Flamberge' } : item));
+        const armourPlan = GearAcquisitionPlanner.planFor(armed, { spots: [] });
+        assert.deepStrictEqual([armourPlan.strategy, armourPlan.target.selfId, armourPlan.market?.sourceType,
+            armourPlan.market?.price], ['market', fullPlate, 'afk_bot_store', armourPrice], 'a funded bot also buys its C armour on the board');
+    } finally { AfkTrade._resetForTests(); }
     // From C up a bot holding the money buys even where the drop costs fewer
     // kills than the price at its earning per kill (Timak Orc Overlords drop Flamberge).
     const timak = { id: 'timak-outpost', avgLevel: 45, npcEntries: [{ selfId: 588, name: 'Timak Orc Overlord', count: 8 }] };
-    const dear = item => ({ selfId: item.selfId, price: 40000000, town: 'Giran', sourceType: 'configured_store', available: true, count: Infinity });
+    const dear = item => ({ selfId: item.selfId, price: 40000000, town: 'Giran', sourceType: 'afk_bot_store', available: true, count: 1 });
     assert(GearAcquisitionPlanner.sourceForItem(71, [timak], warrior).length > 0, 'the spot drops Flamberge');
     const fundedOverDrop = GearAcquisitionPlanner.planFor(warrior, { spots: [timak], findMarketOffer: dear });
     assert.deepStrictEqual([fundedOverDrop.strategy, fundedOverDrop.target.selfId], ['market', 71],

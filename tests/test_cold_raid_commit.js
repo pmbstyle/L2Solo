@@ -33,6 +33,8 @@ async function proposed(party, id, snapshot) {
             updatedAt: Math.max(Date.now(), party.updatedAt + 1), nextResolveAt: null, status: 'dissolved',
             statsJson: JSON.stringify({ ...party.stats, raidEncounter: snapshot }) }],
         raidCommit: { key: snapshot.key, expectedRevision: 0, revision: 1, snapshot,
+            dialogueMemory: { bossName: 'Confirmed Boss', participantIds: snapshot.combatParticipantIds,
+                winningParticipantIds: party.memberIds.slice(0, -1) },
             worldDefeat: { npcId: 10484, respawnTime: at + 100000 } } };
     const entries = members.map(member => {
         const nextState = { ...member, exp: member.exp + 100, adena: member.adena + 10,
@@ -50,6 +52,7 @@ async function durable() {
         inventory: await Database.execute(['SELECT * FROM items ORDER BY id', []]),
         parties: await Database.execute(['SELECT * FROM bot_background_parties ORDER BY partyId', []]),
         raids: await Database.execute(['SELECT * FROM bot_raid_encounters', []]),
+        raidMemories: await Database.execute(['SELECT botId,eventType,metaJson FROM bot_activity_journal ORDER BY botId', []]),
         spawns: await Database.execute(['SELECT * FROM raid_boss_state', []])
     };
 }
@@ -66,13 +69,19 @@ async function run() {
     await Life.init(); await Parties.init();
     const a = await createParty(Array.from({ length: 9 }, (_, i) => i + 1));
     const b = await createParty(Array.from({ length: 9 }, (_, i) => i + 10));
-    Raid.record(a, Raid.begin(a, spot, 10484, at), { encounter: { hp: 600, mob: { maxHp: 1000 } } }, at + 1);
+    const contributors = b.memberIds.slice(0, -1), winners = a.memberIds.slice(0, -1);
+    const partial = Raid.record(b, Raid.begin(b, spot, 10484, at), { encounter: { hp: 600, mob: { maxHp: 1000 } } },
+        at + 1, contributors);
+    await Database.execute(['INSERT INTO bot_raid_encounters(raidKey, revision, snapshotJson) VALUES (?, 0, ?)',
+        [partial.key, JSON.stringify(partial)]]);
+    Raid.resetForTests();
+    const resumeSpot = { ...spot, raidAuthority: partial };
     const win = id => Raid.stage({ key: 'raid:10484', id, memberIds: a.memberIds }, () =>
-        Raid.record(a, Raid.begin(a, spot, 10484, at + 2), { won: true }, at + 3));
+        Raid.record(a, Raid.begin(a, resumeSpot, 10484, at + 2), { won: true }, at + 3, winners));
     const initial = await durable();
     const staged = await win('rejected');
     assert.equal(staged.snapshot.hp, 0);
-    assert.equal(Raid.begin(b, spot, 10484, at + 4).hp, 600, 'another clan never sees an uncommitted kill');
+    assert.equal(Raid.begin(b, resumeSpot, 10484, at + 4).hp, 600, 'another clan never sees an uncommitted kill');
     await assert.rejects(win('competing'), /raid_step_pending/);
     const failed = await proposed(a, 'rejected', staged.snapshot);
     failed.entries[8].revision -= 1;
@@ -109,6 +118,19 @@ async function run() {
     const committed = await durable();
     assert(committed.lives.slice(0, 9).every(row => row.exp === initial.lives[0].exp + 100 && row.adena === 10));
     assert.equal(committed.raids.length, 1); assert.equal(committed.spawns[0].hp, 0);
+    assert.deepEqual(committed.lives.slice(9), initial.lives.slice(9), 'remembering the earlier contribution does not grant loot');
+    assert.deepEqual(committed.raidMemories.map(row => row.botId), [...winners, ...contributors]);
+    assert(committed.raidMemories.every(row => row.eventType === 'raid_defeated'
+        && JSON.parse(row.metaJson).participantIds.length === 16));
+    const Knowledge = invoke('GameServer/Bot/AI/BotDialogueKnowledge');
+    const recall = botId => Knowledge.execute({ action: 'recall_event', query: 'raid' }, {
+        session: { characterId: botId }, playerMessage: 'What happened in the raid?'
+    });
+    const contribution = await recall(contributors[0]), victory = await recall(winners[0]);
+    assert.equal(contribution.rows[0].resultForBot, 'participated');
+    assert.equal(contribution.terminalReply, 'I took part, but another party defeated Confirmed Boss.');
+    assert.equal(victory.rows[0].resultForBot, 'won');
+    assert.equal(victory.terminalReply, 'My party defeated Confirmed Boss.');
     assert((await Owner.commitBatch(first.entries)).every(row => !row.ok));
     assert.deepEqual(await durable(), committed, 'replayed proposals cannot grant rewards twice');
     await Database.close(); Database.init(); await Authority.init(); Raid.resetForTests();
@@ -123,7 +145,8 @@ async function run() {
         resolveParty: ({ party, members, spot }) => {
             const snapshot = Raid.record(party, Raid.begin(party, spot, 10484), { won: true });
             return { partyPatch: { stats: { raidEncounter: snapshot } }, nextResolveAt: at + 200,
-                memberResults: members.map(state => ({ state, result: { events: [] } })), events: [] };
+                memberResults: members.map(state => ({ state, result: { events: [] } })), events: [],
+                raidOutcome: { bossName: 'Confirmed Boss', participantIds: party.memberIds } };
         } });
     const members = a.memberIds.map(state);
     for (const member of members) {
@@ -136,7 +159,8 @@ async function run() {
     const proposals = messages.filter(message => message.type === 'proposal_batch').flatMap(message => message.data.proposals);
     assert.equal(proposals.length, 9, JSON.stringify(messages));
     assert(proposals.every(p => p.raidStepId === `raid:${a.leaderId}:${at + 100}` && p.atomicGroup.partyChanges.length === 1
-        && p.atomicGroup.raidCommit.expectedRevision === 0));
+        && p.atomicGroup.raidCommit.expectedRevision === 0
+        && p.atomicGroup.raidCommit.dialogueMemory.participantIds.length === 9));
     assert.equal(Raid.begin(b, spot, 10484).status, 'active');
     kernel.onCommitAck({ results: proposals.map(p => ({ characterId: p.characterId, raidStepId: p.raidStepId, ok: false,
         proposalId: p.proposalId })) });

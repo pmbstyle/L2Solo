@@ -8,7 +8,7 @@ const choice = values => ({ type: 'string', enum: values });
 const object = (properties, required = Object.keys(properties)) => ({ type: 'object', properties, required, additionalProperties: false });
 const STRATEGY_REASONS = ['progression', 'readiness', 'leader_preference', 'member_welfare', 'opportunity', 'recovery', 'keep_course'];
 const GOAL_REASONS = ['mandatory_progression', 'goal_fulfilled', 'goal_blocked', 'better_clan_readiness', 'better_value', 'fair_distribution', 'keep_current', 'deterministic_fallback'];
-const READ_TOPICS = ['', 'inventory', 'equipment', 'skills', 'party', 'goals', 'relationship', 'relationships', 'recent_events', 'clan_history',
+const READ_TOPICS = ['', 'inventory', 'equipment', 'skills', 'party', 'goals', 'relationship', 'relationships', 'recent_events', 'clan', 'clan_history',
     'items', 'item', 'item_sources', 'npcs', 'npc', 'recipes', 'recipe', 'skill', 'movement', 'party', 'combat', 'equipment', 'trade', 'supplies'];
 
 // This module also works with older installed servers. Keep the wire contracts

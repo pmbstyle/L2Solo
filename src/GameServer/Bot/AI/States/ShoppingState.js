@@ -110,9 +110,9 @@ async function withdrawBuyOrderFor(bot, selfId) {
 
 // The step's own root bids pay it when the bag alone cannot (the errand's bids, the
 // decision's): taken back before the body pays (BotAfkMarketService.freeStepBids).
-async function freeStepBids(bot, errand) {
+async function freeStepBids(bot, errand, amount) {
     await invoke('GameServer/Bot/Economy/BotAfkMarketService').freeStepBids(bot.fetchId(), errand.bids,
-        Number(errand.price) * Number(errand.amount || 1), Number(bot.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0));
+        Number(errand.price) * amount, Number(bot.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0));
 }
 
 function clearCompletedMarketPlan(session, bot, purchase) {
@@ -582,6 +582,8 @@ module.exports = {
         // The decision the body holds (DecisionEvents.held): its craft plan
         // and its improvement; the station is found here, near the body.
         const decision = held(session);
+        if (!session.companionShopping
+            && invoke('GameServer/Clan/ClanConsumableSupply').reviewActorDecision(session, decision.network?.activity)) return;
         // A stock order (purpose stock) is no equipment plan: only its
         // workshop target carries it (stockWorkshopTarget).
         const personalCraft = session.companionShopping || decision.personalCraft?.purpose === 'stock' ? null : decision.personalCraft;
@@ -889,6 +891,31 @@ module.exports = {
         const visit = { errand: companionErrand, target: session.shoppingTarget, shopTimer: session.shopTimer };
         const current = () => ownsShoppingVisit(session, bot, visit);
         if (!current()) return;
+        let purchaseAmount = companionErrand?.amount || 1;
+        if (Number(bot.fetchClanId?.()) > 0 && ['market_purchase', 'npc_equipment_purchase'].includes(companionErrand?.kind)) {
+            const leaf = held(session).network.activity;
+            const supply = invoke('GameServer/Clan/ClanConsumableSupply');
+            if (supply.isDecision(leaf) && Number(leaf.itemId) === Number(companionErrand.itemId)) {
+                let withdrawal;
+                try {
+                    withdrawal = await supply.forActorDecision(bot, leaf);
+                } catch (error) {
+                    FailureLog.note('economy.hot_clan_stock', error);
+                    if (current()) session.shoppingDoneAnnounced = false;
+                    return;
+                }
+                if (!current()) return;
+                const state = EconomyContext.stateForActor(bot, session);
+                const dyeGap = invoke('GameServer/Clan/ClanDyeStock').remaining(state, leaf.rootKey, leaf.itemId);
+                const remaining = dyeGap ?? invoke('GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder(leaf, state);
+                purchaseAmount = Math.min(purchaseAmount, remaining);
+                if (purchaseAmount <= 0 || withdrawal && withdrawal.selfId !== Number(companionErrand.itemId)) {
+                    raiseDecision(session, 'goal_done:goal');
+                    this.scheduleRestock(session, bot, Generics, BotAI);
+                    return;
+                }
+            }
+        }
 
         // The unload's arrows go with the bot's ordinary NPC sale (SellJunk).
         if (companionErrand?.kind === 'sell_unused_arrows') {
@@ -1018,15 +1045,15 @@ module.exports = {
                 const storeItem = store?.items?.find((item) => Number(item.selfId) === Number(companionErrand.itemId)
                     && (store.afkTrade !== true || Number(item.afkTradeLineId) === Number(companionErrand.lineId)));
                 if (store?.afkTrade === true && !storeItem) throw new Error('afk_trade_stock_changed');
-                await freeStepBids(bot, companionErrand);
+                await freeStepBids(bot, companionErrand, purchaseAmount);
                 if (!current()) return;
                 let bought = store?.afkTrade === true
                     ? await AfkTradeService.buyFromShop(
-                        bot.fetchId(), store, companionErrand.itemId, companionErrand.amount || 1,
+                        bot.fetchId(), store, companionErrand.itemId, purchaseAmount,
                         { lineId: companionErrand.lineId, expectedPrice: companionErrand.price, coldState: session.coldLifeState,
                             funding: companionErrand.funding }
                     )
-                    : await TradeService.buyFromStore(bot, store, companionErrand.itemId, companionErrand.amount || 1,
+                    : await TradeService.buyFromStore(bot, store, companionErrand.itemId, purchaseAmount,
                         { objectId: companionErrand.objectId, expectedUnitPrice: companionErrand.price,
                             funding: companionErrand.funding });
                 if (!current()) return;
@@ -1034,8 +1061,7 @@ module.exports = {
                     const receipt = await waitForShoppingMeeting(session, bot, bought, visit);
                     if (receipt.interrupted) return;
                     if (receipt.outcome !== 'completed') throw Error('trade_meeting_cancelled');
-                    bought = { amount: companionErrand.amount || 1,
-                        totalPrice: (companionErrand.amount || 1) * companionErrand.price };
+                    bought = { amount: purchaseAmount, totalPrice: purchaseAmount * companionErrand.price };
                 }
                 const boughtSummary = store?.afkTrade === true
                     ? { qty: bought.amount, name: storeItem?.name || companionErrand.itemName, totalAdena: bought.totalPrice }
@@ -1080,13 +1106,13 @@ module.exports = {
                             || Number(candidate[key]) === Number(companionErrand.target[key]))
                     ));
                 if (!offer) throw new Error('npc_offer_unavailable');
-                await freeStepBids(bot, companionErrand);
+                await freeStepBids(bot, companionErrand, purchaseAmount);
                 if (!current()) return;
                 const seller = { ...offer, locX: Number(companionErrand.target.locX),
                     locY: Number(companionErrand.target.locY), locZ: Number(companionErrand.target.locZ) };
                 const result = await invoke('GameServer/Bot/Economy/NpcRestockPlan').purchaseForActor(bot, {
                     town: offer.town, seller, extras: [{ selfId: companionErrand.itemId,
-                        amount: companionErrand.amount || 1, offer: seller, funding: companionErrand.funding, autoEquip: true }] });
+                        amount: purchaseAmount, offer: seller, funding: companionErrand.funding, autoEquip: true }] });
                 if (!current() || !LifeState.hotRow(bot.fetchId())) return;
                 const line = result.receipts.flatMap(row => row.lines || [])
                     .find(row => Number(row.selfId) === Number(companionErrand.itemId));
@@ -1221,10 +1247,11 @@ module.exports = {
                 await session.shoppingSale;
                 if (!current()) return;
                 const kit = shoppingKit(session, bot, potionTown);
-                const board = await ShotStock.purchaseActorRestock(bot, { plan, town: potionTown || null,
+                const board = await invoke('GameServer/Clan/ClanConsumableSupply').restockActor(bot, { plan, town: potionTown || null,
                     unitPrice: shotQuote?.price, potionUnitPrice: potionPrice || undefined, skipNpc: true, kit });
                 if (!current() || !LifeState.hotRow(bot.fetchId())) return;
-                const basket = await NpcRestock.purchaseForActor(bot, { town: potionTown, kit });
+                const basket = await NpcRestock.purchaseForActor(bot, { town: potionTown, kit, clanShots: false,
+                    shotRefillTarget: board.refillTarget });
                 if (!current() || !LifeState.hotRow(bot.fetchId())) return;
                 const lines = basket.receipts.flatMap(row => row.lines || []);
                 const potion = lines.find(row => Number(row.selfId) === Number(potionPlan.selfId));
@@ -1266,6 +1293,15 @@ module.exports = {
             await restockWork;
             if (!current()) return;
             if (!LifeState.hotRow(bot.fetchId())) return;
+            if (!restockFailure && !session.partyCompanion && !shoppingMeetingPending(session, bot)) {
+                try {
+                    await invoke('GameServer/Bot/Economy/BotImprovementService').reviewHotCrystalVisit(session,
+                        () => current() && !shoppingMeetingPending(session, bot));
+                } catch (error) {
+                    utils.infoWarn('Improvement', 'Soul Crystal visit for %s: %s', bot.fetchName(), error.message);
+                }
+                if (!current() || !LifeState.hotRow(bot.fetchId())) return;
+            }
             session.shoppingRestock = undefined;
             if (restockFailure) {
                 session.shoppingRestockFailures = Number(session.shoppingRestockFailures || 0) + 1;

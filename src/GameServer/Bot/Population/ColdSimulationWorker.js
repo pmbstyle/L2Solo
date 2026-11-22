@@ -115,6 +115,7 @@ const ColdEconomyPlan = require('./ColdEconomyPlan');
 const RecomputeGeneration = require('./RecomputeGeneration');
 const PersonalWarehouseIndex = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
 const ClanSupplyPolicy = invoke('GameServer/Clan/ClanSupplyPolicy');
+const ClanDyeStock = invoke('GameServer/Clan/ClanDyeStock');
 const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const { ColdOccupationPlanner, UNANSWERED } = require('./ColdOccupationPlanner');
 const OccupationSources = require('./ColdOccupationSources');
@@ -902,7 +903,7 @@ function cancelRoute(characterId) {
 }
 const pagedStates = new WeakSet();
 function assetsKey(state) {
-    return `${PersonalWarehouseIndex.version(state)}:${ClanSupplyPolicy.version(state)}`;
+    return `${PersonalWarehouseIndex.version(state)}:${ClanSupplyPolicy.version(state)}:${ClanDyeStock.version(state)}`;
 }
 const economyPlanHash = plan => fnv1a32(JSON.stringify(plan));
 // A service crafter's recipe book and packed known shot recipes, from main's
@@ -1178,6 +1179,11 @@ tables.watch('clan_supplies', {
     },
     remove: key => clanSupplyMoved(key)
 });
+tables.watch(ClanDyeStock.TABLE, {
+    reset: () => {},
+    put: key => clanSupplyMoved(key),
+    remove: key => clanSupplyMoved(key)
+});
 function boardReady() {
     return tables.ready('board') ? boardIndex : null;
 }
@@ -1250,6 +1256,7 @@ let planningNpcCatalog = ColdNpcPlanningCatalog.createLookup([], boardReady);
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 BotPersona.useRowSource((characterId) => tables.rows('personas').get(characterId));
 ClanSupplyPolicy.useRowSource(id => tables.rows('clan_supplies').get(id), () => tables.ready('clan_supplies'));
+ClanDyeStock.useRowSource(id => tables.rows(ClanDyeStock.TABLE).get(id));
 PersonalWarehouseIndex.useRowSource(id => tables.rows('personal_warehouse').get(id), () => tables.ready('personal_warehouse'));
 let eventLoopDelay = null;
 const LAG_RESOLUTION_MS = 20;
@@ -1913,10 +1920,9 @@ function startKernel(config = {}) {
                 ...(untrained ? { classId: projectedClassId } : {}),
                 ...(result.soulCrystals?.length ? { soulCrystals: result.soulCrystals } : {})
             };
-            // Accepted custody owns the next physical transition. Resume the
-            // original economic plan after the meeting releases the actor.
+            // Custody and the party's reserved return own the physical transition.
             const kitMoved = DecisionSections.kitMoved(state, projected);
-            if (raidPreparing || state.stats?.tradeMeeting) return { state: projected,
+            if (raidPreparing || state.stats?.tradeMeeting || state.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting') return { state: projected,
                 durable: Object.keys(durable).length ? durable : null, kitMoved };
             const economyPlan = stepEconomy ? lifecyclePlan.economyPlan || null : null;
             const record = kernel.states.get(Number(projected.characterId));
@@ -1982,7 +1988,7 @@ function startKernel(config = {}) {
         reviewRecruits: ({ party, members, timestamp }) => PartyGoalCalculation.recruitCheck(party, members,
             { spots: planningSpots, timestamp, bridgeReason }),
         planLifecycle: async ({ state, timestamp }) => {
-            if (state.stats?.tradeMeeting) return null;
+            if (state.stats?.tradeMeeting || state.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting') return null;
             // The mind the step read: its packet carries its bits as their change from it
             // (Situations.stepMind), a raise after a decision (its trip's ask) included.
             const received = state.stats;

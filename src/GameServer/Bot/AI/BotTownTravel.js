@@ -177,7 +177,7 @@ function beginEscape(session, bot, town, options = {}) {
 
     setTimeout(() => {
         if (session.townEscape?.token !== token) return;
-        if (bot.isDead() || hasCombatThreat(session, bot) || !bot.state.fetchCasts()) {
+        if (bot.isDead() || hasCombatThreat(session, bot) || !bot.state.fetchCasts() || options.canDepart?.() === false) {
             bot.state.setCasts(false);
             session.townEscape = undefined;
             session.meetingTravel = undefined;
@@ -295,10 +295,12 @@ async function requestMeeting(session, bot, meeting, side) {
     if (hasCombatThreat(session, bot) || bot.isDead() || session.meetingTravel || session.pendingActorTeleport) return;
     const Database = invoke('Database');
     const Routes = require('../Travel/TravelRoutes'), suffix = side ? 'B' : 'A';
+    const route = JSON.parse(meeting[`route${suffix}`]);
     const token = session.meetingTravel = { id: meeting.id };
     const point = { locX: meeting.locX, locY: meeting.locY, locZ: meeting.locZ };
     const position = () => ({ locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() });
-    const valid = () => session.meetingTravel === token && !bot.isDead() && !hasCombatThreat(session, bot);
+    const permitted = () => Karma.meetingRouteAllowed(bot.fetchKarma?.(), meeting.town, route);
+    const valid = () => session.meetingTravel === token && !bot.isDead() && !hasCombatThreat(session, bot) && permitted();
     const cancelRoute = async reason => {
         session.meetingTravel = undefined;
         TradeMeetings.acceptRows(await Database.cancelTradeMeeting(meeting.id, reason));
@@ -309,7 +311,9 @@ async function requestMeeting(session, bot, meeting, side) {
         if (!valid() || latest?.state !== 'accepted') return null;
         const saved = JSON.parse(latest[`leg${suffix}`] || 'null');
         const sequence = saved?.legId === legId ? saved.sequence : latest[`nextLeg${suffix}`];
-        TradeMeetings.acceptRows(await Database.payTradeMeetingLeg(meeting.id, side, sequence, legId, fee, scroll));
+        const result = await Database.payTradeMeetingLeg(meeting.id, side, sequence, legId, fee, scroll);
+        TradeMeetings.acceptRows(result);
+        if (result?.pending === false) { TradeMeetings.wake(bot.fetchId()); return null; }
         await invoke('GameServer/AfkTrade/AfkTradeService').syncOnlineInventory(bot.fetchId(), await Database.fetchItems(bot.fetchId(), 'town_travel_meeting'));
         return sequence;
     };
@@ -320,7 +324,7 @@ async function requestMeeting(session, bot, meeting, side) {
     };
     const hop = async () => {
         if (!valid()) { session.meetingTravel = undefined; return; }
-        if (JSON.parse(meeting[`route${suffix}`]).method === 'walk') { finish(); return; }
+        if (route.method === 'walk' || Karma.closesTowns(bot.fetchKarma?.())) { finish(); return; }
         const native = Routes.between(position(), point), step = native.route?.steps?.[0];
         if (!native.route) { await cancelRoute('route_unavailable'); return; }
         if (!step) { finish(); return; }
@@ -353,7 +357,8 @@ async function requestMeeting(session, bot, meeting, side) {
         })) session.meetingTravel = undefined;
     };
     try {
-        const route = JSON.parse(meeting[`route${suffix}`]), saved = JSON.parse(meeting[`leg${suffix}`] || 'null');
+        if (!permitted()) { await cancelRoute('karma_blocks_route'); return; }
+        const saved = JSON.parse(meeting[`leg${suffix}`] || 'null');
         // An interrupted recall spent its scroll. Continue on foot; never
         // cast again using an old receipt as another physical scroll.
         if (saved?.legId?.split(':')[0] === 'soe') await Database.acknowledgeTradeMeetingLeg(meeting.id, side, saved.sequence);
@@ -369,7 +374,7 @@ async function requestMeeting(session, bot, meeting, side) {
             const sequence = await pay('soe', 0, true), native = Routes.between(position(), point);
             if (sequence === null || !valid()) { session.meetingTravel = undefined; return; }
             beginEscape(session, bot, { name: native.start.name, x: native.start.locX, y: native.start.locY, z: native.start.locZ },
-                { onPhysicalArrival: async destination => {
+                { canDepart: valid, onPhysicalArrival: async destination => {
                     if (!valid() || Math.hypot(bot.fetchLocX() - destination.locX,
                         bot.fetchLocY() - destination.locY, bot.fetchLocZ() - destination.locZ) > 200) {
                         session.meetingTravel = undefined;

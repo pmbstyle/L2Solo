@@ -83,12 +83,14 @@ async function run() {
     assert.equal(staged.snapshot.status, 'defeated');
     assert.equal(staged.snapshot.raidInstanceId, 'old-spawn');
     assert.equal(staged.snapshot.maxHp, 500000);
+    assert.equal(staged.result.raidOutcome, undefined, 'a party releasing an already defeated raid writes no new memory');
     staged.result.memberResults.forEach(({ result }) => zero(result));
     Raid.acknowledge('completion', 1, true);
     assert.equal(Raid.begin(party, unavailable, 10484, at + 2).status, 'defeated');
     const replay = Party.resolve({ party, members: [state], spot: unavailable, timestamp: at + 3 });
     replay.memberResults.forEach(({ result }) => zero(result));
     assert.equal(replay.debug.fights, 0);
+    assert.equal(replay.raidOutcome, undefined);
 
     const respawned = { ...spot, raidWorldAvailable: true, raidInstanceId: 'new-spawn', raidAuthority: victory };
     const next = await Raid.stage({ key: spot.id, id: 'respawn', memberIds: [1] }, () => Party.resolve({

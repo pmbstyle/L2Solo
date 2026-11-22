@@ -361,6 +361,7 @@ const newlyWoken = (before, after) => !!(Number(after?.stats?.woken || 0) & ~Num
 // step (VisitNeed.needed over the worker's hall row: a visit under way, the
 // rebuff's hall answer, a restart there).
 function mainVisit(state, facts) {
+    if (state.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting') return false;
     return !!state.stats?.clanHallVisit || facts.hallNeeded(state);
 }
 // A far bot's held guide answer (ColdGuideVisit) is its step's whole round, pure,
@@ -369,6 +370,7 @@ function mainVisit(state, facts) {
 // the answer done). A party member's buffs are its party's. The round's result, or null.
 let Rebuff = null;
 function guideRound(state, timestamp) {
+    if (state.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting') return null;
     if (state.party?.partyId || state.partyId || !(Rebuff ||= require('../AI/Rebuff')).pending(state.stats, 'guide')) return null;
     return require('./ColdGuideVisit').plan(state, timestamp);
 }
@@ -381,6 +383,11 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
     // Paid personal journeys retain the existing group writer.
     if (state.party?.partyId) return leads ? 'party' : 'party_member';
     if (state.stats?.tradeMeeting) return ['traveling', 'dead', 'resting', 'fighting'].includes(state.activity) ? 'resolver' : 'event_driven';
+    const stats = state.stats || {};
+    // A returning merchant still owns its party ticket, including during a karma wash.
+    const finiteTransition = state.activity === 'traveling' || state.activity === 'dead'
+        || (state.activity === 'resting' && Number(stats.restUntil || 0) > 0);
+    if (stats.partyMarketReturn?.cleanupReason === 'trade_meeting') return finiteTransition ? 'resolver' : 'command';
     // A solo bot washing karma (ColdKarmaPolicy.active) is planned by the
     // resolver. The test is repeated here: ColdKarmaPolicy loads spot modules.
     if (Number(state.stats?.karma || 0) > 0) return resolverOrHeld(state);
@@ -388,7 +395,6 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
     if (state.activity === 'crafting' && state.stats?.craftShop) return 'event_driven';
     // A station trader (SupplierRoles.isStationTrader) steps when a raise wakes it, as a craft shop.
     if (state.stats?.stationTrader) return 'event_driven';
-    const stats = state.stats || {};
     if (require('./RaidSupplyPolicy').held(state)) {
         return ['shopping', 'merchant'].includes(state.activity) ? 'command' : resolverOrHeld(state);
     }
@@ -397,8 +403,7 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
     // Finite travel/rest/death transitions are completely represented by the
     // pure resolver result and the owner CAS proposal. Economy follow-up, if
     // any, is selected on the next state after the transition is durable.
-    if (state.activity === 'traveling' || state.activity === 'dead'
-        || (state.activity === 'resting' && Number(stats.restUntil || 0) > 0)) return 'resolver';
+    if (finiteTransition) return 'resolver';
     if (PartyMarketBreak.ready(state)) return 'command';
     if (stats.partyMarketReturn && ['shopping', 'merchant'].includes(state.activity)) return 'command';
     // Finish town services before waiting for a clan hunt. The pure shopping
@@ -2177,6 +2182,13 @@ class ColdSimulationKernel {
             // action may end past its step) and credits the time since the earliest
             // member's (a member that held for an event lived its wait).
             const roundAt = Math.max(...run.members.map(member => ColdClock.step(member, startedAt).timestamp));
+            const partyReturnReady = Object.values(run.party.stats?.marketAbsences || {}).some(ticket => {
+                if (ticket?.cleanupReason !== 'trade_meeting') return false;
+                const member = this.states.get(Number(ticket.characterId))?.state;
+                const leader = run.members.find(state => state.characterId === run.party.leaderId);
+                return member?.stats?.partyMarketReturn?.startedAt === ticket.startedAt && PartyMarketBreak.ready(member)
+                    && require('./PartyHuntingAssembly').nearby([leader, member]);
+            });
             const resolveOptions = {
                 episodeId: stepProposalId(run.party.leaderId, run.startedAt),
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
@@ -2186,7 +2198,7 @@ class ColdSimulationKernel {
                 spot: run.spot,
                 spotHunters: this.spotHunters(run.spot),
                 targetNpcId: run.targetNpcId,
-                lastFight: fightHoldsTrip,
+                lastFight: fightHoldsTrip || partyReturnReady || run.members.some(member => member.stats?.partyMeeting),
                 elapsedMs: Math.max(...run.members.map(member => ColdClock.step(member, roundAt).elapsedMs)),
                 rng: deterministicRandom(run.members[0] || {}),
                 timestamp: roundAt
@@ -2256,7 +2268,8 @@ class ColdSimulationKernel {
                 memoryGroup.raidCommit = { key: snapshot.key,
                     worldRequired: run.spot.raidWorldAvailable !== false,
                     expectedRevision: Number(run.spot.raidAuthorityRevision || 0),
-                    revision: Number(run.spot.raidAuthorityRevision || 0) + 1, snapshot };
+                    revision: Number(run.spot.raidAuthorityRevision || 0) + 1, snapshot,
+                    ...(resolution.raidOutcome ? { dialogueMemory: resolution.raidOutcome } : {}) };
             }
             let requirementMs = 0, lastRequirementPlanMs = 0;
             // The open re-plan of the party's needs: the members planned, whose plan stands
@@ -2465,7 +2478,7 @@ class ColdSimulationKernel {
                 targetNpcId: Number(lifecyclePlan?.targetNpcId
                     || PartyHuntingTarget.soloNpcId(lifecyclePlan?.acquisitionPlan, lifecyclePlan?.activityPick))
             };
-            const result = guide || occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
+            let result = guide || occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
                 ...roundOptions,
                 state: resolveState,
                 lastFight: lastFight(resolveState, lifecyclePlan, this.states.get(Number(characterId))),
@@ -2474,6 +2487,9 @@ class ColdSimulationKernel {
                 timestamp
             });
             if (!this.resolverSourceCurrent(source)) return;
+            if (resolveState.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting'
+                && resolveState.stats?.travel?.reason === 'return_after_market' && result.debug?.arrived)
+                result = { ...result, nextResolveAt: timestamp };
             const first = { state: resolveState, result, timestamp };
             const round = this.soloWindow && ColdSoloWindow.opens(resolveState, lifecyclePlan, result, timestamp,
                 startedAt + STEP_LEAD_MAX_MS) ? await this.huntWindow(source, first, lifecyclePlan, roundOptions, startedAt) : first;

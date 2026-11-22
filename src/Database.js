@@ -33,8 +33,11 @@ const Statements = require('./DatabaseStatements');
 const MarketTradeOverview = require('./MarketTradeOverview');
 const EconomyJournal = require('./EconomyJournal');
 const ClanReviewInputs = require('./GameServer/Clan/ClanReviewEvents');
+const ClanDyeStock = require('./GameServer/Clan/ClanDyeStock');
 const ClanActionScheduler = require('./GameServer/Clan/ClanActionScheduler');
 const PvpJournal = require('./PvpJournal');
+const BotPvpMemory = require('./GameServer/Bot/AI/BotPvpMemory');
+const BotRaidMemory = require('./GameServer/Bot/AI/BotRaidMemory');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const HistoryStore = require('./HistoryStore');
 const History = require('./HistoryDatabase');
@@ -390,7 +393,10 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
         try {
             const result = job();
             EconomyJournal.commit();
-            if (!connection?.isTransaction) ClanReviewInputs.commitCandidateInputs();
+            if (!connection?.isTransaction) {
+                ClanReviewInputs.commitCandidateInputs();
+                ClanDyeStock.publish();
+            }
             committed = true;
             if (timed) record(operation, wait, now() - startedAt, read);
             return result;
@@ -2817,7 +2823,8 @@ function completeEconomyStepUnsafe(characterId, step, result, changedIds, mp = n
             recipeId: step.command[1] === EconomyCommit.KINDS.craft ? Number(result.nativeId || 0) : undefined });
     const patch = { ...statsPatch, economyCommit: tuple, ...(learning ? { lastRecipeBookLearning: learning } : {}) };
     if (step.row.phase === 'cold') return writeColdInventorySnapshotUnsafe(characterId, step.row, changedIds, mp, patch);
-    const { body, mind } = SavedStats.split(patch);
+    const refillPatch = clearClanShotRefillUnsafe(characterId, step.row, changedIds);
+    const { body, mind } = SavedStats.split({ ...patch, ...refillPatch });
     write(`UPDATE bot_life_state SET statsJson=json_patch(COALESCE(statsJson,'{}'),json(?)),
         mindJson=CASE WHEN ? IS NULL THEN mindJson ELSE json_patch(mindJson,json(?)) END WHERE characterId=?`,
     [JSON.stringify(body), ...mindPatchParams(mind), Number(characterId)]);
@@ -2988,6 +2995,15 @@ function mindPatchParams(mind) {
     return [json, json];
 }
 
+function clearClanShotRefillUnsafe(characterId, row, changedIds, physical = null, addedRefill = null) {
+    if (!addedRefill && !row.statsJson?.includes('"clanShotRefill"')) return null;
+    const refill = addedRefill || jsonObject(row.statsJson).clanShotRefill;
+    if (!refill || !(changedIds instanceof Set ? changedIds.has(refill[1]) : changedIds.includes(refill[1]))) return null;
+    const held = physical ? physical[refill[1]]?.amount || 0 : one(`SELECT COALESCE(SUM(amount),0) AS amount
+        FROM items WHERE characterId=? AND selfId=?`, [characterId, refill[1]]).amount;
+    return held >= refill[2] ? { clanShotRefill: null } : null;
+}
+
 // The summary entries of changedIds and adena from the physical rows, and the
 // next simulationRevision, for a row its caller has checked. The write moves
 // a far row, so what waits for it on the board joins it here.
@@ -3003,7 +3019,8 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
         else delete inventory[id];
     }
     const adena = Number(physical[57]?.amount || 0);
-    const { body, mind } = SavedStats.split({ ...statsPatch, hennas: nativeHennaSlotsUnsafe(characterId) });
+    const refillPatch = clearClanShotRefillUnsafe(characterId, row, ids, physical, statsPatch?.clanShotRefill);
+    const { body, mind } = SavedStats.split({ ...statsPatch, ...refillPatch, hennas: nativeHennaSlotsUnsafe(characterId) });
     // An equipment plan is a complete ownership record, not a partial JSON
     // patch: merging a resumed project into the completed goal leaves stale
     // target fields and even its nested inputPreparation behind.
@@ -4176,6 +4193,25 @@ function isBotOwnerUnsafe(ownerId) {
     return BoardRules.isBotAccount(one('SELECT username FROM characters WHERE id = ?', [Number(ownerId)])?.username);
 }
 
+function botKarmaUnsafe(characterId, life) {
+    const row = life === undefined ? one('SELECT phase,statsJson FROM bot_life_state WHERE characterId=?', [characterId]) : life;
+    if (row?.phase === 'hot') {
+        const actor = invoke('GameServer/World/World').registeredActorById(characterId)?.session?.actor;
+        const karma = actor?.fetchKarma?.();
+        if (karma != null) return karma;
+    }
+    return jsonObject(row?.statsJson).karma;
+}
+
+function floranMeetingPoint() {
+    const { marketTown } = invoke('GameServer/Bot/Economy/MarketTownPolicy');
+    return { town: Karma.TOWN_NAME, ...marketTown(Karma.TOWN_NAME).center };
+}
+
+function meetingAdConfig(config, karma) {
+    return Karma.townFor(karma, config.town) === config.town ? config : { ...config, ...floranMeetingPoint() };
+}
+
 // A cold bot learns of a deal at its next save: what the deal owes it waits on
 // the board. A player or a hot actor gets it at once (the main thread owns its
 // bag and refreshes the actor after the commit).
@@ -4542,6 +4578,7 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false, bid
     checkBotCapsUnsafe(characterId, kind);
 
     const conditional = ['buy_ad', 'sell_ad'].includes(kind) && isBotOwnerUnsafe(characterId);
+    if (conditional) config = meetingAdConfig(config, botKarmaUnsafe(characterId));
     let escrowAdena = 0;
     if (!conditional && storeType === BoardRules.BUY) {
         escrowAdena = rows.reduce((sum, line) => {
@@ -4681,9 +4718,12 @@ function reconcileBotPurchasesUnsafe(characterId, held, configs, purchase, times
 
 function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp, { bidWallet = null } = {}) {
     if (configs.length > BoardRules.BOT_RECORDS.buy_ad) throw Error('board_cap_reached');
+    const bot = isBotOwnerUnsafe(characterId);
+    const karma = bot ? botKarmaUnsafe(characterId) : 0;
     const key = (town, line) => `${town || ''}:${Number(line.selfId)}:${Number(line.enchant || 0)}`;
     const current = new Map(held.map(shop => [key(shop.town, shop.lines[0]), shop]));
-    const identities = new Set(), wanted = configs.map(config => {
+    const identities = new Set(), wanted = configs.map(input => {
+        const config = meetingAdConfig(input, karma);
         const line = config.lines[0], selfId = Number(line.selfId), count = Number(line.count);
         const enchant = Number(line.enchant || 0), identity = `${selfId}:${enchant}`;
         if (!Number.isSafeInteger(selfId) || selfId <= 0 || selfId === 57
@@ -4700,7 +4740,7 @@ function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp, { bidWa
         if (!previous && line.pricing) pricingValues(line.pricing);
         return { config, line, previous, count, price, reserve };
     });
-    if (isBotOwnerUnsafe(characterId)) {
+    if (bot) {
         for (const row of wanted) if (!row.previous || row.count > Number(row.previous.lines[0].count)) checkConditionalBidUnsafe(characterId, row.line, row.price, bidWallet);
         const revision = Number(one('SELECT simulationRevision FROM bot_life_state WHERE characterId=?', [characterId])?.simulationRevision || 0);
         const keep = new Set(wanted.filter(row => row.previous).map(row => row.previous.id));
@@ -5136,6 +5176,7 @@ const Database = {
                 transferMs: Number(options.default.Database?.historyTransferMs) || 200 });
             startEconomyJournal();
             ClanReviewInputs.attach(connection);
+            ClanDyeStock.attach(connection);
             CheckpointCoordinator.start(databasePath, {
                 intervalMs: Number(options.default.Database?.checkpointIntervalMs) || 5000,
                 minWalBytes: Number(options.default.Database?.checkpointMinWalBytes) || (4 * 1024 * 1024)
@@ -5852,6 +5893,42 @@ const Database = {
         }, 'board:migrate-world');
     },
 
+    // Starter-market ads lacked Z. Floran ads used the centroid above the square.
+    repairBoardMeetingOfferLocations() {
+        const { marketTown } = invoke('GameServer/Bot/Economy/MarketTownPolicy');
+        const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
+        return inTransaction(() => {
+            let repaired = 0;
+            for (const town of ['Elven Village', 'Dark Elven Village']) {
+                const { locX, locY, locZ } = marketTown(town).center;
+                repaired += write(`UPDATE afk_trade_shops SET locZ = ?, revision = revision + 1
+                    WHERE town = ? AND locX = ? AND locY = ? AND locZ = 0 AND status = 'active'
+                        AND custodyPolicy = 1 AND kind IN ('sell_ad', 'buy_ad')`, [locZ, town, locX, locY]).affectedRows;
+            }
+            const { town, locX, locY, locZ } = floranMeetingPoint();
+            const legacy = ShopPlaces.fillCenter(town);
+            return repaired + write(`UPDATE afk_trade_shops SET locX=?, locY=?, locZ=?, revision=revision+1
+                WHERE town=? AND locX=? AND locY=? AND locZ=? AND status='active'
+                    AND custodyPolicy=1 AND kind IN ('sell_ad','buy_ad')`,
+            [locX, locY, locZ, town, legacy.locX, legacy.locY, ShopPlaces.PLAZAS[town].locZ]).affectedRows;
+        }, 'board:repair-meeting-offer-locations');
+    },
+
+    // Existing quotes keep their stock and terms when their merchant receives karma.
+    moveKarmaMeetingAds(ownerId = null) {
+        const { town, locX, locY, locZ } = floranMeetingPoint();
+        return inTransaction(() => {
+            if (ownerId !== null && !Karma.closesTowns(botKarmaUnsafe(ownerId))) return [];
+            const owners = ownerId === null
+                ? `ownerId IN (SELECT characterId FROM bot_life_state WHERE json_extract(statsJson,'$.karma') > 0)`
+                : 'ownerId = ?';
+            const changed = all(`UPDATE afk_trade_shops SET town=?,locX=?,locY=?,locZ=?,revision=revision+1,updatedAt=?
+                WHERE status='active' AND custodyPolicy=1 AND kind IN ('buy_ad','sell_ad') AND town IS NOT ?
+                    AND ${owners} RETURNING id`, [town, locX, locY, locZ, now(), town, ...(ownerId === null ? [] : [ownerId])]);
+            return ownerId === null ? changed.length : changed.map(({ id }) => afkTradeShopUnsafe(id));
+        }, 'board:move-karma-meeting-ads');
+    },
+
     // The owner changes the price (and count) of one of its lines: a sell
     // line gives back the rest of its stock, a buy line's escrow follows.
     repriceAfkTradeShop(ownerId, lineId, price, expectedRevision = null, quantity = null, rival = null) {
@@ -6446,11 +6523,13 @@ const Database = {
             // accepted obligations while their party's native owner advances them.
             const MeetingService = require('./GameServer/AfkTrade/TradeMeetingService');
             const Admission = require('./GameServer/Bot/Population/PartyAdmission');
-            const blocked = batch.filter(entry => entry.row.partyId
-                && String(entry.expectedPartyId || '') !== String(entry.row.partyId)
-                && !Admission.partyTradeAllowed('party', {}, null,
-                    MeetingService.hasPreparation(entry.row.characterId),
-                    !!TradeMeetings.anchor(Number(entry.row.characterId))))
+            const blocked = batch.filter(entry => {
+                if (!entry.row.partyId || String(entry.expectedPartyId || '') === String(entry.row.partyId)) return false;
+                const id = Number(entry.row.characterId);
+                const ticket = jsonObject(currentById.get(id)?.statsJson).partyMarketReturn;
+                return ticket?.cleanupReason === 'trade_meeting' && ticket.partyId !== entry.row.partyId
+                    || !Admission.partyTradeAllowed('party', {}, null, MeetingService.hasPreparation(id), !!TradeMeetings.anchor(id));
+            })
                 .map(entry => Number(entry.row.characterId));
             if (blocked.length) return { ok: false, reason: 'party_trade_busy', conflicts: blocked };
 
@@ -6546,6 +6625,16 @@ const Database = {
         'raid-boss:upsert');
     },
 
+    recordBotRaidOutcome(outcome) {
+        if (!connection) return Promise.resolve();
+        return inTransaction(() => BotRaidMemory.writeOutcome(write, outcome), 'bot-activity:raid-outcome');
+    },
+
+    recordBotPvpOutcome(outcome) {
+        if (!connection) return Promise.resolve();
+        return inTransaction(() => BotPvpMemory.writeOutcome(write, outcome), 'bot-activity:pvp-outcome');
+    },
+
     // A bot's input revisions (bag summary, learned skills, henna slots) from
     // its bot_life_state row or a state that copied them; 0 = unknown.
     stateRevisions,
@@ -6575,9 +6664,24 @@ const Database = {
                 invalidColumn: Object.keys(requestedPatch).find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column))
             };
         };
-        // The proposal's columns and the stats object its owner passes: no
-        // row read and no parse.
-        const proposalPartition = (request, fields) => coldSimulationPartition(fields.requestedPatch, request, request.stats || {});
+        // Check the proposed columns and stats without reading the live row.
+        const proposalPartition = (request, fields) => {
+            const physical = request.physical;
+            if (physical?.soulCrystals?.length) {
+                // A receipt moves the original item. Refuse a stale bag before
+                // the generic sync can recreate a previous stage.
+                const steps = physical.soulCrystals, final = steps.at(-1);
+                const matches = inventory => {
+                    const crystal = inventory?.[final.toId];
+                    return crystal?.amount > 0 && crystal.instances?.some(item => item.id === final.objectId)
+                        && steps.every(step => !(inventory[step.fromId]?.amount > 0));
+                };
+                if (!matches(physical.inventory) || !matches(jsonObject(fields.requestedPatch.inventorySummary))) {
+                    return { ok: false, reason: 'cold_soul_crystal_projection_changed' };
+                }
+            }
+            return coldSimulationPartition(fields.requestedPatch, request, request.stats || {});
+        };
         const validatedRaidKeys = new Set();
         const validateAtomicGroups = () => atomicGroups.forEach((group, groupId) => {
             const expectedIds = new Set((group[0]?.atomicGroup?.memberIds || []).map(Number).filter(Boolean));
@@ -6753,10 +6857,13 @@ const Database = {
             const partyClock = groupClock !== null ? performance.now() : null;
             for (const [groupId, group] of atomicGroups) {
                 if (atomicGroupFailures.has(groupId)) continue;
-                const changes = group[0].atomicGroup.partyChanges || [];
-                if (!changes.length) continue;
+                const { partyChanges: changes = [], pvpMemory, memberIds } = group[0].atomicGroup;
+                if (!changes.length && !pvpMemory) continue;
                 if (group.some(request => !results.find(result => result.characterId === Number(request.characterId))?.ok)) {
                     throw new Error('party conflict: incomplete atomic outcome');
+                }
+                if (pvpMemory && pvpMemory.sides.flat().every(id => memberIds.includes(id))) {
+                    BotPvpMemory.writeOutcome(write, pvpMemory);
                 }
                 for (const change of changes) {
                     const previous = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [change.partyId]);
@@ -6795,6 +6902,24 @@ const Database = {
                             ON CONFLICT(npcId) DO UPDATE SET respawnTime=excluded.respawnTime, hp=0, mp=0, updatedAt=excluded.updatedAt`,
                         [defeat.npcId, defeat.respawnTime, now()]);
                     }
+                    if (raidCommit.dialogueMemory && raidCommit.worldRequired !== false) {
+                        const [change] = changes;
+                        const outcome = jsonObject(change.statsJson).raidEncounter;
+                        const defeated = outcome?.status === 'defeated';
+                        const owner = defeated ? raidCommit.snapshot.winnerPartyId : outcome?.failedPartyId;
+                        if (owner === change.partyId && outcome.raidInstanceId === raidCommit.snapshot.raidInstanceId
+                            && (!defeated || (raidCommit.snapshot.status === 'defeated'
+                                && raidCommit.snapshot.defeatedAt === outcome.defeatedAt))) {
+                            BotRaidMemory.writeOutcome(write, {
+                                bossId: Number(outcome.bossTemplateId), bossName: raidCommit.dialogueMemory.bossName,
+                                instanceId: outcome.raidInstanceId, partyId: change.partyId, status: outcome.status,
+                                at: defeated ? outcome.defeatedAt : outcome.failedAt,
+                                participants: raidCommit.dialogueMemory.participantIds,
+                                bots: raidCommit.dialogueMemory.participantIds,
+                                winningParticipantIds: raidCommit.dialogueMemory.winningParticipantIds
+                            });
+                        }
+                    }
                     let raidRow, raidPartyRow, raidRowsRead = false;
                     for (const request of group) {
                         const result = results.find(result => result.characterId === Number(request.characterId));
@@ -6815,7 +6940,7 @@ const Database = {
         }, 'bot-life:cold-owner-commit-release-batch');
     },
 
-    endPvpEncounter(key, ids, outcome = 'pvp_expired') {
+    endPvpEncounter(key, ids, outcome = 'pvp_expired', memory = null) {
         if (typeof key !== 'string' || !Array.isArray(ids) || ids.length > 18) return Promise.resolve({ rows: [], parties: [] });
         return inTransaction(() => {
             const rows = [], parties = [], partyIds = new Set(), timestamp = now();
@@ -6841,6 +6966,9 @@ const Database = {
                 write('UPDATE bot_background_parties SET statsJson = ?, updatedAt = ?, revision = revision + 1 WHERE partyId = ?',
                     [JSON.stringify(stats), Math.max(timestamp, Number(party.updatedAt) + 1), partyId]);
                 parties.push(one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId]));
+            }
+            if (rows.length && memory?.key === key && memory.sides.flat().every(id => ids.includes(id))) {
+                BotPvpMemory.writeOutcome(write, memory);
             }
             return { rows, parties };
         }, 'bot-life:pvp-encounter-end');
@@ -6956,6 +7084,7 @@ const Database = {
             }
             write('UPDATE bot_background_parties SET status = ?, nextResolveAt = ?, statsJson = ?, updatedAt = ?, revision = revision + 1 WHERE partyId = ?',
                 [request.phase === 'hot' ? 'hot' : 'active', request.nextResolveAt, request.statsJson, timestamp, request.partyId]);
+            if (request.raidMemory) BotRaidMemory.writeOutcome(write, request.raidMemory);
             return { ok: true, rows: ids.map(coldSimulationRow),
                 party: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [request.partyId]) };
         }, 'bot-life:party-lifecycle');
@@ -8433,6 +8562,16 @@ const Database = {
             const quest = one('SELECT state FROM character_quests WHERE characterId = ? AND questId = 350', [characterId]);
             const item = one('SELECT selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [id, characterId]);
             if (quest?.state !== 'started' || !item || item.selfId !== expectedSelfId || item.amount !== 1 || item.equipped) return false;
+            const goal = one(`SELECT json_extract(statsJson, '$.soulCrystalGoal[0]') AS weaponId,
+                json_extract(statsJson, '$.soulCrystalGoal[1]') AS recipeId
+                FROM bot_life_state WHERE characterId = ?`, [characterId]);
+            if (goal?.recipeId) {
+                const target = [goal.weaponId, goal.recipeId];
+                const BotCrystal = invoke('GameServer/Bot/Economy/BotSoulCrystal');
+                if (!BotCrystal.allowedStage(target, expectedSelfId)) return false;
+                const weapon = one('SELECT selfId, equipped FROM items WHERE id = ? AND characterId = ?', [target[0], characterId]);
+                if (!weapon?.equipped || !BotCrystal.matchesWeapon(target, weapon.selfId)) return false;
+            }
             const quantity = one(`SELECT SUM(amount) AS count FROM items WHERE characterId = ? AND amount > 0 AND selfId IN (${crystalIds.map(() => '?').join(',')})`, [characterId, ...crystalIds]);
             if (quantity.count !== 1) return false;
             write('UPDATE items SET selfId = ?, name = ? WHERE id = ? AND characterId = ?', [selfId, name, id, characterId]);
@@ -8963,6 +9102,52 @@ const Database = {
         }, 'cold:soul-crystals'));
     },
 
+    repairColdSoulCrystalBags() {
+        return inTransaction(() => {
+            const Native = invoke('GameServer/Items/SoulCrystalProgression');
+            const Life = invoke('GameServer/Bot/Population/BotLifeState');
+            const ids = [...Native.crystalIds, 4662, 4663, 4664];
+            const rows = all(`SELECT b.characterId, b.inventorySummary FROM bot_life_state b
+                JOIN character_quests q USING (characterId)
+                WHERE b.phase = 'cold' AND json_type(b.statsJson, '$.soulCrystalGoal') = 'array'
+                    AND q.questId = 350 AND q.state = 'started'`);
+            let repaired = 0, removed = 0;
+            for (const row of rows) {
+                const inventory = InventorySummary.read(row.inventorySummary);
+                const projected = ids.filter(id => inventory[id]?.amount > 0);
+                if (projected.length !== 1) continue;
+                const [fromId] = projected;
+                const from = Native.catalog.crystals[fromId], held = inventory[fromId];
+                const instanceId = held.instances?.[0]?.id;
+                if (!from || held.amount !== 1 || !instanceId) continue;
+                const canonical = one('SELECT * FROM items WHERE characterId = ? AND id = ?', [row.characterId, instanceId]);
+                if (!canonical || canonical.equipped || canonical.amount !== 1 || canonical.selfId === fromId) continue;
+                const advanced = Native.catalog.crystals[canonical.selfId];
+                if (canonical.selfId !== from.brokenId && (advanced?.color !== from.color || advanced.stage <= from.stage)) continue;
+                // The damaged projection names the original object under its
+                // old stage. It can also have recreated that old stage under a
+                // fresh id. Leave other combinations of physical items alone.
+                const others = all(`SELECT id, selfId, amount, equipped FROM items
+                    WHERE characterId = ? AND amount > 0 AND id <> ?
+                        AND selfId IN (${ids.map(() => '?').join(',')})`, [row.characterId, instanceId, ...ids]);
+                const duplicate = others[0];
+                if (others.length && (others.length !== 1 || duplicate.selfId !== fromId
+                    || duplicate.id <= instanceId || duplicate.amount !== 1 || duplicate.equipped)) continue;
+                if (duplicate) {
+                    write('DELETE FROM items WHERE id = ? AND characterId = ?', [duplicate.id, row.characterId]);
+                    removed++;
+                }
+                delete inventory[fromId];
+                Object.assign(inventory, Life.inventorySummaryFromItems([canonical]));
+                const summary = InventorySummary.saved(inventory);
+                write(`UPDATE bot_life_state SET inventorySummary = ?, ${bagRevisionSet('?')},
+                    simulationRevision = simulationRevision + 1 WHERE characterId = ?`, [summary, summary, row.characterId]);
+                repaired++;
+            }
+            return { repaired, removed };
+        }, 'bot-life:repair-soul-crystal-bags');
+    },
+
     applyBotImprovement(characterId, proposal, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_improvement_before_write', characterId);
         const state = options.coldState;
@@ -9002,6 +9187,22 @@ const Database = {
             };
             let result, changedIds = [], hennas, equipmentPatch;
             const Policy = invoke('GameServer/Bot/Economy/BotImprovementPolicy');
+            const side = proposal.soulCrystalGoal != null;
+            if (side) {
+                const life = one('SELECT * FROM bot_life_state WHERE characterId = ?', [characterId]);
+                const BotCrystal = invoke('GameServer/Bot/Economy/BotSoulCrystal');
+                const Life = invoke('GameServer/Bot/Population/BotLifeState');
+                const physical = Life.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [characterId]));
+                const source = life && reserveStateUnsafe(life, SavedStats.merge(life.statsJson, life.mindJson), physical);
+                if (!source || !BotCrystal.validateStep(source, proposal)) throw Error('improvement_source_changed');
+                if (proposal.kind === 'sa') {
+                    const reservations = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(source);
+                    for (const cost of BotCrystal.costsFor(proposal)) {
+                        if (Number(physical[cost.selfId]?.amount || 0) - Number(reservations[cost.selfId] || 0) < cost.amount)
+                            throw Error('improvement_missing_materials');
+                    }
+                }
+            }
             if (proposal.kind === 'enchant') {
                 const Rules = invoke('GameServer/Items/C4EnchantRules');
                 const item = one('SELECT * FROM items WHERE id = ? AND characterId = ?', [proposal.objectId, characterId]);
@@ -9157,13 +9358,14 @@ const Database = {
                 changedIds.push(57, symbol.dyeSelfId); result = 'henna';
             } else throw Error('invalid_bot_improvement');
             guard();
-            if (state) {
+            if (state || side) {
                 const current = one('SELECT statsJson, mindJson FROM bot_life_state WHERE characterId = ?', [characterId]);
                 const stats = SavedStats.merge(current.statsJson, current.mindJson);
                 Object.assign(stats, equipmentPatch);
                 stats.lastImprovement = { kind: proposal.kind, result, at: now(), objectId: proposal.objectId || null };
                 if (hennas) stats.hennas = hennas;
                 if (result === 'crystal_quest') stats.soulCrystalQuest = true;
+                if (side) stats.soulCrystalGoal = result === 'sa' ? null : proposal.soulCrystalGoal;
                 if (result === 'break' || result === 'blessed-fail') {
                     const lossHours = Number(proposal.lossHours || 0);
                     stats.frustration = Number(stats.frustration || 0) + (Number.isFinite(lossHours) ? Math.max(0, lossHours) : 0);
@@ -9174,7 +9376,9 @@ const Database = {
                 mutate('UPDATE bot_life_state SET statsJson = ?, mindJson = ? WHERE characterId = ?', [columns.statsJson, columns.mindJson, characterId]);
             }
             const coldLifeRow = syncEconomySnapshotUnsafe(characterId, state, changedIds);
-            return { result, coldLifeRow, hennas, questStarted: result === 'crystal_quest', changedIds, items: all('SELECT * FROM items WHERE characterId = ? ORDER BY id', [characterId]) };
+            return { result, coldLifeRow, hennas, questStarted: result === 'crystal_quest', changedIds,
+                ...(side ? { soulCrystalGoal: result === 'sa' ? null : proposal.soulCrystalGoal } : {}),
+                items: all('SELECT * FROM items WHERE characterId = ? ORDER BY id', [characterId]) };
         }, 'bot:improvement'));
     },
 
@@ -10512,6 +10716,10 @@ const Database = {
     fetchClanWarehouseItems(clanId) {
         return select('clan_warehouse_items', ['*'], 'clanId = ? AND amount > 0', [Number(clanId)], 'clan-warehouse:list');
     },
+    hasFreeClanWarehouseItem(clanId, selfId) {
+        return run('SELECT 1 FROM clan_warehouse_items WHERE clanId = ? AND selfId = ? AND amount > reservedAmount LIMIT 1',
+            [clanId, selfId], 'clan-warehouse:available').then(rows => rows.length > 0);
+    },
     updateAutonomousClanStrategy({ clanId, leaderId, expectedUpdatedAt, strategy, eventType = null } = {}) {
         const clan = Number(clanId);
         if (!clan || strategy?.version !== 1 || !require('./GameServer/Clan/ClanStrategyPolicy').LABELS[strategy.objective]
@@ -11328,14 +11536,16 @@ const Database = {
         expectedWarehouseRevision = null,
         expectedSimulationRevision = null,
         allowParty = false,
-        clanOrder = null
+        clanOrder = null,
+        consumable = null
     } = {}) {
         const clan = Number(clanId);
         const beneficiary = Number(characterId);
         const itemId = Number(selfId || 0);
-        const requested = Math.floor(Number(amount) || 0);
+        let requested = Math.floor(Number(amount) || 0);
         const key = String(goalKey || '').trim();
-        if (!clan || !beneficiary || !itemId || requested <= 0 || !key) {
+        if (!clan || !beneficiary || !itemId || requested <= 0 || !key
+            || consumable && !Number.isSafeInteger(requested)) {
             return Promise.resolve({ ok: false, code: 'warehouse_transfer_failed' });
         }
 
@@ -11344,13 +11554,13 @@ const Database = {
                 return { ok: false, code: 'clan_order_revision_conflict' };
             }
             const simulation = one('SELECT clanId, stateJson FROM clan_simulation_clans WHERE clanId = ?', [clan]);
-            const member = one('SELECT id, clanId FROM characters WHERE id = ?', [beneficiary]);
-            const life = one(`SELECT phase, simulationRevision, partyId
-                FROM bot_life_state WHERE characterId = ?`, [beneficiary]);
-            if (!simulation || !member || Number(member.clanId) !== clan || !life) {
+            const member = one('SELECT id, clanId, classId FROM characters WHERE id = ?', [beneficiary]);
+            const life = one('SELECT * FROM bot_life_state WHERE characterId = ?', [beneficiary]);
+            if ((!simulation && !consumable) || !member || Number(member.clanId) !== clan || !life) {
                 return { ok: false, code: 'warehouse_transfer_failed' };
             }
-            if (String(life.phase || '') !== 'cold'
+            const phase = consumable?.phase || 'cold';
+            if (!['cold', 'hot'].includes(phase) || life.phase !== phase
                 || (!allowParty && String(life.partyId || '') !== '')) {
                 return { ok: false, code: 'stale_snapshot' };
             }
@@ -11359,8 +11569,9 @@ const Database = {
                 return { ok: false, code: 'stale_snapshot', simulationRevision: Number(life.simulationRevision || 0) };
             }
 
-            const previousState = jsonObject(simulation.stateJson);
-            const currentWarehouseRevision = Math.max(0, Number(previousState.warehouseRevision) || 0);
+            const previousState = jsonObject(simulation?.stateJson);
+            const currentWarehouseRevision = simulation ? Math.max(0, Number(previousState.warehouseRevision) || 0)
+                : Number(one('SELECT COALESCE(MAX(warehouseRevision), 0) AS revision FROM clan_warehouse_ledger WHERE clanId = ?', [clan]).revision);
             if (expectedWarehouseRevision !== null
                 && currentWarehouseRevision !== Number(expectedWarehouseRevision)) {
                 return { ok: false, code: 'ownership_conflict', warehouseRevision: currentWarehouseRevision };
@@ -11398,7 +11609,52 @@ const Database = {
                 0,
                 Number(row.amount || 0) - Number(row.reservedAmount || 0)
             ), 0);
-            if (available < requested) {
+            let errandPatch = null;
+            if (consumable && available > 0) {
+                if (!(Number(one('SELECT level FROM clans WHERE id = ?', [clan])?.level) >= 1)
+                    || typeof consumable.validate !== 'function' || !consumable.validate()) {
+                    return { ok: false, code: 'stale_snapshot' };
+                }
+                if (consumable.symbolId) {
+                    const Henna = invoke('GameServer/Henna/HennaRules');
+                    const symbol = Henna.symbolForClass(member.classId, consumable.symbolId);
+                    const slots = nativeHennaSlotsUnsafe(beneficiary).filter(Boolean);
+                    if (symbol?.dyeSelfId !== itemId || slots.includes(symbol.id)
+                        || slots.length >= Henna.slotsForClass(member.classId)) {
+                        return { ok: false, code: 'invalid_bot_henna' };
+                    }
+                } else if (!invoke('GameServer/Inventory/ShotStock').kindForSelfId(itemId)
+                    || require('./GameServer/Items/C4BeginnerShots').isRestricted(itemId)) {
+                    return { ok: false, code: 'warehouse_transfer_failed' };
+                }
+                const order = one(`SELECT amount FROM clan_orders WHERE clanId = ? AND itemId = ?
+                    AND status IN ('active', 'paused', 'blocked')`, [clan, itemId]);
+                const total = stockRows.reduce((sum, row) => sum + Number(row.amount), 0);
+                requested = Math.min(requested, available, Math.max(0, total - Number(order?.amount || 0)));
+                if (requested > 0 && consumable.errand) {
+                    const Errands = require('./GameServer/Bot/Population/CombinedErrandPolicy');
+                    const expected = consumable.errand;
+                    const errands = Errands.pending({ stats: SavedStats.merge(life.statsJson, life.mindJson) });
+                    const index = errands.findIndex(errand => Errands.key(errand) === Errands.key(expected)
+                        && Number(errand.at) === Number(expected.at) && Number(errand.amount) === Number(expected.amount));
+                    if (index < 0) return { ok: false, code: 'stale_snapshot' };
+                    const errand = errands[index], rest = Number(errand.amount) - requested;
+                    if (rest > 0) errands[index] = { ...errand, amount: rest };
+                    else errands.splice(index, 1);
+                    errandPatch = { marketErrands: errands, marketErrand: errands[0] || null };
+                }
+                if (requested > 0 && phase === 'cold') {
+                    // An older cold row can still hold a stack awaiting materialization.
+                    const held = InventorySummary.read(life.inventorySummary)[itemId];
+                    const physical = one(`SELECT COALESCE(SUM(amount), 0) AS amount FROM items
+                        WHERE characterId = ? AND selfId = ?`, [beneficiary, itemId]).amount;
+                    if (Number(physical) > Number(held?.amount || 0)) return { ok: false, code: 'stale_snapshot' };
+                    if (held && Number(physical) < Number(held.amount)) {
+                        syncInventorySummaryUnsafe(beneficiary, { [itemId]: held }, new Set([itemId]));
+                    }
+                }
+            }
+            if (!requested || available < requested) {
                 return { ok: false, code: 'warehouse_no_stock', available };
             }
 
@@ -11446,32 +11702,38 @@ const Database = {
             }
             if (remaining > 0) throw new Error('clan warehouse handoff source changed');
 
-            const lifeUpdate = updateColdInventorySnapshotUnsafe(beneficiary, itemId, {
+            const event = {
                 clanId: clan,
                 selfId: itemId,
                 amount: requested,
                 warehouseId: consumedRows[0]?.warehouseId || null,
                 at: timestamp,
                 operation: 'withdraw'
-            }, expectedSimulationRevision === null
-                ? Number(life.simulationRevision || 0)
-                : Number(expectedSimulationRevision), allowParty);
+            };
+            const snapshot = consumable ? writeColdInventorySnapshotUnsafe(beneficiary, life, [itemId], null, {
+                ...errandPatch,
+                lastClanWarehouseTransfer: event,
+                clanInventoryRevision: Number(life.simulationRevision) + 1,
+                ...(consumable.shotRefillTarget > 0
+                    ? { clanShotRefill: [clan, itemId, consumable.shotRefillTarget] } : {})
+            }) : null;
+            const lifeUpdate = snapshot ? { ok: true, simulationRevision: snapshot.simulationRevision }
+                : updateColdInventorySnapshotUnsafe(beneficiary, itemId, event, Number(life.simulationRevision), allowParty);
             if (!lifeUpdate.ok) throw new Error(`clan warehouse handoff rejected: ${lifeUpdate.code}`);
 
             const nextWarehouseRevision = currentWarehouseRevision + 1;
-            const state = simulationState(simulation.stateJson, clan, previousState.leaderId, previousState.memberIds || [], timestamp);
-            state.warehouseRevision = nextWarehouseRevision;
-            const stateUpdate = write(`UPDATE clan_simulation_clans
-                SET updatedAt = ?, stateJson = ?
-                WHERE clanId = ? AND json_extract(stateJson, '$.warehouseRevision') = ?`, [
-                timestamp,
-                JSON.stringify(state),
-                clan,
-                currentWarehouseRevision
-            ]);
-            if (Number(stateUpdate.affectedRows || 0) !== 1) throw new Error('clan warehouse revision changed');
+            if (simulation) {
+                const state = simulationState(simulation.stateJson, clan, previousState.leaderId, previousState.memberIds || [], timestamp);
+                state.warehouseRevision = nextWarehouseRevision;
+                const stateUpdate = write(`UPDATE clan_simulation_clans
+                    SET updatedAt = ?, stateJson = ?
+                    WHERE clanId = ? AND COALESCE(json_extract(stateJson, '$.warehouseRevision'), 0) = ?`, [
+                    timestamp, JSON.stringify(state), clan, currentWarehouseRevision
+                ]);
+                if (Number(stateUpdate.affectedRows || 0) !== 1) throw new Error('clan warehouse revision changed');
+            }
 
-            const reservationResult = reservation
+            const reservationResult = consumable ? null : reservation
                 ? write(`UPDATE clan_warehouse_reservations
                     SET amount = ?, beneficiaryId = ?, status = 'consumed', updatedAt = ?
                     WHERE id = ? AND clanId = ?`, [requested, beneficiary, timestamp, reservation.id, clan])
@@ -11494,8 +11756,9 @@ const Database = {
                 amount: requested,
                 warehouseRevision: nextWarehouseRevision,
                 simulationRevision: lifeUpdate.simulationRevision,
-                reservationId: Number(reservation?.id || reservationResult.insertId || 0),
-                state: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [beneficiary])),
+                reservationId: Number(reservation?.id || reservationResult?.insertId || 0),
+                state: snapshot || normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [beneficiary])),
+                ...(phase === 'hot' ? { items: all('SELECT * FROM items WHERE characterId = ? AND selfId = ?', [beneficiary, itemId]) } : {}),
                 ledgerId: Number(ledger.insertId)
             };
         }, 'clan-warehouse:withdraw')).then(result => {
@@ -12043,6 +12306,24 @@ Object.assign(Database, require('./GameServer/ClanHall/Repository')({
     rememberClanContributionUnsafe
 }));
 
+function tradeMeetingPartyUnsafe(partyId, characterId) {
+    const row = partyId && one('SELECT * FROM bot_background_parties WHERE partyId=?', [partyId]);
+    if (!row) return null;
+    const memberIds = JSON.parse(row.memberIdsJson || '[]').map(Number);
+    if (memberIds.length < 2 || memberIds.length > 9 || !memberIds.includes(characterId)) return null;
+    const party = { ...row, memberIds, stats: jsonObject(row.statsJson) };
+    const members = all(`SELECT characterId, partyId, phase, activity, hp, level, statsJson, mindJson,
+        locX, locY, locZ, currentRegion, spotId FROM bot_life_state
+        WHERE characterId IN (${memberIds.map(() => '?').join(',')})`, memberIds).map(member => ({ ...member,
+        loc: { locX: member.locX, locY: member.locY, locZ: member.locZ }, stats: jsonObject(member.statsJson) }));
+    return { party, members, member: members.find(member => member.characterId === characterId) };
+}
+
+function tradeMeetingAbsenceUnsafe(id) {
+    const row = one('SELECT statsJson FROM bot_life_state WHERE characterId=?', [id]);
+    return row && { stats: jsonObject(row.statsJson) };
+}
+
 const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
     one, all, write, now, take: afkTradeTakeItemUnsafe, debit: afkTradeDebitAdenaUnsafe,
     // A meeting's receipts and refunds go straight into the bags, a far actor's
@@ -12065,14 +12346,27 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
     canCompleteReceive: (id, life, itemId, count, pending, meetingId) => checkArrowPurchaseUnsafe(id, itemId, count, life, pending, meetingId),
     protection: (id, step, selfId, used) => checkEconomyMaterialProtectionUnsafe(id, step, selfId, used, true),
     position: tradeMeetingPositionUnsafe,
-    canStartTrade: (id, state) => require('./GameServer/Bot/Population/PartyAdmission').partyTradeAllowed(
-        'trade', state, invoke('GameServer/World/World').registeredActorById(id)?.session),
+    botKarma: botKarmaUnsafe,
+    canStartTrade: (id, state, playerTrade) => {
+        const session = invoke('GameServer/World/World').registeredActorById(id)?.session;
+        const Admission = require('./GameServer/Bot/Population/PartyAdmission');
+        if (jsonObject(state?.statsJson).partyMarketReturn?.cleanupReason === 'trade_meeting') return false;
+        if (Admission.partyTradeAllowed('trade', state, session)) return true;
+        if (!playerTrade || session || state?.playerPartyId) return false;
+        const group = tradeMeetingPartyUnsafe(state?.partyId, id);
+        return !!group && require('./GameServer/Bot/Population/PartyMarketBreak').canMeet(group.party, group.member, group.members,
+            now(), null, tradeMeetingAbsenceUnsafe);
+    },
     // stopTrip and startTrip do not move the revision: TradeMeeting's terminal
     // and leg run them in the transaction whose fence (`snapshot` below) moves
     // both actors' rows.
     stopTrip: meeting => {
         for (const actor of [meeting.actorA, meeting.actorB]) {
             write("UPDATE bot_life_state SET activity='shopping',statsJson=json_remove(statsJson,'$.travel') WHERE characterId=? AND json_extract(statsJson,'$.travel.meetingId')=?", [actor, meeting.id]);
+            write("UPDATE bot_life_state SET statsJson=json_remove(statsJson,'$.partyMeeting') WHERE characterId=? AND json_extract(statsJson,'$.partyMeeting')=?", [actor, meeting.id]);
+            if (!TradeMeetings.anchor(actor)) write(`UPDATE bot_life_state SET activity='shopping',nextResolveAt=?
+                WHERE characterId=? AND phase='cold' AND hp>0 AND activity NOT IN ('dead','resting','fighting')
+                  AND json_extract(statsJson,'$.travel') IS NULL AND json_extract(statsJson,'$.partyMarketReturn.cleanupReason')='trade_meeting'`, [now(), actor]);
             // The physical receipt survives a retained session or process restart;
             // its old companion workflow must not block future activation forever.
             write("UPDATE bot_life_state SET statsJson=json_remove(statsJson,'$.supplyErrand') WHERE characterId=? AND json_extract(statsJson,'$.supplyErrand.meetingToken')=?", [actor, meeting.token]);
@@ -12196,7 +12490,7 @@ function tradeMeetingPositionUnsafe(id) {
     if (!row || row.phase !== 'cold') return null;
     return { characterId: id, locX: row.locX, locY: row.locY, locZ: row.locZ,
         alive: Number(row.hp) > 0 && row.activity !== 'dead',
-        available: !['traveling', 'fighting', 'dead'].includes(row.activity) };
+        available: !['traveling', 'fighting', 'dead'].includes(row.activity) && !(row.partyId && jsonObject(row.statsJson).partyMeeting) };
 }
 function withTradeMeetingFlush(id, work, label) {
     return inTransaction(() => TradeMeetings.meeting(Number(id)), `${label}:owners`).then(row => {
@@ -12288,6 +12582,38 @@ Object.assign(Database, {
     },
     acceptTradeMeeting(request, preparation) {
         return withCharacterFlushes([request.actorA, request.actorB], () => inTransaction(() => TradeMeetings.accept(request, preparation), 'board:meeting-accept'));
+    },
+    departTradeMeetingParty(id, meetingId) {
+        return withTradeMeetingFlush(meetingId, () => {
+            const meeting = TradeMeetings.meeting(meetingId);
+            if (!meeting || meeting.state !== 'accepted') return null;
+            const row = one('SELECT partyId, statsJson FROM bot_life_state WHERE characterId=?', [id]);
+            if (jsonObject(row?.statsJson).partyMeeting !== meetingId) return null;
+            const group = tradeMeetingPartyUnsafe(row.partyId, id);
+            const at = now(), Break = require('./GameServer/Bot/Population/PartyMarketBreak');
+            if (!group || !Break.canMeet(group.party, group.member, group.members, at, meetingId, tradeMeetingAbsenceUnsafe))
+                return TradeMeetings.terminal(meetingId, false, 'party_unavailable');
+            const { party, member, members } = group;
+            if (party.stats.pveEncounter || ['resting', 'fighting'].includes(member.activity)) return null;
+
+            const { token, marketReturn } = Break.meetingDeparture(party, member, at);
+            const { releaseMember } = require('./GameServer/Bot/Population/BackgroundPartyLifecycle');
+            const state = releaseMember({ ...member, party: { partyId: party.partyId },
+                stats: SavedStats.merge(member.stats, member.mindJson) }, at, 'trade_meeting');
+            const { statsJson, mindJson } = SavedStats.statsColumns({ ...state.stats,
+                leaderId: null, partyMeeting: null, partyMarketReturn: token, marketReturn });
+            write(`UPDATE bot_life_state SET partyId=NULL,activity='hunting',activityStartedAt=?,nextResolveAt=?,
+                statsJson=?,mindJson=?,simulationRevision=simulationRevision+1,updatedAt=? WHERE characterId=?`,
+            [at, at, statsJson, mindJson, at, id]);
+            const remaining = members.filter(state => state.characterId !== id);
+            const coverage = require('./GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(remaining);
+            const stats = { ...party.stats, ...Break.stats(party, { characterId: id, stats: { partyMarketReturn: token } }) };
+            write(`UPDATE bot_background_parties SET memberIdsJson=?,roleCoverageJson=?,statsJson=?,
+                revision=revision+1,updatedAt=? WHERE partyId=?`,
+            [JSON.stringify(party.memberIds.filter(memberId => memberId !== id)), JSON.stringify(coverage), JSON.stringify(stats), at, party.partyId]);
+            return { meeting, pending: true, coldLifeRows: { [id]: normalizeRow(coldSimulationRow(id)) },
+                partyRow: one('SELECT * FROM bot_background_parties WHERE partyId=?', [party.partyId]) };
+        }, 'board:meeting-party-departure');
     },
     fetchTradeMeetingByToken(token) {
         return inTransaction(() => one('SELECT * FROM board_trade_meetings WHERE token=?', [String(token)]), 'board:meeting-replay');

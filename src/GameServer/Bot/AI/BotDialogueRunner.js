@@ -5,7 +5,7 @@ const MAX_ROUNDS = 4;
 
 // Callers own authority and delivery. A mutation is executed at most once;
 // a final model round can describe its receipt but cannot issue another one.
-async function run({ messages, generate, isRead, read, mutate, alive = () => true }) {
+async function run({ messages, generate, isRead, read, initialRead, mutate, alive = () => true }) {
     const history = messages.map(message => ({ ...message }));
     const seen = new Set();
     let reads = 0;
@@ -13,9 +13,31 @@ async function run({ messages, generate, isRead, read, mutate, alive = () => tru
     let spent = 0;
     let mutation = null;
     let last = null;
+    async function readDecision(decision, rounds) {
+        const { action, topic, query, entityId, page } = decision;
+        const signature = JSON.stringify([action, topic, String(query || '').trim().toLowerCase(),
+            ['items', 'npcs', 'skills'].includes(topic) ? null : Number(entityId) || null, Number(page) || 1]);
+        const repeated = seen.has(signature);
+        const result = repeated ? { ok: false, reason: 'already_read_use_previous_result' } : await read(decision);
+        seen.add(signature);
+        if (!repeated) reads += 1;
+        if (!alive()) return { ok: false, reason: 'actor_changed', usage };
+        if (result?.terminalReply) return { action: 'say', reply: result.terminalReply,
+            reason: result.replyReason || 'no_recorded_event', confidence: 1,
+            usage: rounds === 0 ? Protocol.addUsage(null, {}) : usage, rounds };
+        history.push({ role: 'assistant', content: JSON.stringify({ action, topic, query, entityId, page }) });
+        history.push({ role: 'user', content: JSON.stringify({ serverToolResult: Protocol.compact(result, { rows: 8 }),
+            instruction: 'Use this server result to answer the player or choose the next allowed action. Missing facts are unknown. Use the recorded counts and outcomes exactly.' }) });
+        return null;
+    }
+    if (initialRead) {
+        if (!alive()) return { ok: false, reason: 'actor_changed', usage };
+        const result = await readDecision(initialRead, 0);
+        if (result) return result;
+    }
     for (let round = 0; round < MAX_ROUNDS; round++) {
         if (!alive()) return { ok: false, reason: 'actor_changed', usage };
-        const final = !!mutation || round === MAX_ROUNDS - 1;
+        const final = !!mutation || initialRead?.answerOnly === true || round === MAX_ROUNDS - 1;
         const remaining = Protocol.MAX_TURN_PROMPT_TOKENS - spent;
         const completionRemaining = Protocol.MAX_TURN_COMPLETION_TOKENS - Number(usage?.completionTokens || 0);
         if (remaining < 256 || completionRemaining < 128) break;
@@ -39,18 +61,8 @@ async function run({ messages, generate, isRead, read, mutate, alive = () => tru
             mutation: { ...mutation, finalReply: last.reply }, rounds: round + 1 };
         if (isRead(last.action)) {
             if (final || reads >= MAX_READS) break;
-            const signature = JSON.stringify([last.action, last.topic, String(last.query || '').trim().toLowerCase(),
-                ['items', 'npcs', 'skills'].includes(last.topic) ? null : Number(last.entityId) || null, Number(last.page) || 1]);
-            const repeated = seen.has(signature);
-            const result = repeated ? { ok: false, reason: 'already_read_use_previous_result' } : await read(last);
-            seen.add(signature);
-            if (!repeated) reads += 1;
-            if (!alive()) return { ok: false, reason: 'actor_changed', usage };
-            if (result?.terminalReply) return { action: 'say', reply: result.terminalReply,
-                reason: 'no_recorded_event', confidence: 1, usage, rounds: round + 1 };
-            history.push({ role: 'assistant', content: JSON.stringify({ action: last.action, topic: last.topic, query: last.query, entityId: last.entityId, page: last.page }) });
-            history.push({ role: 'user', content: JSON.stringify({ serverToolResult: Protocol.compact(result, { rows: 8 }),
-                instruction: 'Use this server result to answer the player or choose the next allowed action. Missing data is unknown.' }) });
+            const result = await readDecision(last, round + 1);
+            if (result) return result;
             continue;
         }
         if (mutate && !['say', 'none'].includes(last.action)) {

@@ -22,6 +22,7 @@ const modules = {
     FailureLog: { noteUnnamed: (kind, error) => console.error(kind, error), report: noop },
     'GameServer/World/World': { init: async () => {} }, 'GameServer/DataCache': { init: noop, items: [] },
     'GameServer/Clan/ClanService': { init: async () => {} }, 'AuthenticationServer/Session': Session, 'GameServer/Session': Session,
+    'GameServer/Bot/Population/SpotProfiles': { ensure: noop },
     'GameServer/ProgressionRates': { profile: () => ({}) },
     'WorldObserver/WorldObserverServer': { init: () => process.send({ type: 'fixture:observer' }), stopCrestGeneration: noop }
 };

@@ -122,6 +122,12 @@ async function main() {
     await run('buy');capture();assert.equal(session.playerBoardView.tradeType, 'meeting');
     await run('workshop');capture();assert.equal(session.playerBoardView.tradeType, 'all', 'craft has its own stationary workshop offers');
     await handle(session, ['native-board', 'open', '1']);assert(capture().startsWith(Native.PREFIX), 'V1 clients retain the original wire layout');
+    reply = { ok: true, action: 'meet', conditional: true, side: 1, ownerName: 'Brokk', town: 'Goddard',
+        loc: { locX: 147744.7496179188, locY: -56093.45587490757, locZ: -2781 } };
+    await board.answer(session, { kind: 'sell_ad', id: 90, lineId: 100, selfId: 1864, price: 123, revision: 4 });
+    assert(session.nativeBoardModel.details.some(([label, value]) => label === 'Radar' && value === 'Location marked'));
+    const marker = packets.filter(packet => packet[0] === 0xeb).at(-1);
+    assert.deepEqual([1, 5, 9, 13, 17].map(offset => marker.readInt32LE(offset)), [0, 1, 147745, -56093, -2781]);
     if (process.argv[2]) fs.writeFileSync(process.argv[2], Buffer.from(fixtures.join('\0'), 'utf16le'));
     console.log('PASS native Market Board: wire snapshots, full prices, guarded actions, quantity, async agreement, meeting ETA, search/town, craft materials, private store handoff, close and stock fallback');
 }

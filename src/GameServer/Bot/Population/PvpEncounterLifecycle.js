@@ -97,12 +97,13 @@ async function activate(e, reason = 'near_player', options = {}) {
         if (e.expiresAt <= Date.now()) throw Error('encounter_expired_during_spawn');
         await life().settleWrites(Runtime.ids(e));
         states = statesFor(e);
-        states = await transition(e, states, roster.map(s => capture(s, states.find(n => n.characterId === id(s)), 'hot', e)), 'hot', reason);
-        publish(e, roster, states);
-        Runtime.register(e);
+        const live = { ...e, materialized: true };
+        states = await transition(e, states, roster.map(s => capture(s, states.find(n => n.characterId === id(s)), 'hot', live)), 'hot', reason);
+        publish(live, roster, states);
+        Runtime.register(live);
         states.forEach(() => invoke('GameServer/Bot/Population/PopulationMetrics').recordActivation(Date.now() - transitionStartedAt));
         activated = true;
-        return { ok: true, count: states.length, states, encounter: e, reason };
+        return { ok: true, count: states.length, states, encounter: live, reason };
     } catch (error) {
         discard(roster);
         if (reserved) {
@@ -167,7 +168,7 @@ async function cooldown(e, reason = 'policy', options = {}) {
         saved.forEach(s => coordinator().notifyState(s));
         // Expiry during handoff still needs the normal finalization path:
         // clear the persisted outcome and count completion exactly once.
-        Runtime.register(resumed || e);
+        Runtime.register(resumed || { ...e, materialized: true });
         saved.forEach(() => invoke('GameServer/Bot/Population/PopulationMetrics').recordCooldown(Date.now() - transitionStartedAt));
         return { ok: true, count: saved.length, states: saved, encounter: resumed };
     } catch (error) {

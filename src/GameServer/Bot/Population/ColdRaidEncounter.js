@@ -66,7 +66,7 @@ function begin(party, spot, targetNpcId, timestamp = Date.now()) {
     return structuredClone(record);
 }
 
-function record(party, shared, fight, timestamp = Date.now()) {
+function record(party, shared, fight, timestamp = Date.now(), participantIds = []) {
     if (!shared?.key) return null;
     const current = store().get(shared.key) || shared;
     if (current.raidInstanceId !== shared.raidInstanceId) return structuredClone(current);
@@ -81,6 +81,7 @@ function record(party, shared, fight, timestamp = Date.now()) {
         maxHp: number(encounter?.mob?.maxHp, number(current.maxHp)) || null,
         encounter,
         participants: { ...(current.participants || {}), [party.partyId]: timestamp },
+        combatParticipantIds: [...new Set([...(current.combatParticipantIds || []), ...participantIds])],
         revision: number(current.revision) + 1,
         updatedAt: timestamp,
         winnerPartyId: won ? party.partyId : current.winnerPartyId,
@@ -125,7 +126,7 @@ function fail(party, shared, timestamp = Date.now(), reason = 'party_death') {
         updatedAt: timestamp,
         winnerPartyId: null,
         defeatedAt: null,
-        ...(contested ? {} : { resetAt: timestamp })
+        ...(contested ? {} : { resetAt: timestamp, combatParticipantIds: [] })
     });
     return failed;
 }

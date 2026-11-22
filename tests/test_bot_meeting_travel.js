@@ -6,12 +6,13 @@ const Routes = require('../src/GameServer/Bot/Travel/TravelRoutes');
 const NativeTeleport = invoke('GameServer/Actor/Generics/TeleportTo');
 const originalInvoke = global.invoke, originalBetween = Routes.between, originalTimeout = global.setTimeout;
 let nativeMode = false;
-let x = 0, paid = [], acknowledgements = [], teleports = [], moves = [], cancelled = [], published = [];
+let x = 0, karma = 0, casting = false, paid = [], acknowledgements = [], teleports = [], moves = [], cancelled = [], published = [];
 // The meeting's other side is a far (cold) bot: every meeting write fences its row too.
 const far = { characterId: 2, phase: 'cold', simulationRevision: 7 };
 const actor = { fetchId: () => 1, isDead: () => false, fetchHp: () => 100,
     fetchLocX: () => x, fetchLocY: () => 0, fetchLocZ: () => 0,
-    state: { fetchHits: () => false, fetchCasts: () => false },
+    fetchKarma: () => karma,
+    state: { fetchHits: () => false, fetchCasts: () => casting, setCasts: value => { casting = value; } },
     moveTo: movement => moves.push(movement) };
 const session = { actor, tradeMeetingPresence: {} };
 const meeting = { id: 1, state: 'accepted', locX: 2000, locY: 0, locZ: 0,
@@ -83,6 +84,20 @@ Routes.between = position => ({ start: { locX: position.locX < 1000 ? 0 : 1400, 
         nativeMode = true;
         const timers = [];
         global.setTimeout = callback => { timers.push(callback); return 0; };
+        meeting.town = 'Floran Village';
+        meeting.routeA = JSON.stringify({ fee: 300, scroll: true, method: 'soe_gatekeeper' });
+        meeting.routeReserveA = 300;
+        meeting.nextLegA = 1;
+        await Travel.requestMeeting(session, actor, meeting, 0);
+        assert.equal(casting, true, 'a clean bot begins the agreed cast');
+        karma = 240;
+        timers.shift()();
+        assert.equal(casting, false, 'karma acquired during the cast stops departure');
+        assert.equal(x, 0);
+        assert.equal(teleports.length, departures);
+        await Travel.requestMeeting(session, actor, meeting, 0);
+        assert.deepEqual(cancelled.at(-1), { id: 1, reason: 'karma_blocks_route' });
+        karma = 0;
         actor.clearDestId = () => {};
         actor.automation = { abortAll() {} };
         session.accountId = 'bot_meeting_test';

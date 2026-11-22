@@ -1,5 +1,6 @@
 const FailureLog = require('../../../FailureLog');
 const Database = invoke('Database');
+const { EVENT_TYPES, COMBAT_EVENT_TYPES } = require('./BotCombatMemory');
 
 const DEFAULT_LIMIT = 12;
 const DEFAULT_COALESCE_WINDOW_MS = 60 * 1000;
@@ -210,19 +211,45 @@ const BotEventJournal = {
     ensureSchema,
     record,
     recent,
-    async search({ botId, playerId = null, query = '', limit = 6 } = {}) {
+    async search({ botId, playerId = null, query = '', limit = 6, combatKind = null,
+        includeCombat = true, since = 0, before = Number.MAX_SAFE_INTEGER, withParticipant = null,
+        matchParticipantNames = false } = {}) {
         const count = Math.max(1, Math.min(12, Math.floor(Number(limit) || 6)));
         const needle = String(query || '').trim().slice(0, 100);
-        const eligible = event => !/^(?:llm_|ambient_mood)/.test(event.eventType);
+        const participant = numberId(withParticipant);
+        const types = EVENT_TYPES[combatKind] || (!includeCombat ? COMBAT_EVENT_TYPES : []);
+        const eligible = event => !/^(?:llm_|ambient_mood)/.test(event.eventType)
+            && (!types.length || types.includes(event.eventType) === includeCombat)
+            && event.updatedAt >= since && event.updatedAt < before
+            && (!participant || (Array.isArray(event.meta?.participantIds) && event.meta.participantIds.includes(participant)));
+        const typeFilter = types.length ? `AND eventType ${includeCombat ? 'IN' : 'NOT IN'} (${types.map(() => '?').join(', ')})` : '';
+        const participantIds = "json_each(CASE WHEN json_valid(metaJson) THEN metaJson ELSE '{}' END, '$.participantIds')";
+        const participantFilter = participant ? `AND EXISTS (SELECT 1 FROM
+            ${participantIds} WHERE value = ?)` : '';
+        const nameMatches = matchParticipantNames && includeCombat && combatKind !== 'raid' && needle ? `, CASE WHEN eventType = ? THEN (
+            SELECT json_group_array(id) FROM (
+                SELECT c.id FROM ${participantIds} AS participant JOIN characters c ON c.id = participant.value
+                WHERE c.name LIKE ? ESCAPE '\\'
+                ORDER BY c.name = ? COLLATE NOCASE DESC, c.id
+            )) END AS matchedParticipantIds` : '';
         if (databaseReady() && await ensureSchema()) {
             try {
                 const escaped = needle.replace(/[\\%_]/g, value => '\\' + value);
-                const rows = await Database.execute([`SELECT id, playerId, botId, eventType, summary, weight, dedupeKey, count, createdAt, updatedAt, metaJson
+                const like = `%${escaped}%`;
+                const rows = await Database.execute([`SELECT * FROM (
+                    SELECT id, playerId, botId, eventType, summary, weight, dedupeKey, count,
+                        createdAt, updatedAt, metaJson ${nameMatches}
                     FROM bot_activity_journal WHERE botId = ? AND (playerId IS ? OR playerId IS NULL)
                     AND eventType NOT GLOB 'llm_*' AND eventType NOT GLOB 'ambient_mood*'
-                    AND summary LIKE ? ESCAPE '\\' ORDER BY updatedAt DESC, id DESC LIMIT ?`,
-                [Number(botId), numberId(playerId), `%${escaped}%`, count]], 'bot-activity:search');
-                return rows.map(normalizeRow).filter(Boolean).reverse();
+                    AND updatedAt >= ? AND updatedAt < ? ${typeFilter} ${participantFilter}
+                    ) WHERE (summary LIKE ? ESCAPE '\\' ${nameMatches ? 'OR json_array_length(matchedParticipantIds) > 0' : ''})
+                    ORDER BY updatedAt DESC, id DESC LIMIT ?`,
+                [...(nameMatches ? [EVENT_TYPES.pvp[0], like, needle] : []), Number(botId), numberId(playerId),
+                    since, before, ...types, ...(participant ? [participant] : []), like, count]], 'bot-activity:search');
+                return rows.filter(Boolean).map(row => ({
+                    ...normalizeRow(row),
+                    ...(row.matchedParticipantIds ? { matchedParticipantIds: JSON.parse(row.matchedParticipantIds) } : {})
+                })).reverse();
             } catch (_) { /* The in-memory journal remains a bounded fallback. */ }
         }
         return memory.filter(event => event.botId === Number(botId) &&

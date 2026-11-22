@@ -172,9 +172,16 @@ async function main() {
         assert.strictEqual(row.matchup, 'party_vs_party');
         assert([1,2,3,4].every(id => !state(id).stats.pvpEncounter && state(id).stats.coldCompetition.outcome === 'pvp_expired'));
         assert.strictEqual(Parties.find('enc-party-1').stats.coldCompetition.outcome, 'pvp_expired');
+        const recall = () => invoke('GameServer/Bot/AI/BotDialogueKnowledge').execute({ action: 'recall_event', query: 'pvp' },
+            { session: { characterId: 1 } });
+        const remembered = await recall();
+        assert.deepStrictEqual(remembered.rows.map(row => [row.outcome, row.resultForBot, row.killCount]),
+            [['expired', 'no_confirmed_winner', 0]], 'expiry after hot combat preserves confirmed participation without a winner');
+        assert(remembered.rows[0].opponents.length, 'the participant record survives the handoff');
         await Runtime.tick({ ...base, canRun: () => true, recordPvpStep: r => completions.push(r) });
         assert.strictEqual(completions.length, 1);
         assert.strictEqual(journalRows(e.key).length, 1, 'cleanup cannot journal the same fight again');
+        assert.deepStrictEqual(await recall(), remembered, 'expiry is remembered exactly once');
         console.log('Expiry during hot-to-cold handoff finalized once');
         return;
     }
@@ -319,12 +326,24 @@ async function main() {
     assert.strictEqual(state(7).stats.coldCompetition.outcome, 'pvp_expired');
     assert.strictEqual(ticks.filter(r => !r.encounter).length, 1, 'expiry counts one completion');
     assert.strictEqual(assertClosingRow(running.encounter.key, lastStep, 'pvp_expired').matchup, 'solo_vs_solo');
+    const remembered = await invoke('GameServer/Bot/AI/BotEventJournal').search({ botId: 7, combatKind: 'pvp' });
+    assert.strictEqual(remembered.length, 1);
+    assert.deepStrictEqual([remembered[0].meta.outcome, remembered[0].meta.losingSide, remembered[0].meta.sides],
+        ['expired', null, [[7], [8]]]);
     await Runtime.tick({ ...base, canRun: () => true, recordPvpStep: r => ticks.push(r) });
     assert.strictEqual(ticks.filter(r => !r.encounter).length, 1, 'cleanup cannot count the same encounter again');
     assert.strictEqual(journalRows(running.encounter.key).length, 1, 'cleanup cannot journal the same fight again');
     await party([9, 10]); await party([11, 12]);
     const split = await Conflict.apply({ ...base, event: event(9, 11) });
     assert(split.encounter);
+    const PvpMemory = require('../src/GameServer/Bot/AI/BotPvpMemory');
+    // A native kill can be committed while only some members of the managed
+    // roster had been observed in combat. Cleanup must not add a second result.
+    await PvpMemory.hotKill({ killerId: 9, victimId: 11, bots: [9, 11], credit: 'pvp', at: clock,
+        encounter: { ...split.encounter, seen: [], pvpParticipants: [9, 11] } });
+    const killerMemory = await invoke('GameServer/Bot/AI/BotEventJournal').search({ botId: 9, combatKind: 'pvp' });
+    assert.deepStrictEqual(killerMemory.map(row => [row.meta.outcome, row.meta.losingSide]), [['killed', 1]]);
+    Runtime.register({ ...split.encounter, pvpParticipants: [9, 10, 11] });
     // An incomplete lifecycle transition must not keep a fight alive forever.
     await DB.execute(['UPDATE bot_life_state SET phase=? WHERE characterId=10', ['warm']]);
     Life.acceptLifecycleRow((await DB.execute(['SELECT * FROM bot_life_state WHERE characterId=10', []]))[0]);
@@ -336,6 +355,10 @@ async function main() {
     assert.strictEqual(Parties.find('enc-party-11').stats.coldCompetition.wait, null);
     assert.strictEqual(ticks.filter(r => !r.encounter).length, 2, 'mixed-state expiry counts once');
     assertClosingRow(split.encounter.key, split.encounter, 'pvp_expired');
+    assert.deepStrictEqual(await invoke('GameServer/Bot/AI/BotEventJournal').search({ botId: 9, combatKind: 'pvp' }),
+        killerMemory, 'cleanup leaves the previously committed kill as the single dialogue outcome');
+    assert.deepStrictEqual(await invoke('GameServer/Bot/AI/BotEventJournal').search({ botId: 10, combatKind: 'pvp' }),
+        [], 'suppression of a second outcome applies even to a bot outside the first observation');
     await DB.close(); DB.init();
     const closed = (await DB.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=9', []]))[0];
     assert.strictEqual(JSON.parse(closed.statsJson).coldCompetition.outcome, 'pvp_expired', 'final outcome survives SQLite reopen');

@@ -67,6 +67,7 @@ function priority(objectives, timestamp) {
 function partyTradeAllowed(direction, state = {}, session = null, preparing = false, accepted = false) {
     if (direction === 'party') return !preparing && !accepted && !state?.stats?.tradeMeeting;
     if (direction === 'trade') return !(state?.party?.partyId || state?.partyId || state?.playerPartyId || state?.stats?.playerPartyTakeover?.playerId
+        || state?.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting'
         || session?.hotBackgroundPartyId || session?.partyCompanion || session?.followPlayerSession);
     throw new TypeError('invalid_party_trade_direction');
 }

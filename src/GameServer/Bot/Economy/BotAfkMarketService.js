@@ -763,7 +763,7 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
 async function executePlan(state, plan, options = {}) {
     const result = await executePlanSteps(state, plan, options);
     if (result?.buyPending) invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(Number(state.characterId),
-        result.stale ? 'goal_failed' : 'goal_done:goal');
+        result.restockPending ? 'stock_low:shots' : result.stale ? 'goal_failed' : 'goal_done:goal');
     return result;
 }
 async function executePlanSteps(state, plan, { step = work => work(), beforeWrite = () => {}, preparedState = state, reviewGoal = true } = {}) {
@@ -797,6 +797,13 @@ async function executePlanSteps(state, plan, { step = work => work(), beforeWrit
     // it waits for the worker's new card (buyPending) instead of buying twice.
     const card = preparedState.phase === 'cold' ? invoke('GameServer/Bot/Population/ColdSimulationCoordinator')
         .economyDecisions?.decided?.(preparedState)?.activity : null;
+    const supply = card && invoke('GameServer/Clan/ClanConsumableSupply');
+    if (supply?.isDecision(card) && stillPrepared()) {
+        const withdrawal = await supply.forDecision(state, card, beforeWrite);
+        // The worker's market plan was sized against the original bag.
+        if (withdrawal) return { state: withdrawal.state, buyPending: true,
+            restockPending: withdrawal.partial && card.rootKey === 'stock:shots', stale: withdrawal.partial };
+    }
     const heldAtDecision = itemId => Number(card?.itemId) === Number(itemId) && Number.isFinite(Number(card.heldAtDecision))
         ? Number(card.heldAtDecision) : ColdEconomyDecision.heldFor(preparedState, itemId);
     const filledSince = itemId => ColdEconomyDecision.heldFor(LifeState.cachedState(ownerId) || state, itemId) > heldAtDecision(itemId);

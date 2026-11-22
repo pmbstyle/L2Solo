@@ -97,6 +97,8 @@ const PLAZAS = Object.freeze({
         ]),
         boundaryHeights: Object.freeze([-3495, -3498, -3502, -3499, -3496, -3499, -3508, -3507, -3501]),
         margin: 55,
+        // The polygon's centroid falls in the inset above the square's floor.
+        center: Object.freeze({ locX: 17368, locY: 170200, locZ: -3504 }),
         locZ: -3501
     }),
     'Dwarven Village': Object.freeze({

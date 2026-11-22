@@ -8,6 +8,7 @@ require('../src/Global');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const Decisions = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const StateWire = require('../src/GameServer/Bot/Population/ColdStateWire');
+const ClanDyeStock = require('../src/GameServer/Clan/ClanDyeStock');
 const { rowOf, SELL } = require('../src/GameServer/AfkTrade/BoardIndex');
 
 async function runWorker(state, predicate, followUp = null, init = {}) {
@@ -39,8 +40,8 @@ async function runWorker(state, predicate, followUp = null, init = {}) {
         assert.equal(loaded.payload.forbiddenDependencies, 0);
         send('catalog_page', { catalog: 'spots', rows: [], done: true });
         send('catalog_page', { catalog: 'npc_offers', rows: [], done: true });
-        send('table_page', { tables: ['board', 'market'].map(name =>
-            ({ name, from: null, to: 0, full: true, rows: [], removed: [] })) });
+        send('table_page', { tables: ['board', 'market', ClanDyeStock.TABLE].map(name =>
+            ({ name, from: null, to: 0, full: true, last: 1, rows: [], removed: [] })) });
         send('init', { config: { loopIntervalMs: 20, maxInFlight: 1, maxBatch: 1 }, ...init }, 'init');
         await until(message => message.type === 'ready' && message.msgId === 'init');
         send('snapshot_page', { rows: [{ state }], initial: true, done: true });

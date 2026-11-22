@@ -146,6 +146,7 @@ const tests = [
     'tests/test_personal_gear_progression.js',
     'tests/test_weapon_grade_progression.js',
     'tests/test_funded_gear_before_dearer.js',
+    'tests/test_shots_before_saved_gear.js',
     'tests/test_clan_personal_surplus.js',
     'tests/test_c_grade_preparation.js',
     'tests/test_c_grade_purchase.js',
@@ -283,6 +284,7 @@ const tests = [
     'tests/test_auto_soulshots.js',
     'tests/test_shot_stock_restock.js',
     'tests/test_shot_stock_weapon_rank.js',
+    'tests/test_shot_stock_money_wake.js',
     'tests/test_blessed_shot_forecast.js',
     'tests/test_shot_stock_restart_persistence.js',
     'tests/test_shot_economy.js',
@@ -351,6 +353,7 @@ const tests = [
     'tests/test_bot_activity_journal.js',
     'tests/test_bot_context_assembler.js',
     'tests/test_bot_dialogue_tools.js',
+    'tests/test_bot_local_observation.js',
     'tests/test_bot_clan_conversation_store.js',
     'tests/test_bot_conversation_summary.js',
     'tests/test_bot_tool_registry.js',
@@ -453,6 +456,7 @@ const tests = [
     'tests/test_bot_progression_audit_regressions.js',
     'tests/test_bot_economy_pricing.js',
     'tests/test_static_merchant_pricing.js',
+    'tests/test_graded_shot_bot_price.js',
     'tests/test_static_raw_material_buyers.js',
     'tests/test_bot_gear_acquisition.js',
     'tests/test_bot_equipment_transition_recovery.js',
@@ -942,6 +946,7 @@ const tests = [
     'tests/test_clan_player_warehouse.js',
     'tests/test_clan_warehouse_equipment_exchange.js',
     'tests/test_clan_warehouse_gear_shots.js',
+    'tests/test_clan_consumable_supply.js',
     'tests/test_clan_spare_gear_offer.js',
     'tests/test_clan_equipment_plan_lock.js',
     'tests/test_clan_gear_stall_and_spoil.js',
@@ -1385,8 +1390,9 @@ const optionalGeodataTests = new Set([
     'tests/test_pathfinding_worker_pool.js'
 ]);
 const geodataOnly = process.argv.includes('--geodata');
-// Disposable recovery and market fixtures use the default configuration.
+// Fixtures that rely on the checked-in configuration.
 const defaultConfigTests = new Set([
+    'tests/test_clan_war_operations.js',
     'tests/test_bot_background_drops.js',
     'tests/test_spot_value_table.js',
     'tests/test_opportunistic_raids.js',
