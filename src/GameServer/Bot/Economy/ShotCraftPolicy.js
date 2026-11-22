@@ -16,13 +16,7 @@ const SHOT_PRODUCT_IDS = new Set(SHOT_RECIPE_IDS
 const SHOT_RECIPE_ITEM_IDS = new Set(SHOT_RECIPE_IDS
     .map((id) => Number(Recipes.resolveByRecipeId(id)?.recipeItemId || 0)).filter(Boolean));
 const CRYSTAL_BY_RANK = { d: 1458, c: 1459, b: 1460, a: 1461, s: 1462 };
-const SHOT_RANK_BY_ID = new Map([
-    [1463, 'd'], [2510, 'd'], [3948, 'd'],
-    [1464, 'c'], [2511, 'c'], [3949, 'c'],
-    [1465, 'b'], [2512, 'b'], [3950, 'b'],
-    [1466, 'a'], [2513, 'a'], [3951, 'a'],
-    [1467, 's'], [2514, 's'], [3952, 's']
-]);
+const SHOT_RANK_BY_ID = require('./ProductionPolicy').SHOT_GRADE;
 let townNames;
 function townCode(town) {
     townNames ||= Object.values(require('../../World/TownRespawn').towns).map(row => row.name);
@@ -301,7 +295,7 @@ function decide(state, index, knownRecipeIds = []) {
 // Source adapters provide one indexed quote/route per yield; native rechecks
 // use the synchronous convenience adapter only for the selected recipe/quantity.
 function* recipeShotSearch(state, recipe, context, options = {}) {
-    const rank = SHOT_RANK_BY_ID.get(Number(recipe.productId)), crystalId = CRYSTAL_BY_RANK[rank];
+    const rank = SHOT_RANK_BY_ID[Number(recipe.productId)], crystalId = CRYSTAL_BY_RANK[rank];
     const output = options.itemTemplate?.(recipe.productId) || invoke('GameServer/Item/ItemTemplateIndex')
         .find(invoke('GameServer/DataCache').items, Number(recipe.productId));
     const required = new Map();
@@ -521,7 +515,7 @@ function* recipeShotPlan(state, recipe, context, options = {}) {
             const batches = Math.min(candidate.batches, Math.floor((Number(state.vitals?.mp || 0)
                 - Number(candidate.basket.extraMp || 0)) / Number(recipe.mpCost)));
             if (!(batches > 0 && batches < candidate.batches) || candidate.exit.type === 'use') return null;
-            const crystalId = CRYSTAL_BY_RANK[SHOT_RANK_BY_ID.get(Number(recipe.productId))];
+            const crystalId = CRYSTAL_BY_RANK[SHOT_RANK_BY_ID[Number(recipe.productId)]];
             const gear = candidate.basket.purchases.find(row => Number(row.selfId) === crystalId)?.source || null;
             const towns = new Map(candidate.basket.purchases.map(row => [Number(row.selfId), row.town]));
             const preparePurchase = function* (owner, id, amount, query) {

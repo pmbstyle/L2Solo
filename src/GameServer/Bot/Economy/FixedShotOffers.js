@@ -1,29 +1,27 @@
 'use strict';
 // The configured reserve a bot buys from, shared by main and cold workers: the
-// city stores' shot lines and their gear lines marked `reserve`
-// (ProductionPolicy.allowsFixed). No live World or database dependency:
-// selection and execution read the same configured rows.
+// city stores' hidden lines marked `reserve` (crafter, trader and spoiler scroll rows,
+// ProductionPolicy.allowsFixed); a bot buys no other static row. No live World or
+// database dependency: selection and execution read the same configured rows.
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Production = require('./ProductionPolicy');
-const SHOT_IDS = [...Production.NO_GRADE_SHOTS, ...Production.GRADED_SHOTS];
 const EMPTY_OFFERS = Object.freeze([]);
-let fixedRate = null, fixedMultiplier = null, fixedConfig = null, fixedRows = null, fixedByItem = new Map(), fixedLowest = new Map();
-// Builds the table once per config, Adena rate and progression multiplier; false
-// while the switch removes the reserve.
+let fixedRate = null, fixedConfig = null, fixedRows = null, fixedByItem = new Map(), fixedLowest = new Map();
+// Builds the table once per config and rate profile (the rates the anchor prices
+// read, PriceAnchor); false while the switch removes the reserve.
 function built() {
     if (Production.shotsDisabled()) return false;
-    const rate = invoke('GameServer/Bot/Economy/BotEconomyPricing').economyRate();
-    const multiplier = invoke('GameServer/ProgressionRates').profile().multiplier;
+    const rates = invoke('GameServer/ProgressionRates').profile(), rate = `${rates.adena}:${rates.exp}`;
     const stores = invoke('GameServer/Bot/MerchantStoreConfigs');
-    if (!fixedRows || fixedRate !== rate || fixedMultiplier !== multiplier || fixedConfig !== stores) {
-        fixedRate = rate; fixedMultiplier = multiplier; fixedConfig = stores;
+    if (!fixedRows || fixedRate !== rate || fixedConfig !== stores) {
+        fixedRate = rate; fixedConfig = stores;
         fixedByItem = new Map();
         fixedLowest = new Map();
         const rows = [], Pricing = require('./StaticMerchantPricing');
         const items = invoke('GameServer/DataCache').items;
         const reserveIds = Object.values(stores).flatMap(store => (store.items || [])
             .filter(line => line.reserve === true).map(line => Number(line.selfId)));
-        for (const id of new Set([...SHOT_IDS, ...reserveIds])) {
+        for (const id of new Set(reserveIds)) {
             const itemName = ItemTemplateIndex.find(items, id)?.template?.name || `Item ${id}`;
             const sources = Pricing.sellersOf(id)
                 .filter(row => Number(row.price) > 0 && Production.allowsFixed({ selfId: id, reserve: row.reserve }))
@@ -34,9 +32,9 @@ function built() {
                         locX: Number(store?.locX || 0), locY: Number(store?.locY || 0), locZ: Number(store?.locZ || 0) });
                 });
             fixedByItem.set(id, Object.freeze(sources));
-            // The price without a buyer: the open rows' (a crafter gear row sells to its line
-            // only), the restricted rows' where no open row sells the item (spoiler scrolls).
-            const open = sources.filter(row => !row.buyerClasses);
+            // The price without a buyer: the open rows' (a crafter or trader gear row sells to
+            // its line only), the restricted rows' where no open row sells the item.
+            const open = sources.filter(row => !restricted(row));
             if (sources.length) fixedLowest.set(id, Math.min(...(open.length ? open : sources).map(row => Number(row.price))));
             rows.push(...sources);
         }
@@ -44,14 +42,17 @@ function built() {
     }
     return true;
 }
+// A row sold to named classes or a role only (ProductionPolicy.allowsFixed).
+const restricted = row => !!(row.buyerClasses || row.buyerRole);
 // buyer (a bot's state or actor): only the rows it may buy (ProductionPolicy.allowsFixed:
-// a row naming buyerClasses, a valve row); none: every row (quotes and prices).
-function offers(selfId = null, buyer = undefined) {
+// a row naming buyerClasses or buyerRole; a consignment row only with
+// options.consignment, a supplier's restock); none: every row (quotes and prices).
+function offers(selfId = null, buyer = undefined, options = {}) {
     if (!built()) return EMPTY_OFFERS;
     let rows = selfId === null ? fixedRows : fixedByItem.get(Number(selfId)) || EMPTY_OFFERS;
     if (selfId !== null && rows.some(row => row.boardMarkup)) rows = rows.map(priced);
-    return buyer === undefined || !rows.some(row => row.buyerClasses || row.valve) ? rows
-        : rows.filter(row => Production.allowsFixed(row, buyer));
+    return buyer === undefined || !rows.some(restricted) ? rows
+        : rows.filter(row => Production.allowsFixed(row, buyer, options));
 }
 // A row marked boardMarkup sells at that markup over the board's median deal price of
 // the item (MarketCounters.itemPriceEvidence), its configured price while the board has
@@ -108,7 +109,7 @@ function refused(selfId) {
 function lowestPrice(selfId) {
     if (!built()) return Infinity;
     const rows = fixedByItem.get(Number(selfId));
-    if (rows?.some(row => row.boardMarkup) && !rows.some(row => !row.buyerClasses)) return Math.min(...rows.map(row => priced(row).price));
+    if (rows?.some(row => row.boardMarkup) && rows.every(restricted)) return Math.min(...rows.map(row => priced(row).price));
     return fixedLowest.get(Number(selfId)) ?? Infinity;
 }
 module.exports = { offers, lowestPrice, take, restore, refused };
