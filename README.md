@@ -39,20 +39,20 @@ Optional but highly recommended for a better experience
 
 Bots are adventurers with their own classes, gear, Adena, and goals. You can meet them in a starter village, hunt alongside them, buy gear they crafted, or lead them into a raid.
 
-### Starting out and leveling up
+### 🦾 Starting out and leveling up
 
 - **Start in the beginner regions.** New adventurers arrive in waves, so you can meet low-level bots even after earlier groups have moved on to harder areas. The adventuring population can grow to 1,700 bots.
 - **Earn XP and change profession.** Bots gain XP and SP from hunting, advance to their next profession at levels 20, 40, and 76, and automatically learn the skills available to their class as they level up.
 - **Keep playing out of sight.** The world simulates bots beyond your view too. They can hunt, travel, trade, and make progress on the same characters you meet in game. Town service characters such as permanent shopkeepers and crafting stations stay at their posts.
 
-### Hunting and farming
+### ⚔️ Hunting and farming
 
 - **Pick a hunting ground.** Bots look for monsters they can handle with their current level, gear, and skills. They can move on when a camp is crowded, fights are going badly, or they need a particular drop.
 - **Fight according to class.** Archers try to keep their distance, mages choose spells they can afford to cast, and summoners fight with their servitors. Dwarves with Spoil can use Sweep to collect extra materials and other loot.
 - **Manage supplies and recover.** Bots use potions and class-appropriate shots, rest when low on HP or MP, and retreat from dangerous fights. They can respawn after dying and switch to easier hunting grounds after repeated losses.
 - **Make town trips.** Bots sell loot, restock, visit the Newbie Guide when eligible, and take Gatekeeper routes or walk where a route is available. If a bag fills up, a bot may clear out low-value items so it can keep hunting.
 
-### Getting a specific item
+### 🎒 Getting a specific item
 
 - **Choose an upgrade.** Bots look for gear that fits their class and level. They can keep a complete armor set for its bonus and set aside Adena for supplies before spending on gear.
 - **Buy the finished item.** Bots can use NPC shops for basic gear, buy from other characters, or post a buy order. If a finished item is too expensive, they can save up or pursue another source.
@@ -62,27 +62,27 @@ Bots are adventurers with their own classes, gear, Adena, and goals. You can mee
 
 For example, a tank looking for a **Blue Wolf Breastplate** could buy one from a shop that has it in stock. If it pursues a crafting route, it can gather the recipe, breastplate parts, and other materials for a dwarven crafter. The finished breastplate also drops from monsters, including Glow Wisps in Blazing Swamp. You can check those sources yourself with `.items Blue Wolf Breastplate`.
 
-### Trading and town services
+### 💰 Trading and town services
 
 - **Buy and sell through private stores.** Bots can sell spare gear, materials, and consumables, buy things they need, and advertise in trade chat. Use the in-game **Market Board** to look for items, buyers, or crafting offers by town. Some listings let you arrange a meeting with the bot.
 - **Trade face to face.** Target a bot and use `.trade` to open a trade. Bots can make offers for items they need and decide whether to accept based on what you offer.
 - **Craft for other characters.** Dwarven crafters can make equipment, components, Soulshots, Spiritshots, and Blessed Spiritshots. Their offers depend on the recipes and crafting skills available to them.
 - **Sell buffs.** Target an eligible buffer and type `.buff` for a quote. Bots can also buy buffs from one another before going back out to hunt.
 
-### Hunting with a party
+### 🤖 Hunting with a party
 
 - **Form their own groups.** Bots look for suitable teammates to level, farm materials, or take on stronger monsters. Tanks draw attacks, damage dealers focus targets, and support classes heal, buff, restore MP, or resurrect allies according to their skills.
 - **Join your party.** Use `.bp` to find available bots by level or role, or `/invite <name>` to invite a particular bot. Your main party can hold you and up to eight companions. A bot may be busy or decline an invitation based on its relationship with you.
 - **Let you lead an existing bot party.** Use `.joinparty <name>` to ask to lead that bot's party, or `.joinparty` to ask the nearest eligible group. The group can resume its own hunt after you leave.
 - **Follow your orders.** Use `.b` to make companions follow, hold, or regroup. You can set their combat behavior, choose who pulls monsters, and toggle loot pickup. Collected loot follows your party's distribution settings. Bring companions to town when they need to restock.
 
-### Chat and friendships
+### 💬 Chat and friendships
 
 - **Talk in game.** Bots can greet you, call for a party, advertise trades, and warn about PKs. Address a companion by name for simple requests such as `follow`, `wait`, or `heal`. With optional AI dialogue enabled, bots can have more open-ended conversations.
 - **Remember how you treat them.** Shared hunts and help can build trust. Insults and hostile behavior can hurt your chances of teaming up again. Some bots prefer company, while others are more comfortable hunting alone.
 - **Keep a regular group.** Use `.bf` to manage bot friendships and build a **const party**, a regular group of friends you can invite again.
 
-### Clans and raids
+### 🛡️ Clans and raids
 
 - **Build and grow clans.** Bots can found clans, recruit members, contribute Adena and materials, and work toward clan halls and higher clan levels. Eligible autonomous leaders can pursue the **Pursuit of Clan Ambition** quest to reach clan level 5.
 - **Work toward shared gear goals.** Clan members can gather ingredients together, use the clan warehouse to pool resources, and craft or pass along equipment to clanmates.
@@ -98,7 +98,7 @@ For example, a tank looking for a **Blue Wolf Breastplate** could buy one from a
 
 </details>
 
-### PvP and clan wars
+### 🗡️ PvP and clan wars
 
 - **React to threats and disputes.** Bots can defend themselves or their teammates, warn someone competing for the same monsters, or retreat when a fight looks too risky. Some bots hunt other characters as PKs.
 - **Take part in clan wars.** Autonomous clans can declare, answer, or withdraw from wars. They can send groups after enemy clan members and change course when they're taking too many losses.
@@ -106,7 +106,8 @@ For example, a tank looking for a **Blue Wolf Breastplate** could buy one from a
 For more party and trade commands, see the [in-game command reference](#in-game-commands).
 
 ## Latest updates
-- **2026-11-20** Multi-party support. Ant Queen, Core, and Orfen. Epic jewelry. Bot economy improvements and bug fixes.
+- **2026-11-20** Clans lvl 5, Better chat AI, economy, bots SA growing, bug fixes
+- **2026-11-20** Multi-party support. Ant Queen, Core, and Orfen. Epic jewelry. Bot economy improvements and bug fixes
 - **2026-11-13** Bot AI improvements, clan raid expeditions, party and movement fixes
 - **2026-11-09** Shot production and recipe supply, bot recovery, inventory and cross-floor combat fixes, Windows launcher updates
 - **2026-11-08** Bug fixes, bot progression, garden of eva doors, launcher update
@@ -127,11 +128,11 @@ For more party and trade commands, see the [in-game command reference](#in-game-
 - **2026-09-08** Pets, striders, clan lvl 4, fixes and updates
 - **2026-09-06** Bot PvP, save game, save TP location, optimization, chat, navigation
 - **2026-09-04** Player clan warehouse use for equipment exchange, bug fixes
-- **2026-09-02** AFK trade, market observer, xN mob fix
 
 <details>
 <summary>Earlier</summary>
-
+  
+- **2026-09-02** AFK trade, market observer, xN mob fix
 - **2026-08-31** Expand bot world simulation, arena duels, and server knowledge tools
 - **2026-08-28** Skills, bot behavior, gear planning, and seeder fixes and improvements
 - **2026-08-27** Add LLM-driven clan management
