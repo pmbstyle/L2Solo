@@ -3,17 +3,16 @@ const assert = require('node:assert/strict'), fs = require('node:fs');
 require('./helpers/databaseIsolation');
 const fixture = require('./helpers/isolatedSocialDatabase')('raid-supplies');
 require('../src/Global'); fixture.assertConfigured(options.default);
-// The author's fixed shot merchant sells shots here (off by default since T116).
-invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 process.on('exit', () => fs.rmSync(fixture.directory, { recursive: true, force: true }));
 const Data = invoke('GameServer/DataCache'); Data.init({ validate: false });
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Policy = require('../src/GameServer/Bot/Population/OpportunisticRaidPolicy');
 const Supply = require('../src/GameServer/Bot/Population/RaidSupplyPolicy');
-// These lifecycle fixtures isolate procurement from geography.
-Supply.useMarket(() => ({ board: invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(),
-    npcOffersFor: id => invoke('GameServer/Bot/Economy/FixedShotOffers').offers(id), tripFrom: () => () => 0 }));
+// These lifecycle fixtures isolate procurement from geography. Graded shots sell to
+// bots only from crafters' lines, most of them conditional ads.
+const CrafterShots = require('./helpers/crafterShotBoard'), crafterMarket = CrafterShots.crafterShotMarket();
+Supply.useMarket(crafterMarket);
 const Funding = require('../src/GameServer/Bot/Economy/PurchaseFunding');
 const { RaidSupplyPreparation } = require('../src/GameServer/Bot/Population/RaidSupplyPreparation');
 const { lifecycleKind, ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
@@ -116,8 +115,8 @@ async function run() {
     const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
     const quote = { selfId: 2509, town: 'Dion', cost: 10, landed: 10, npc: 0,
         lines: [{ price: 1, count: 10, line: { selfId: 2509, price: 1, count: 10, ownerId: 9999, conditional: true } }] };
-    assert.equal(Market.planPurchase(funded,2509,10,{purpose:'raid_supply',sourcePlan:quote,npc:false}),null,
-        'an ordinary wish meeting cannot consume a reserved raid supply request');
+    assert.equal(Market.planPurchase(funded,2509,10,{purpose:'raid_supply',sourcePlan:quote,npc:false})?.units,10,
+        'a crafter\'s conditional ad supplies a reserved raid through the ordinary purchase (a meeting)');
     const backed = structuredClone(quote); backed.lines[0].line.conditional = false;
     assert.equal(Market.planPurchase(funded,2509,10,{purpose:'raid_supply',sourcePlan:backed,npc:false}).units,10,
         'backed public shops remain valid raid suppliers');
@@ -129,9 +128,16 @@ async function run() {
         const buyer = group.find(s => s.characterId === supply.id);
         buyer.adena = supply.missing * 11;
         buyer.stats.money = [buyer.adena,.001,Math.floor(supply.missing / 2),0];
-        const fit = Policy.assessment(group,spot,{timestamp:at,fundSupplies:true});
-        assert(fit.ready, JSON.stringify(fit));
         const cheap = Math.floor(supply.missing / 2), expensive = supply.missing - cheap;
+        // The board the forecast reads holds the same two lines the source plan quotes.
+        const mixedBook = new (require('../src/GameServer/AfkTrade/BoardIndex').BoardIndex)();
+        for (const [id,count,price] of [[9998,cheap,5],[9999,expensive,15]]) mixedBook.put({ id, ownerId:id, storeType:1,
+            kind:'shop', town:'Dion', revision:1, lines:[{ lineId:id-9997, selfId:supply.selfId, count, price }] });
+        Supply.useMarket(() => ({ board:mixedBook, npcOffersFor:() => [], tripFrom:()=>()=>0 }));
+        let fit;
+        try { fit = Policy.assessment(group,spot,{timestamp:at,fundSupplies:true}); }
+        finally { Supply.useMarket(crafterMarket); }
+        assert(fit.ready, JSON.stringify(fit));
         const cost = cheap * 5 + expensive * 15;
         let source = { selfId: supply.selfId, town: 'Dion', cost, landed: cost, npc: 0,
             lines: [{ price: 5, count: cheap, line: { recordId: 9998, lineId: 1, selfId: supply.selfId, price: 5, count: cheap, ownerId: 9998 } },
@@ -199,16 +205,16 @@ async function run() {
         assert.equal(Market.planPurchase(buyer,supply.selfId,supply.missing,{...terms,purpose:'shots',money:whole.cost-1})?.whole,false,
             'ordinary personal restocking retains its existing partial-purchase behavior');
     } finally { AfkTrade.boardIndex = nativeBoard; }
-    // A finite cheap stack is shared by two DDs, then the configured seller
+    // A finite cheap stack is shared by two DDs, then a crafter's dearer ad
     // fills their different remainders. Forecast and reservation must agree.
     {
         const group = structuredClone(members);
         group[4].inventory[1463].amount = 1;
         group.forEach(s => { s.currentRegion='Dion'; s.adena=1000000; s.stats.money=[1000000,0,0,0]; });
-        const allocationBook = new BoardIndex();
+        const allocationBook = CrafterShots.crafterShotBoard({ town:'Dion' }), ad = 1000000;
         AfkTrade.boardIndex = () => allocationBook;
-        const fixed = id => invoke('GameServer/Bot/Economy/FixedShotOffers').offers(id).filter(s => s.town==='Dion');
-        Supply.useMarket(() => ({ board:allocationBook,npcOffersFor:fixed,tripFrom:()=>()=>0 }));
+        Supply.useMarket(() => ({ board:allocationBook,npcOffersFor:() => [],tripFrom:()=>()=>0 }));
+        const cheapUnits = q => q.lines.filter(l => l.line.recordId===9810).reduce((m,l) => m+l.count,0);
         try {
             const initial = Policy.assessment(group,spot,{timestamp:at,fundSupplies:true});
             const needs = initial.supplies.filter(s => s.missing > 0);
@@ -228,22 +234,23 @@ async function run() {
                         quoted.push(q);return q;
                     }} });
                 const plan = await preparation.reserve(group,{...objective,assessment:fit},at);
-                assert(plan,'an allocated public stack plus static remainder reserves all nine');
+                assert(plan,'an allocated public stack plus the crafter\'s ad reserves all nine');
                 assert.equal(quoted.length,2);
-                assert.equal(quoted.reduce((n,q)=>n+q.lines.reduce((m,l)=>m+l.count,0),0),count,
+                assert.equal(quoted.reduce((n,q)=>n+cheapUnits(q),0),count,
                     'each public unit is allocated only once across all DDs');
-                assert.equal(quoted.reduce((n,q)=>n+q.npc,0),needs.reduce((n,s)=>n+s.missing,0)-count);
-                assert.equal(quoted[1].lines.reduce((n,l)=>n+l.count,0),Math.max(0,count-needs[0].missing),
+                assert.equal(quoted.reduce((n,q)=>n+q.units-cheapUnits(q),0),needs.reduce((n,s)=>n+s.missing,0)-count,
+                    'the crafter\'s ad fills the remainders');
+                assert.equal(cheapUnits(quoted[1]),Math.max(0,count-needs[0].missing),
                     'the next DD can still use the unallocated part of the same stack');
-                assert(quoted.flatMap(q=>q.lines).every(l=>l.line.count===count),
+                assert(quoted.flatMap(q=>q.lines).every(l=>l.line.count===(l.line.recordId===9810 ? count : ad)),
                     'stock validation retains the seller original quantity');
                 for (let i=0;i<needs.length;i++) {
                     const expected=fit.supplies.find(s=>s.id===needs[i].id);
                     assert.equal(quoted[i].cost,expected.cost,'forecast and reservation price the same allocation');
                     const marker=states.get(needs[i].id).stats.raidSupplyPreparation;
                     assert.equal(marker.supply.cashNeeded,expected.reserveCost);
-                    assert.equal(marker.supply.priceCap,quoted[i].npcPrice,
-                        'even a completely cheap quote keeps access to its static reserve');
+                    assert.equal(marker.supply.priceCap,Math.max(...quoted[i].lines.map(l=>l.price)),
+                        'the price cap is the quote\'s dearest unit');
                 }
                 assert.equal(JSON.stringify([...allocationBook.records]),unchanged,'quotes never consume public stock');
                 const first=states.get(needs[0].id),later=states.get(needs[1].id);
@@ -255,20 +262,19 @@ async function run() {
                 assert(early && early.units===needs[1].missing,'a later DD may arrive before the first');
                 allocationBook.remove(9810); // Any buyer, including someone outside the party, can take it.
                 const after=arrivalQuote(first);
-                assert(after && after.npc===needs[0].missing,
-                    'the first DD can buy its entire missing stock after anyone takes the public stack');
+                if (count < needs[0].missing) assert(after && after.units===needs[0].missing && !cheapUnits(after),
+                    'a DD whose quote reached the crafter\'s ad buys its entire missing stock there after anyone takes the public stack');
+                else assert.equal(after,null,'no reserve backs a cheap quote whose stack sold: the crafter\'s dearer ad exceeds its cap');
                 first.adena=1;
-                assert.equal(arrivalQuote(first),null,'arrival rechecks the current wallet before using the reserve');
+                assert.equal(arrivalQuote(first),null,'arrival rechecks the current wallet');
                 preparation.stop();
             }
             allocationBook.put({id:9810,ownerId:9910,storeType:1,kind:'shop',town:'Dion',revision:1,
                 lines:[{lineId:98100,selfId:1463,count:100000,price:1}]});
             const poor=structuredClone(group);
-            poor[3].adena=needs[0].missing+1;poor[3].stats.money=[poor[3].adena,0,0,0];
+            poor[3].adena=needs[0].missing-1;poor[3].stats.money=[poor[3].adena,0,0,0];
             const poorFit=Policy.assessment(poor,spot,{timestamp:at,fundSupplies:true});
-            assert(poorFit.reasons.includes('raid_consumables_funds'),
-                'a cheap public offer cannot justify a trip when its backup is unaffordable');
-            assert(poorFit.supplies.find(s=>s.id===poor[3].characterId).cost<Supply.cash(poor[3]));
+            assert(poorFit.reasons.includes('raid_consumables_funds'),'a wallet below the actual quote refuses the raid');
             // Claimed cheap heads must not hide later stock behind quote depth,
             // and changing an allocation must invalidate amount-table reuse.
             const Query = require('../src/GameServer/Bot/Economy/OfferQuery'), deepBook=new BoardIndex(), claimed=new Map();
@@ -285,8 +291,7 @@ async function run() {
             assert.equal(Query.cheapestIn(table,10),null,'a changed local allocation cannot reuse a previous fill');
         } finally {
             AfkTrade.boardIndex=nativeBoard;
-            Supply.useMarket(() => ({board:AfkTrade.boardIndex(),npcOffersFor:id=>
-                invoke('GameServer/Bot/Economy/FixedShotOffers').offers(id),tripFrom:()=>()=>0}));
+            Supply.useMarket(crafterMarket);
         }
     }
     const short = await mixedPurchase(({ states,buyer }) => { states.get(buyer.characterId).adena = 1; });
@@ -344,64 +349,6 @@ async function run() {
     await assert.rejects(Basket.purchase(state,{seller,lines:[{...line,amount:1}]}),/funding_changed/,
         'a completed target grants no second purchase');
     assert.equal(Native.amount(await DB.fetchItems(9751),57),3200);
-    // Configured C shots have no ordinary NPC seller. A reserved raid uses
-    // the same actual quote in assessment, acquisition and physical debit.
-    const fixedC = invoke('GameServer/Bot/Economy/FixedShotOffers').offers(1464).find(s => s.town==='Giran');
-    assert(fixedC && fixedC.price > 0);
-    await Native.character(DB,9752,'RaidSupply9752','bot_raid_supply_c');
-    const wallet=1000000,quantity=100;
-    await DB.setItem(9752,{selfId:57,name:'Adena',amount:wallet});
-    const reserveBook=AfkTrade.boardIndex();
-    reserveBook.put({id:9820,ownerId:9920,storeType:1,kind:'shop',town:'Giran',
-        lines:[{lineId:98200,selfId:1464,count:quantity,price:1}]});
-    const beforeC={...state,currentRegion:'Giran',adena:wallet,inventory:{},stats:{...state.stats,money:[wallet,0,0,0]}};
-    const cheapC=Supply.quote(beforeC,1464,quantity,{timestamp:at});
-    const budgetC=Supply.quoteBudget(cheapC,quantity);
-    assert.equal(cheapC.cost,quantity);
-    assert.equal(budgetC.cashNeeded,quantity*fixedC.price);
-    const markerC={id:'fixed-c',expiresAt:at+600000,supply:{selfId:1464,target:quantity,...budgetC}};
-    const buyerC=await Life.upsertState({...state,characterId:9752,name:'RaidSupply9752',accountName:'bot_raid_supply_c',
-        currentRegion:'Giran',adena:wallet,activity:'shopping',
-        inventory:Life.inventorySummaryFromItems(await DB.fetchItems(9752)),
-        stats:{...state.stats,money:[wallet,.001,1000,77,.1,wallet,999],raidSupplyPreparation:markerC}},'raid_static_c_fixture');
-    const quotedC=Supply.supplies([buyerC],[{id:9752,selfId:1464,required:quantity,stock:0}],at)[0];
-    assert.equal(quotedC.available,quantity);
-    assert.equal(quotedC.price,1);
-    assert.equal(quotedC.reserveCost,quantity*fixedC.price);
-    const departedC=await Market.acquire({...buyerC,activity:'party_wait',
-        loc:{locX:83396,locY:147904,locZ:-3404}},1464,quantity,
-        {purpose:'raid_supply',raidPreparationId:markerC.id,towns:['Giran'],
-            maxPrice:markerC.supply.priceCap,money:Supply.cash(buyerC),cost:()=>0,persist:false});
-    const errandC=require('../src/GameServer/Bot/Population/CombinedErrandPolicy').pending(departedC.state)
-        .find(e=>e.purpose==='raid_supply');
-    assert(errandC,'departure saves its native supply errand');
-    assert.equal(departedC.plan.cost,quantity,'departure still selects the cheaper public stack');
-    assert.equal(errandC.money,quantity*fixedC.price,'saved authority funds a full reserve despite the cheap departure quote');
-    assert.equal(errandC.maxPrice,fixedC.price);
-    reserveBook.remove(9820); // A public buyer exhausted it while this DD travelled.
-    reserveBook.put({id:9821,ownerId:9921,storeType:1,kind:'shop',town:'Dion',
-        lines:[{lineId:98210,selfId:1464,count:quantity,price:1}]});
-    const list=reserveBook.list;let bookReads=0,routeReads=0;
-    reserveBook.list=function(...args){bookReads++;return list.apply(this,args);};
-    let reserveTown;
-    try {
-        reserveTown=Market.planPurchase(buyerC,1464,quantity,{purpose:'raid_supply',money:Supply.cash(buyerC),
-            cost:()=>{routeReads++;return 0;}});
-    } finally {reserveBook.list=list;}
-    assert.equal(reserveTown.town,'Giran','a raid destination retains a reserve when a cheaper town has none');
-    assert.equal(bookReads,1,'a reserve quote reads only the selected item/town index');
-    assert.equal(routeReads,2,'only the existing reachability and quote route lookups are needed');
-    assert.equal(Market.planPurchase(buyerC,1464,quantity,{money:wallet,cost:()=>0}).town,'Dion',
-        'ordinary purchasing keeps its existing town choice');
-    reserveBook.remove(9821);
-    const arrivedC=await Life.upsertState({...departedC.state,activity:'shopping',currentRegion:'Giran',
-        stats:{...departedC.state.stats,travel:null}},'raid_static_c_arrival');
-    const boughtC=await Market.tryPurchase(arrivedC);
-    assert(boughtC.purchased,JSON.stringify(boughtC));
-    assert.equal(Native.amount(await DB.fetchItems(9752),1464),quantity);
-    assert.equal(Native.amount(await DB.fetchItems(9752),57),wallet-quantity*fixedC.price);
-    assert.equal(Supply.purchaseBudget(boughtC.state,{itemId:1464,raidPreparationId:markerC.id},at),0,
-        'a completed configured target cannot authorize a second debit');
     await DB.close();
     {
     // The production configuration has no NPC graded-shot supply. Real
@@ -415,14 +362,13 @@ async function run() {
     const stock = (id, count, price, conditional = false, ownerId = 90000 + id, selfId = 1463) => board.put({
         id, ownerId, storeType: 1, kind: conditional ? 'sell_ad' : 'shop', custodyPolicy: conditional ? 1 : 0,
         town: 'Dion', revision: 1, lines: [{ lineId: id, selfId, count, price, enchant: 0 }] });
-    stock(90001, 100000, 1, true);
     stock(90002, 100000, 1, false, members[3].characterId);
     stock(90003, 500, 10);
-    stock(90004, supply.missing - 500, 20);
+    stock(90004, supply.missing - 500, 20, true);
     const backedFit = Policy.assessment(members, spot, { timestamp: at, fundSupplies: true });
     assert(backedFit.ready, JSON.stringify(backedFit.reasons));
     const real = backedFit.supplies.find(s => s.missing > 0);
-    assert.equal(real.available, supply.missing);
+    assert.equal(real.available, supply.missing, 'a crafter\'s conditional ad is raid supply');
     assert.equal(real.price, 20);
     assert.equal(real.cost, 500 * 10 + (supply.missing - 500) * 20 + 25);
     const Priority = require('../src/GameServer/Bot/Population/RaidRosterPriority');
@@ -431,13 +377,13 @@ async function run() {
         'an affordable backed market replenishment improves DD ranking with NPC shots disabled');
     const poorGroup = members.map(s => s === rich ? poor : s);
     assert(Policy.assessment(poorGroup, spot, { timestamp: at, fundSupplies: true }).reasons.includes('raid_consumables_funds'));
-    stock(90004, supply.missing - 501, 20);
+    stock(90004, supply.missing - 501, 20, true);
     const unavailable = Policy.assessment(members, spot, { timestamp: at, fundSupplies: true });
     assert(unavailable.reasons.includes('raid_supplies_unavailable'));
     assert(!unavailable.reasons.includes('raid_consumables_funds'), 'absent supply is not poverty');
     const twoBuyers = structuredClone(members); twoBuyers[4].inventory[1463].amount = 1;
     board.remove(90002); // No roster member owns a public supply for this check.
-    stock(90004, supply.missing - 500, 20);
+    stock(90004, supply.missing - 500, 20, true);
     const beforeBook = JSON.stringify([...board.records]);
     const shared = Policy.assessment(twoBuyers, spot, { timestamp: at, fundSupplies: true });
     assert(shared.reasons.includes('raid_supplies_unavailable'), 'the same seller stock cannot fund two members');

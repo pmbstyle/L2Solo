@@ -124,6 +124,12 @@ const flooredValue = (wish, floor) => wish.progressionPriority > 0
 // price passes exactly.
 const paysFloor = (wish, floor, value = flooredValue(wish, floor)) => value / wish.price >= floor
     || wish.progressionPriority > 0 && value >= wish.price * floor;
+// Within a tier, a wish the survival reserve pays whole (cashCharge 0: shots or potions
+// below their line, their refill held by the reserve) stands first: survival first, and it
+// holds none of the queue's money, so it delays no other wish. Ranked by its ratio it
+// stood behind gear the bot saves for, the first gap cut it off, it had no funded row and
+// the bot made no trip for the shots its reserve already paid.
+const reservePaid = wish => cashCharge(wish) === 0;
 function moneyQueue(wishes, wallet, refillReserve = 0, floor = 0) {
     let available = Math.max(0, nonnegative(wallet) - nonnegative(refillReserve));
     const queue = wishes.filter(wish => wish.valueHours > 0 && wish.price > 0)
@@ -132,7 +138,7 @@ function moneyQueue(wishes, wallet, refillReserve = 0, floor = 0) {
             return { ...wish, valueHours, ratio: valueHours / wish.price };
         })
         .sort((a, b) => nonnegative(b.progressionPriority) - nonnegative(a.progressionPriority)
-            || b.ratio - a.ratio || a.key.localeCompare(b.key));
+            || Number(reservePaid(b)) - Number(reservePaid(a)) || b.ratio - a.ratio || a.key.localeCompare(b.key));
     const pays = wish => paysFloor(wish, floor, wish.valueHours);
     let moneyPrice = nonnegative(floor), cutoffFound = false, gap = null, awaitingKit = null;
     for (const wish of queue) {
@@ -807,8 +813,9 @@ class WishNetwork {
             // A finite profitable craft can pay for the kit. Once a kit piece
             // is affordable, spend on it before starting another earning trial.
             for (const wish of wishes) if (wish.progressionFunding && !readyGear) wish.progressionPriority = kitPriority;
-            // A kit kind below its line is weighed with the gear it serves, by its
-            // value, never above it; roadless below reads its road.
+            // A kit kind below its line stands in the tier of the gear it serves, never
+            // above it: by its value, save one the reserve pays whole, which comes first
+            // (moneyQueue, reservePaid); roadless below reads its road.
             for (const wish of wishes) if (wish.key.startsWith('stock:')) wish.progressionPriority = kitPriority;
             wishes = wishes.filter(wish => wish.progressionPriority >= kitPriority);
         }
@@ -889,10 +896,13 @@ class WishNetwork {
         // Required kit (a slot piece) and survival stock the queue funds: its steps are
         // `required`, the purchase of a path the bot already decided, road and fees in its
         // price (EconomicValuation.visitPays/tripPays). Not an earning craft, a clan's
-        // supply or a crystal preparation, whatever priority they hold.
+        // supply or a crystal preparation, whatever priority they hold. A stock root stands
+        // only below its line (survival stock): its node holds no priority (the tier is the
+        // wish's), so its being funded is enough. Read on the node, a funded shot stop in
+        // another town was weighed by its benefit alone and its road never paid.
         const kitRoot = wish => { const node = byKey.get(wish.key);
-            return wish.funded && nonnegative(node?.progressionPriority) > 0
-                && (wish.key.startsWith('stock:') || rootSlot(wish.key) > 0 && !node.object?.clanSupply); };
+            return wish.funded && (wish.key.startsWith('stock:')
+                || nonnegative(node?.progressionPriority) > 0 && rootSlot(wish.key) > 0 && !node.object?.clanSupply); };
         const required = new Set(queue.filter(kitRoot).map(wish => wish.key));
         const flow = (key, value, amount = 1, rootKey = key, prepared = null, pass = active, staged = false) => {
             const complete = prepared || plans.get(key);
@@ -1014,8 +1024,17 @@ class WishNetwork {
         // A cheap intermediate material cannot claim the whole upgrade's
         // benefit as an instantaneous income. Use the complete chosen path.
         const heldLeaf = individual && activityLeaf ? candidates.find(leaf => leafId(leaf) === activityLeaf) : null;
-        const leafRivals = heldLeaf ? beating(heldLeaf, candidates,
-            leaf => !offered || leaf.kind === 'buy' && Number(leaf.itemId) === offered) : [];
+        // Survival first: a step of a funded root the reserve pays whole (reservePaid: the
+        // shots or potions below their line) comes before every other step, and a woken
+        // build takes it over the held one. Weighed by value it lost to hunting for the gear
+        // the bot saves for (its value hours dwarf a refill's), and the bot hunted without
+        // the shots it had the money for. The rest are weighed when none stands.
+        const reserveRoots = new Set(queue.filter(wish => wish.funded && reservePaid(wish)).map(wish => wish.key));
+        const survival = leaf => !leaf.funding && reserveRoots.has(leaf.rootKey);
+        const pick = rows => { const first = rows.filter(survival); return choose(first.length ? first : rows, score, roll('activity')); };
+        const firstRivals = reconsider && !offered && heldLeaf && !survival(heldLeaf) ? candidates.filter(survival) : [];
+        const leafRivals = !heldLeaf ? [] : firstRivals.length ? firstRivals : beating(heldLeaf, candidates,
+            leaf => !offered || leaf.kind === 'buy' && Number(leaf.itemId) === offered);
         const heldActivity = heldLeaf && !leafRivals.length ? heldLeaf : null;
         // The held step an offer's buys beat: they are the choice, and the held step stands
         // again when none of them pays its trip.
@@ -1027,7 +1046,7 @@ class WishNetwork {
             decisionSeq++; activityLeaf = 0;
         }
         const completion = candidates.find(leaf => leaf.rootKey === completionKey && leaf.kind === 'luxury_exchange');
-        let activity = completion || heldActivity || choose(offerRivals || candidates, score, roll('activity'));
+        let activity = completion || heldActivity || pick(offerRivals || candidates);
         // The review reads its goals to the end. A later tier waits for this one, it is
         // no later review: what the money left funds of it stands in the agenda, its wish
         // joins the queue as its step comes. So does a craft's next stage, after its key.
@@ -1057,7 +1076,7 @@ class WishNetwork {
                     { known: true, hours: nonnegative(activity.tripHours), fees: nonnegative(activity.tripFees) })) break;
                 const town = activity.town;
                 pool = pool.filter(leaf => !(leaf.kind === 'buy' && leaf.town === town));
-                activity = choose(pool, score, roll('activity'));
+                activity = pick(pool);
                 steps = null;
             }
             if (!activity && offerRivals) {

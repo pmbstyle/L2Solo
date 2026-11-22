@@ -78,7 +78,8 @@ async function run() {
         [leaf.itemId]: { selfId: leaf.itemId, amount: Number(state.inventory[leaf.itemId]?.amount || 0) + units } } });
 
     { // A filled step takes the next one with no build, its focus and queue moving with it.
-        const { plan, state } = review();
+        // Its potions stocked: the shots, first (survival first), come whole from one seller.
+        const { plan, state } = review(stocked());
         const first = plan.network.activity;
         assert.equal(first.kind, 'buy', 'fixture: the review chose a purchase');
         assert(plan.network.agenda.length > 0, 'fixture: the review decided a second step');
@@ -99,14 +100,15 @@ async function run() {
         assert.equal(next.network.queue.some(wish => wish.key === first.rootKey), false, 'what was bought left the money queue');
     }
     { // A step's count is taken at the build: what arrived on the way is its progress.
-        // Shots and potions are weighed alike with the gear: the first kit kind among the later steps,
-        // every step before it bought.
+        // Both kit kinds below their line, survival first: one is the step, the other the first
+        // kit kind among the later steps, every step before it bought whole (a step that wants
+        // more than its seller holds stays the next stop).
         let found = null, ITEM = 0, shots = null, first = null;
         for (let tries = 0; tries < 40 && !found; tries++) {
             const row = review({ inventory: { ...base.inventory, [SHOTS]: { selfId: SHOTS, amount: 2 }, [POTIONS]: { selfId: POTIONS, amount: 2 } } });
             const steps = [row.plan.network.activity, ...(row.plan.network.agenda || [])];
             const at = steps.findIndex((step, index) => index > 0 && [SHOTS, POTIONS].includes(step?.itemId));
-            if (at > 0) {
+            if (at > 0 && steps.slice(0, at).every(step => !(step.wanted > step.amount))) {
                 found = row; shots = steps[at]; ITEM = shots.itemId;
                 first = steps.slice(0, at).reduce((state, step) => bought(state, step), row.state);
             }
@@ -208,11 +210,12 @@ async function run() {
     }
     { // A tight purse is read by the step's place in the money queue.
         const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
-        const { plan } = review();
+        // Its potions stocked: the first step (the shots) comes whole from one seller.
+        const { plan } = review(stocked());
         const steps = [plan.network.activity, ...plan.network.agenda];
         const cost = steps.reduce((sum, step) => sum + step.price, 0);
         const reserve = Packet.refillReserve(plan.statsPacket.money);
-        const tight = review({ adena: reserve + cost + 1 });
+        const tight = review({ ...stocked(), adena: reserve + cost + 1 });
         const first = tight.plan.network.activity;
         assert(tight.plan.network.agenda.length > 0, 'fixture: the steps are funded');
         const noRow = tight.state.stats.money.map((value, at) => at >= 6 && (at - 6) % 3 === 0 ? 0 : value);
@@ -237,8 +240,8 @@ async function run() {
         const built = Economy.forState(bought(state, plan.network.activity), { ...later(), fullReview: true });
         assert.equal(built.statsPacket.wishSections.at, T + 1000, 'the agenda waits');
     }
-    { // Shots and potions below their line are weighed with the gear they serve: one tier,
-        // one queue, by value; the agenda works through both in one review.
+    { // Shots and potions below their line stand in the tier of the gear they serve: one
+        // tier, one queue (the ones the reserve pays first); the agenda works through both in one review.
         const { plan, state } = review();
         const tier = key => plan.network.queue.find(wish => wish.key.startsWith(key))?.progressionPriority;
         assert(tier('stock:') > 0 && tier('stock:') === tier('power:'), 'fixture: stock and gear in one tier');

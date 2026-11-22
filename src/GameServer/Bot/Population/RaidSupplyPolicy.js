@@ -17,6 +17,8 @@ function market() {
         findSpot: id => invoke('GameServer/Bot/AI/SpotService').findById(id) };
 }
 
+// The board's sell lines, crafters' conditional ads included (graded shots sell to
+// bots only from crafters); the purchase admits each line for its buyer (planPurchase).
 function quote(state, selfId, amount, { timestamp = Date.now(), money = Infinity, claimed = new Map(), sources = market() } = {}) {
     if (!sources) return null;
     const trip = sources.tripFrom?.(state, timestamp)
@@ -24,8 +26,7 @@ function quote(state, selfId, amount, { timestamp = Date.now(), money = Infinity
     return OfferQuery.cheapestTown(sources.board, selfId, { amount, money, claimed, requireRepeatable: true,
         moneyForTown: town => Math.max(0, money - Math.max(0, trip(town))),
         excludeOwner: state.characterId, npcOffers: sources.npcOffersFor?.(selfId) || [], cost: trip,
-        accept: line => !line.conditional && line.custodyPolicy !== 1
-            && ['shop', 'sell_ad'].includes(line.kind) });
+        accept: line => ['shop', 'sell_ad'].includes(line.kind) });
 }
 
 // Public stock is not reserved during a trip. The same quote already carries

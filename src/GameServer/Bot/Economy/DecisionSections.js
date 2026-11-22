@@ -126,8 +126,11 @@ function unspent(baseline, wallet, bag = wallet) {
 // bot's survival potions (the money for their missing line, the search's broke
 // rule: it re-opens buying them and the spots that need them), an unarmed bot's
 // weapon bridge (its price from the whole wallet, WishProviders' survival wish), its
-// focus (the goal's cumulative cost) or, when nearer, the gear plan's market piece (its
-// cumulative cost in the money queue); all wake the same decision, so all are kind focus.
+// focus (the goal's cumulative cost) or, when nearer, the gear plan's market piece or the
+// shot stock below its line the queue does not fund yet (their cumulative costs in the money
+// queue: a weapon of a new grade bought at 0 of its shots crosses no line, so without its
+// money nothing wakes the build that funds them); all wake the same decision, so all are
+// kind focus.
 // Re-armed by each build. wallet: PurchaseFunding.budget with the escrow in it.
 function affordAtOf(context, wallet) {
     const potions = context.stock?.('potions');
@@ -138,8 +141,9 @@ function affordAtOf(context, wallet) {
     }
     const bridge = context.weaponBridge;
     if (bridge?.price > wallet) return { at: bridge.price, kind: 'focus' };
-    // A C4 player goes to buy the piece he planned as soon as he can pay for it.
-    const at = Math.min(...[context.goalBudget, context.plannedBudget].filter(cost => cost > wallet));
+    // A C4 player goes to buy the piece he planned as soon as he can pay for it, and
+    // the shots his weapon has too few of.
+    const at = Math.min(...[context.goalBudget, context.plannedBudget, context.stockBudget].filter(cost => cost > wallet));
     return Number.isFinite(at) ? { at, kind: 'focus' } : null;
 }
 function baselineIdentity(baseline) {

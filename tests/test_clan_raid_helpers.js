@@ -6,13 +6,12 @@ const Data = invoke('GameServer/DataCache'); Data.init({ validate: false });
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Supply = require('../src/GameServer/Bot/Population/RaidSupplyPolicy');
-const Fixed = require('../src/GameServer/Bot/Economy/FixedShotOffers');
 const Raid = require('../src/GameServer/Clan/ClanRaidPolicy');
 const Estimate = require('../src/GameServer/Clan/ClanRaidEstimate');
 const Expedition = require('../src/GameServer/Clan/ClanRaidExpedition');
 const Roster = require('../src/GameServer/Clan/ClanRaidRoster');
 const Casualty = require('../src/GameServer/Bot/Population/RaidCasualtyPolicy');
-Supply.useMarket(() => ({ npcOffersFor: id => Fixed.offers(id), tripFrom: () => () => 0 }));
+Supply.useMarket(require('./helpers/crafterShotBoard').crafterShotMarket());
 const fixture = require('./fixtures/raid_priority_world.json'), timestamp = Date.now();
 const core = fixture.expected.map(id => {
     const row = fixture.members.find(s => s.characterId === id);

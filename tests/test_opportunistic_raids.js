@@ -1,13 +1,10 @@
 'use strict';
 const assert = require('node:assert/strict');
 require('../src/Global');
-// The author's fixed shot merchant sells shots here (off by default since T116).
-invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 const Data = invoke('GameServer/DataCache');
 Data.init({ validate: false });
 const Policy = invoke('GameServer/Bot/Population/OpportunisticRaidPolicy');
-invoke('GameServer/Bot/Population/RaidSupplyPolicy').useMarket(() => ({
-    npcOffersFor: id => invoke('GameServer/Bot/Economy/FixedShotOffers').offers(id), tripFrom: () => () => 0 }));
+invoke('GameServer/Bot/Population/RaidSupplyPolicy').useMarket(require('./helpers/crafterShotBoard').crafterShotMarket());
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Catalog = invoke('GameServer/RaidBoss/RaidBossSourceCatalog');
