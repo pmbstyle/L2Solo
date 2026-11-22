@@ -18,7 +18,6 @@ const Actor = invoke('GameServer/Actor/Actor');
 const World = invoke('GameServer/World/World');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Trade = invoke('GameServer/Bot/TradeService');
-const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 const Sell = invoke('GameServer/Network/Request/Sell');
 const Response = invoke('GameServer/Network/Response');
 const Select = invoke('GameServer/Actor/Generics/Select');
@@ -288,17 +287,17 @@ async function run() {
             assert.equal(await remaining(first.shop), 0); assert.equal(await remaining(second.shop), 2);
         } finally { Afk.sellToShop = original; }
     });
-    await check('a gnome bot is paid the line price without filling an ad; another bot is refused', async () => {
-        // The fixed buyers take materials only from a gnome (classes 54-57; here a Scavenger).
-        const other = await character({ bot: true, skins: 1 });
-        await assert.rejects(Trade.sellToStore(other.actor, buyer(), ITEM, 1), /unavailable to bots/);
-        const bot = await character({ bot: true, skins: 1, classId: 54 }), bid = await order(1000, 1), store = buyer();
-        const source = { storeType: 3, items: [{ selfId: ITEM, count: 999999, price: LINE_PRICE }] };
-        const price = Pricing.botPriceFor(source, source.items[0]);
-        const before = await worldAdena();
-        const result = await Trade.sellToStore(bot.actor, store, ITEM, 1);
-        assert.equal(result.totalAdena, price); assert.equal(await remaining(bid.shop), 1);
-        assert.equal(await worldAdena() - before, price);
+    await check('no bot sells to a fixed buyer, a gnome included', async () => {
+        // The configured city buyers serve players only; a bot sells to the board,
+        // a crafter's bid or the NPC.
+        for (const classId of [0, 54]) {
+            const bot = await character({ bot: true, skins: 1, classId }), store = buyer();
+            assert.equal(Trade.previewSaleToStore(bot.actor, store).totalAdena, 0, `class ${classId}: no preview`);
+            const before = await worldAdena();
+            await assert.rejects(Trade.sellToStore(bot.actor, store, ITEM, 1), /unavailable to bots/);
+            assert.equal(await held(bot.actor.fetchId()), 1, `class ${classId}: the skin stays`);
+            assert.equal(await worldAdena() - before, 0, `class ${classId}: no Adena enters`);
+        }
     });
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

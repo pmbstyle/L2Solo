@@ -249,6 +249,9 @@ async function startServer() {
 
         invoke('GameServer/Knowledge/RecipeCatalog').warmup();
         invoke('GameServer/World/Generics/NativeKnowledgeBase').warmup();
+        // The bot price anchors over the spot table, on the world's spot catalogue.
+        invoke('GameServer/Bot/Population/SpotProfiles').ensure();
+        invoke('GameServer/Bot/Economy/PriceAnchor').warmup();
 
         new Server('AuthServer', options.default.AuthServer, sessionFactory(AuthSession));
 

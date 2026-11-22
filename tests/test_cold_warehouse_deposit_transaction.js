@@ -156,7 +156,6 @@ async function run() {
         const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
         const Safe = invoke('GameServer/Bot/Economy/ColdSafeEnchantService');
         const Buyer = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
-        const Static = invoke('GameServer/Bot/Economy/StaticBuyerService');
         const Goals = invoke('GameServer/Bot/Goals/GoalExecutor');
         const replacements = [];
         const replace = (object, key, value) => { replacements.push([object, key, object[key]]); object[key] = value; };
@@ -167,7 +166,6 @@ async function run() {
             replace(Market, 'saleDecision', () => ({ listings: [{ selfId: STEM, count: 7 }], npc: [], answers: [], warehouse: [] }));
             replace(Market, 'listOnBoard', state => Promise.resolve({ state, listed: 1 }));
             replace(Buyer, 'sellToBestBuyer', state => Promise.resolve({ state, sold: false }));
-            replace(Static, 'sell', state => Promise.resolve({ state, sold: false }));
             replace(Life, 'applyNpcLiquidation', state => Promise.resolve(state));
             replace(Goals, 'finishMarketVisit', () => { throw Error('market must not continue a handed-off visit'); });
             const hotCase = await seed([3, 4]);

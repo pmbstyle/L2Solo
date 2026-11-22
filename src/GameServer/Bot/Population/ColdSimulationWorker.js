@@ -139,7 +139,7 @@ const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableMirror = require('./TableMirror');
 const { BoardIndex, recordOf, escrowOf } = require('../../AfkTrade/BoardIndex');
 const ColdPvpResolver = invoke('GameServer/Bot/Population/ColdPvpResolver');
-const { MarketBuyerWaiters, lineEvents } = require('../Economy/MarketBuyerWaiters');
+const { MarketBuyerWaiters, lineEvents, recordClosed } = require('../Economy/MarketBuyerWaiters');
 const SpotIndex = require('../AI/SpotIndex');
 const SpotService = require('../AI/SpotService');
 const SpotValueTable = require('../AI/SpotValueTable');
@@ -639,8 +639,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             if (value && cursor.selectedValueHours > 0) {
                 const offer = value.exit?.offer;
                 const exit = offer ? [Number(offer.recordId), Number(offer.lineId), Number(value.exit.price), Number(offer.revision)]
-                    : value.exit?.staticId > 0 ? [0, Number(value.exit.staticId), Number(value.exit.price), 0]
-                        : invoke('GameServer/Bot/Economy/ShotCraftPolicy').selectionFor(value)?.exit || null;
+                    : invoke('GameServer/Bot/Economy/ShotCraftPolicy').selectionFor(value)?.exit || null;
                 selected = { wealth: { recipeId: Number(value.recipe.recipeId), batches: Number(value.batches || 1),
                     ...(value.learning ? { scroll: (() => {
                         const purchase = value.basket.purchases.find(row => Number(row.selfId) === Number(value.recipe.recipeItemId));
@@ -1039,6 +1038,7 @@ tables.watch('board', {
         boardFollower.remove(key);
         setRecordEscrow(Number(key), 0, 0);
         changedItems(previous, []);
+        if (!boardReplacing && tables.ready('board')) recordClosed(previous, boardWake);
     }
 });
 // Parties and memory are main's tables the kernel keeps
@@ -2409,6 +2409,8 @@ async function handle(message) {
         break;
     case 'init':
         RecomputeGeneration.configure(payload.recomputeGeneration);
+        // The bot price anchors, on the spot catalogue main sent before init.
+        invoke('GameServer/Bot/Economy/PriceAnchor').warmup();
         startKernel(payload.config || {});
         send('ready', {
             phase: 'running',

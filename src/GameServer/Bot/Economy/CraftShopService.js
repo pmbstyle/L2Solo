@@ -156,8 +156,8 @@ function productPrice(recipe) {
     const value = Number(product?.template?.price || 0) * Math.max(1, Number(recipe.productCount || 1));
     // A manufacture fee must remain a fee, not silently turn a player-supplied
     // recipe into an NPC shop. The cap also keeps malformed item prices from
-    // producing unusable C4 dialogs.
-    return Math.max(100, Math.min(1000000, BotEconomyPricing.scalePrice(Math.round(value * 0.03) + Number(recipe.mpCost || 0) * 10)));
+    // producing unusable C4 dialogs. Fee and bounds follow the server's Adena rate.
+    return BotEconomyPricing.scalePrice(Math.max(100, Math.min(1000000, Math.round(value * 0.03) + Number(recipe.mpCost || 0) * 10)));
 }
 
 // The Giran station crafters: level-70 Warsmiths, seeded at the content cap.

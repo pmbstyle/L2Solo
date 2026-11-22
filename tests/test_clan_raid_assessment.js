@@ -15,8 +15,12 @@ const ClanSupply = require('../src/GameServer/Clan/ClanRaidSupply');
 const Market = require('../src/GameServer/Bot/Economy/ColdMarketService');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const book = Afk.boardIndex();
-const Fixed = require('../src/GameServer/Bot/Economy/FixedShotOffers');
-Supply.useMarket(() => ({ board: book, npcOffersFor: id => Fixed.offers(id), tripFrom: () => () => 0 }));
+const Npc = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const CrafterStock = require('../src/GameServer/Bot/Economy/CrafterStock');
+// Graded shots sell to bots only from crafters' lines, most of them conditional ads.
+const crafterAds = require('./helpers/crafterShotBoard').crafterShotRecords();
+for (const record of crafterAds) book.put(record);
+Supply.useMarket(() => ({ board: book, npcOffersFor: id => Npc.npcOffersAll(id), tripFrom: () => () => 0 }));
 const frozen = require('./fixtures/raid_priority_world.json'), timestamp = Date.now();
 const members = frozen.expected.map(id => {
     const row = frozen.members.find(s => s.characterId === id);
@@ -71,26 +75,30 @@ async function main() {
     const empty=structuredClone(members);
     for(const s of empty) for(const id of invoke('GameServer/Inventory/ShotStock').SHOT_IDS) delete s.inventory[id];
     const shotId=invoke('GameServer/Inventory/ShotStock').planForState(dd).selfId;
-    book.put({id:97301,ownerId:98301,storeType:1,kind:'shop',town:'Giran',
-        lines:[{lineId:973010,selfId:shotId,count:100,price:1}]});
     const funded=Raid.assessment({members:empty},spot,null,{timestamp,desiredMembers:9});
     assert(funded.ready,JSON.stringify(funded.raidAssessment || funded));
-    assert(funded.raidAssessment.supplies.some(s=>s.reserveCost>s.cost),'cheap public stock retains a full static backup budget');
+    assert(funded.raidAssessment.supplies.some(s=>s.selfId===shotId && s.missing>0)
+        && funded.raidAssessment.supplies.filter(s=>s.missing>0).every(s=>s.available===s.missing
+            && s.price===CrafterStock.shotCeiling(s.selfId)),'missing graded shots are bought from the crafters\' ads');
     const unfunded=structuredClone(empty);
     for(const s of unfunded){s.adena=1;s.stats.money=[1,0,0,0];}
     assert.equal(Raid.assessment({members:unfunded},spot,null,{timestamp,desiredMembers:9}).reason,'raid_consumables_funds');
     assert.equal(Raid.assessment({members:empty},spot,null,{timestamp,desiredMembers:9,fundSupplies:false}).reason,'raid_shot_reserve',
         'physical admission cannot replace inventory with purchasing ability');
-    book.remove(97301);
     const { ClanPlanningCoordinator }=require('../src/GameServer/Clan/ClanPlanningCoordinator');
     const worker=new ClanPlanningCoordinator();
     try {
         await worker.withJob(Date.now()+30000,Data,async jobKey=>{
+            // The worker reads the board as its 'board' table: the same crafters' ads.
+            const Channel=require('../src/GameServer/Bot/Population/ColdTableChannel').shared;
+            const { rowOf }=require('../src/GameServer/AfkTrade/BoardIndex');
+            for (const record of crafterAds) Channel.changed('board',rowOf(record));
+            await new Promise(resolve=>setImmediate(resolve));
             const input={jobKey,deadlineAt:Date.now()+30000,
                 clan:{id:77,level:3,physicalMemberCount:40,state:{mode:'autonomous'},members:empty},
                 spots:[spot],prospects:[],previousGoal:null};
             const result=await worker.prepareRaids(input,Data,[spot]);
-            assert(result.teams[spot.id]?.actualReady,'real clan worker reads repeatable shot supply');
+            assert(result.teams[spot.id]?.actualReady,'real clan worker reads the crafters\' shot ads');
             assert(result.teams[spot.id].supplies.some(s=>s.missing>0 && s.reserveCost>0));
             const physical=await worker.prepareRaids({...input,fundRaidSupplies:false},Data,[spot]);
             assert(!physical.teams[spot.id],'opening rechecks stock rather than reusing a fundable planning verdict');
@@ -109,12 +117,14 @@ async function physicalSupply() {
     await DB.setItem(97901,{selfId:57,name:'Adena',amount:1000000});
     const objective={clanId:77,clanGoalKey:'clan-supply',sourceKind:'raid',spotId:spot.id,status:'open',priority:'required',
         fullRoster:{generation:'clan-supply-one',memberIds:[97901]}};
-    const target={id:97901,selfId:1464,target:100},price=Fixed.offers(1464).find(s=>s.town==='Giran').price;
+    // No-grade soulshots: the NPC is the repeatable supply behind a cheaper public stack.
+    const shot=1835,target={id:97901,selfId:shot,target:100},price=Math.min(...Npc.npcOffersAll(shot)
+        .filter(s=>s.town==='Giran').map(s=>s.price));
     let state=await Life.upsertState({...members[3],characterId:97901,name:'ClanRaidSupply',accountName:'bot_clan_supply',
         activity:'party_wait',spotId:spot.id,adena:1000000,inventory:Life.inventorySummaryFromItems(await DB.fetchItems(97901)),
         stats:{...members[3].stats,money:[1000000,0,0,0],clanPartyObjective:objective}},'clan_supply_fixture');
     book.put({id:97302,ownerId:98302,storeType:1,kind:'shop',town:'Giran',
-        lines:[{lineId:973020,selfId:1464,count:100,price:1}]});
+        lines:[{lineId:973020,selfId:shot,count:100,price:1}]});
     const nativeMarket={...Market,planPurchase:(s,id,n,o)=>Market.planPurchase(s,id,n,{...o,cost:()=>0})};
     const order=ClanSupply.reserve(state,objective,target,nativeMarket,new Map());
     assert(order.ok);
@@ -133,7 +143,7 @@ async function physicalSupply() {
         stats:{...departed.stats,travel:null}},'clan_supply_arrived');
     const bought=await Market.tryPurchase(arrived);
     assert(bought.purchased,JSON.stringify(bought));
-    assert.equal(Native.amount(await DB.fetchItems(97901),1464),100);
+    assert.equal(Native.amount(await DB.fetchItems(97901),shot),100);
     assert.equal(Native.amount(await DB.fetchItems(97901),57),1000000-100*price);
     const complete=await ClanSupply.advance({...bought.state,activity:'party_wait',
         stats:{...bought.state.stats,travel:null,marketReturn:null}},Life,nativeMarket);
@@ -141,7 +151,7 @@ async function physicalSupply() {
     assert(Formation.eligible(complete),JSON.stringify({message:'formation after procurement',phase:complete.phase,
         activity:complete.activity,party:complete.party,partyId:complete.partyId,
         objective:complete.stats.clanPartyObjective,request:complete.stats.partyRequest,equipment:complete.stats.equipmentPlan}));
-    assert.equal(Supply.purchaseBudget(complete,{itemId:1464,raidPreparationId:order.marker.id}),0,'completed order cannot debit twice');
+    assert.equal(Supply.purchaseBudget(complete,{itemId:shot,raidPreparationId:order.marker.id}),0,'completed order cannot debit twice');
     await DB.close();
 }
 

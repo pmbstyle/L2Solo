@@ -169,20 +169,22 @@ function picked(offer) {
 }
 
 {
-    // The gear reserve: a bot buys a C weapon at the Giran reserve's valve row and
-    // a crafter (Artisan/Warsmith) at its crafter row, sold to its line only (the
-    // admission and the store's execution agree); a limited player lot of a gear
-    // piece stays closed to bots in both.
+    // The gear reserve: a crafter (Artisan/Warsmith) stocks a C weapon on consignment at
+    // the Giran reserve's crafter row, sold to the supplier line only; no row sells it as
+    // a purchase, to a crafter or another bot (the admission and the store's execution
+    // agree); a limited player lot of a gear piece stays closed to bots in both.
     const Query = invoke('GameServer/Bot/Economy/OfferQuery');
     const Fixed = invoke('GameServer/Bot/Economy/FixedShotOffers');
+    const Production = invoke('GameServer/Bot/Economy/ProductionPolicy');
     const Trade = invoke('GameServer/Bot/TradeService');
     const Configs = invoke('GameServer/Bot/MerchantStoreConfigs');
     const FLAMBERGE = 71;
     const giranRows = Fixed.offers(FLAMBERGE).filter(row => row.sourceName === 'Squeesh');
-    const reserveRow = giranRows.find(row => row.valve), crafterRow = giranRows.find(row => row.buyerClasses);
-    assert(reserveRow && crafterRow, 'Squeesh sells the Flamberge on a valve row and a crafter row');
-    assert.strictEqual(Query.sourceAllowed(reserveRow), true, 'the reserve gear row is a bot source');
-    assert.strictEqual(Query.sourceAllowed(crafterRow, true, { stats: { classId: 57 } }), true, 'the crafter row sells to a Warsmith');
+    const crafterRow = giranRows.find(row => row.buyerClasses);
+    assert(crafterRow && giranRows.length === 1, 'Squeesh sells the Flamberge on its crafter row only');
+    assert.strictEqual(Production.allowsFixed(crafterRow, { stats: { classId: 57 } }, { consignment: true }), true,
+        'the crafter row stocks a Warsmith on consignment');
+    assert.strictEqual(Query.sourceAllowed(crafterRow, true, { stats: { classId: 57 } }), false, 'the crafter row sells a Warsmith nothing');
     assert.strictEqual(Query.sourceAllowed(crafterRow, true, { stats: { classId: 1 } }), false, 'the crafter row refuses another bot');
     const lot = Configs.Haldise.items.find(line => DataCache.items.find(item => item.selfId === line.selfId)?.etc?.rank === 'c');
     assert(lot, 'Haldise lists a C piece');
@@ -192,9 +194,9 @@ function picked(offer) {
         backpack: { fetchItemFromSelfId: () => null, fetchItems: () => [], fetchTotalAdena: () => 0 } };
     const storeOf = (name, line) => ({ storeType: 1, town: Configs[name].town,
         items: Trade.normalizeStoreItems({ ...Configs[name], items: [{ ...line, count: 1 }] }, { staticStore: true }) });
-    const reserveLine = Configs.Squeesh.items.find(line => line.selfId === FLAMBERGE && line.valve);
+    const reserveLine = Configs.Squeesh.items.find(line => line.selfId === FLAMBERGE && line.buyerClasses);
     await assert.rejects(Trade.buyFromStore(bot, storeOf('Squeesh', reserveLine), FLAMBERGE, 1,
-        { expectedUnitPrice: reserveRow.price }), /Not enough Adena/, 'the store sells the reserve line to a bot at its reserve price');
+        { expectedUnitPrice: crafterRow.price }), /not available/, 'the store refuses the crafter line to another bot');
     await assert.rejects(Trade.buyFromStore(bot, storeOf('Haldise', lot), lot.selfId, 1),
         /unavailable to bots/, 'the limited lot is refused to a bot');
 }

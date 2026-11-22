@@ -7,7 +7,6 @@ const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
-const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
@@ -153,8 +152,7 @@ function open(state, options = {}) {
     // the retry keeps a later pass from answering the same ad again when the
     // payer refuses it.
     if (dynamicBuyerSale.pending) return { ...dynamicBuyerSale, state: deferSellRetry(dynamicBuyerSale.state || state), listed: false };
-    return StaticBuyerService.sell(dynamicBuyerSale.state || state, town?.name).then((buyerSale) => {
-    const saleState = buyerSale.state || dynamicBuyerSale.state || state;
+    const saleState = dynamicBuyerSale.state || state;
     return LifeState.applyNpcLiquidation(saleState, market.npc, {
         source: 'pre_market_junk',
         town: town?.name || saleState.currentRegion || null
@@ -165,16 +163,13 @@ function open(state, options = {}) {
         return BotWarehouse.depositCold(marketState).then((warehouse) => warehouse.aborted ? stoppedDeposit(warehouse) : ({
             state: deferSellRetry(warehouse.state || marketState),
             listed: false,
-            reason: buyerSale.sold
-                ? 'sold_to_static_buyer'
-                : dynamicBuyerSale.sold
+            reason: dynamicBuyerSale.sold
                     ? 'sold_to_dynamic_buyer'
                 : initialMarket.npc.length
                     ? 'liquidated_junk'
                     : market.warehouse.length
                         ? 'no_market_demand'
                         : 'nothing_to_sell',
-            buyerSale,
             dynamicBuyerSale,
             warehouse,
             market
@@ -191,7 +186,6 @@ function open(state, options = {}) {
                 state: deferSellRetry(warehouse.state || boardState),
                 listed: false,
                 reason: board.reason || 'board_refused',
-                buyerSale,
                 dynamicBuyerSale,
                 warehouse,
                 market
@@ -207,13 +201,11 @@ function open(state, options = {}) {
                 state: saved || returning,
                 listed: true,
                 itemCount: board.listed,
-                buyerSale,
                 dynamicBuyerSale,
                 warehouse,
                 market
             }));
         });
-    });
     });
     });
     });

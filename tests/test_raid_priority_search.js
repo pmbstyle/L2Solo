@@ -3,14 +3,11 @@ const assert = require('node:assert/strict');
 process.env.L2NODE_PROGRESSION_RATE = 'x50';
 require('./helpers/databaseIsolation');
 require('../src/Global');
-// The author's fixed shot merchant sells shots here (off by default since T116).
-invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 invoke('GameServer/DataCache').init({ validate: false });
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Policy = require('../src/GameServer/Bot/Population/OpportunisticRaidPolicy');
 const Priority = require('../src/GameServer/Bot/Population/RaidRosterPriority');
-require('../src/GameServer/Bot/Population/RaidSupplyPolicy').useMarket(() => ({
-    npcOffersFor: id => invoke('GameServer/Bot/Economy/FixedShotOffers').offers(id), tripFrom: () => () => 0 }));
+require('../src/GameServer/Bot/Population/RaidSupplyPolicy').useMarket(require('./helpers/crafterShotBoard').crafterShotMarket());
 const Work = require('../src/GameServer/Bot/Population/RaidSearchWork');
 const { RaidRosterCoverage } = require('../src/GameServer/Bot/Population/RaidRosterCoverage');
 const { OpportunisticRaidDirector } = require('../src/GameServer/Bot/Population/OpportunisticRaidDirector');
@@ -32,16 +29,16 @@ const catalog = invoke('GameServer/RaidBoss/RaidBossSourceCatalog');
 const boss = catalog.findById(`raid:${fixture.bossId}`);
 
 async function run() {
-    // Stores sell at the datapack price at every preset: a C soulshot costs 15 at x50.
-    assert.equal(invoke('GameServer/Bot/Economy/StaticMerchantPricing').botPurchasePrice(1464), 15);
+    const ask = require('../src/GameServer/Bot/Economy/CrafterStock').shotCeiling(1464);
+    assert.equal(invoke('GameServer/Bot/Economy/StaticMerchantPricing').botPurchasePrice(1464), ask);
     const before = JSON.stringify(pool);
     const planned = await Work.run(Policy.candidateSteps(pool, new Map(), 0, at, new RaidRosterCoverage()));
     assert.deepEqual(ids(planned.proposals[0]), fixture.expected,
         'the frozen world finds the strong tank, complementary learned support and funded damage immediately');
     const fit = Policy.assessment(planned.proposals[0], boss, { timestamp: at, fundSupplies: true });
     assert(fit.ready && fit.seconds > 500 && fit.seconds < 530, JSON.stringify(fit.reasons));
-    assert(fit.supplies.some(s => s.missing > 0) && fit.supplies.every(s => s.cost === s.missing * 15),
-        'missing shots are costed at the real store price at x50');
+    assert(fit.supplies.some(s => s.missing > 0) && fit.supplies.every(s => s.cost === s.missing * ask),
+        'missing shots are costed at the crafter\'s ask on the board at x50');
     assert.equal(JSON.stringify(pool), before, 'ranking and forecasting never buy, buff or change a live actor');
     const rich = byId.get(2007126), poor = structuredClone(rich);
     poor.adena = 1; poor.stats.money = [0,0,0,0]; poor.inventory[1464].amount = 0;

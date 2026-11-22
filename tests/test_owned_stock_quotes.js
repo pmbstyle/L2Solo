@@ -51,7 +51,7 @@ try {
     assert.equal(Listing.evaluate(state, options).listings.length, 0, 'backed shop policy remains unchanged');
     const offered = Listing.evaluate(state, { ...options, stockQuotes: true });
     assert(offered.listings.length > 0, 'native stock/lot/price/slot policy admits a first field offer');
-    assert(offered.listings.length <= Listing.BOARD_SLOTS);
+    assert(offered.listings.length <= require('../src/GameServer/AfkTrade/BoardRules').sellSlots(state));
     for (const row of offered.listings) {
         assert.equal(row.marketReason, 'stock_quote');
         assert.equal(row.count, state.inventory[row.selfId].amount);

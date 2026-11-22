@@ -271,10 +271,11 @@ function observeDisposition(options) {
 }
 const firstQuote = observeDisposition(suppliedOptions());
 const sale = firstQuote.result;
-assert.strictEqual(sale.listings.length, MarketListingPolicy.BOARD_SLOTS, 'eight board slots: 3 shop lines + 5 sell ads');
+const boardSlots = require('../src/GameServer/AfkTrade/BoardRules').sellSlots(state);
+assert.strictEqual(sale.listings.length, boardSlots, 'eight board slots: 3 shop lines (no dwarf, no Expand Trade) + 5 sell ads');
 // Each item's roll keeps every option a floor chance (one item here keeps its lot).
 assert.strictEqual(sale.decisions.filter((decision) => decision.action === 'warehouse').length,
-    items.length - MarketListingPolicy.BOARD_SLOTS, 'the rest is kept, not dumped');
+    items.length - boardSlots, 'the rest is kept, not dumped');
 for (const listing of sale.listings) {
     assert(listing.price > 0 && listing.marketReason === 'expected_value');
     assert.strictEqual(listing.count, 100, 'all units of the lot');

@@ -27,10 +27,9 @@ function sameSource(left, right) {
 function sameExit(left, right) {
     if (!left || !right || left.type !== right.type || left.town !== right.town) return false;
     if (left.type === 'listing') return left.forecast?.origin === right.forecast?.origin;
-    if (left.type === 'afk') return ['recordId', 'lineId'].every(key => Number(left.offer?.[key]) === Number(right.offer?.[key]))
+    return left.type === 'afk' && ['recordId', 'lineId'].every(key => Number(left.offer?.[key]) === Number(right.offer?.[key]))
         && Number(left.offer?.revision ?? left.offer?.expectedRevision) === Number(right.offer?.revision ?? right.offer?.expectedRevision)
         && Number(left.price) === Number(right.price);
-    return left.type === 'static' && left.buyerName === right.buyerName && Number(left.price) === Number(right.price);
 }
 
 // Keep only the remaining inputs of an accepted finite series. A public

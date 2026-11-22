@@ -29,7 +29,6 @@ parentPort.on('message',message=>{
             return real(m,...rest);
         };
     }
-    if(message.queryProbe==='enable-static-shots') Config.staticShotsDisabled=false;
     if(message.queryProbe==='hold-meeting'||message.queryProbe==='hold-page') {
         const mode=message.queryProbe==='hold-meeting'?'meeting':'page';
         const held={id:701,mode,input:{mode,state:kernel.states.get(701).state}};
@@ -262,35 +261,31 @@ function post(type, payload, id) {
     assert.equal(slowRaid.reason, 'raid_no_fast_target');
     delete raidParty.stats.objective.raidCandidateIds;
     delete raidParty.stats.objective.maxFightSeconds;
-    marketPage(shops.map(s => ({ ...s, revision: 2, custodyPolicy: 1, kind: 'sell_ad' })), 2, 1);
+    // Graded shots sell to bots only from crafters, most of them in conditional ads (a meeting).
+    const ads = shops.map(s => ({ ...s, id: s.id + 10, ownerId: s.ownerId + 10, kind: 'sell_ad', custodyPolicy: 1,
+        revision: 2, lines: s.lines.map(l => ({ ...l, lineId: l.lineId + 10, price: 50 })) }));
+    marketPage(ads, 2);
     const advertisedRaid = await raidReply('raid-conditional');
-    assert(advertisedRaid.reasons.includes('raid_supplies_unavailable'),
-        'the real simulation worker reads current backed supply and refuses conditional ads');
-    worker.postMessage({ queryProbe:'enable-static-shots' });
-    await wait(message => message.probe==='enable-static-shots');
-    const fallbackRaid = await raidReply('raid-static-fallback');
-    assert(fallbackRaid.ready, JSON.stringify(fallbackRaid.reasons));
-    assert(fallbackRaid.supplies.filter(s => s.missing > 0).every(s =>
-        s.available === s.missing && s.price > 1 && s.cost <= s.cash),
-        'the real worker funds the expensive configured fallback without treating conditional ads as stock');
-    marketPage(shops.map(s => ({ ...s, revision:3, lines:s.lines.map(l => ({...l,count:100})) })),3,2);
-    const mixedRaid = await raidReply('raid-mixed-fallback');
+    assert(advertisedRaid.ready, JSON.stringify(advertisedRaid.reasons));
+    assert(advertisedRaid.supplies.filter(s => s.missing > 0).every(s =>
+        s.available === s.missing && s.price === 50 && s.cost <= s.cash),
+        'the real simulation worker reads the crafters\' conditional ads as raid supply');
+    marketPage([...shops.map(s => ({ ...s, revision: 3, lines: s.lines.map(l => ({ ...l, count: 100 })) })), ...ads], 3);
+    const mixedRaid = await raidReply('raid-mixed');
     assert(mixedRaid.ready, JSON.stringify(mixedRaid.reasons));
-    assert(mixedRaid.supplies.some(s => s.missing > 100 && s.cost < s.missing * s.price),
-        'a cheaper backed stack is used before the configured remainder');
-    const mixedSupply=mixedRaid.supplies.find(s => s.reserveCost>s.cost+1);
-    assert(mixedSupply,'the worker transports the fallback budget separately from the cheap quote');
+    const mixedSupply = mixedRaid.supplies.find(s => s.missing > 100 && s.cost < s.missing * s.price);
+    assert(mixedSupply, 'a cheaper backed stack is used before the crafter\'s dearer ad');
     const dd=raiders.find(s=>s.characterId===mixedSupply.id),walletBefore=dd.adena,moneyBefore=dd.stats.money;
-    dd.adena=Math.ceil(mixedSupply.cost)+1;dd.stats.money=[dd.adena,0,0,0];
-    const underfunded=await raidReply('raid-unaffordable-reserve');
+    dd.adena=Math.ceil(mixedSupply.cost)-1;dd.stats.money=[dd.adena,0,0,0];
+    const underfunded=await raidReply('raid-unaffordable-supply');
     assert(underfunded.reasons.includes('raid_consumables_funds'),
-        'a cheap fill never hides an unaffordable backup across the real worker boundary');
+        'a wallet below the actual quote refuses the raid across the real worker boundary');
     dd.adena=walletBefore;
     if(moneyBefore===undefined)delete dd.stats.money;else dd.stats.money=moneyBefore;
     const invalidReserve=structuredClone(selectedPayload);
     invalidReserve.joint.raidAssessment.supplies[0].reserveCost=invalidReserve.joint.raidAssessment.supplies[0].cash+1;
     assert(!Protocol.validateEnvelope(Protocol.envelope('party_goal_result',epoch,invalidReserve),'worker').ok,
-        'ready advice cannot authorize an unfunded static reserve');
+        'ready advice cannot authorize an unfunded supply');
     // An answer the worker's own validator refuses ends its request at once: the fault names the request.
     worker.postMessage({ queryProbe: 'refuse-reply', type: 'party_goal_result' });
     post('party_goal_request', { ...request, replyBy: Date.now() + 5000 }, 'refused');

@@ -22,6 +22,8 @@ const wallet = async id => Native.amount(await DB.fetchItems(id), 57);
 const owed = async (id, selfId) => Number((await DB.execute(['SELECT COALESCE(SUM(amount), 0) AS amount FROM board_settlements WHERE ownerId = ? AND selfId = ?', [id, selfId]]))[0].amount);
 const records = id => Afk.ownerRecords(id);
 const shop = id => Afk.findOwnerProjection(id)?.shop;
+// A human bot's purchase shop holds a C4 buy store's 4 lines (PrivateStoreLimits).
+const LINES = 4;
 const apply = (id, rows = REQUESTS, priority = Afk.BUY) => Market.executePlan(Life.snapshot(id),
     { buyAds: rows, buyShop: priority }, { reviewGoal: false });
 
@@ -131,7 +133,7 @@ async function heldPurchaseVisit() {
         const lines = Policy.linesFor(state, goal, { watchList, board: Afk.boardIndex(), townFor: () => 'Giran',
             npcOffersFor: () => [], economy: { moneyPrice: 1e-6, hourAdena: 36000, worth: () => STOCK_PRICE, trip,
                 persona: { traits: {} }, network: { moneyPrice: 1e-6 } } });
-        await Market.executePlan(state, { ...Plan.buyBatch(lines), buyShop: Afk.BUY }, { reviewGoal: false });
+        await Market.executePlan(state, { ...Plan.buyBatch(state, lines), buyShop: Afk.BUY }, { reviewGoal: false });
         return { lines, state: Life.snapshot(id) };
     };
     try {
@@ -368,10 +370,10 @@ async function run() {
     await apply(9101);
     assert.equal(shop(9101)?.storeType, Afk.BUY);
     assert.equal(shop(9101).custodyPolicy, 0);
-    assert.deepEqual(shop(9101).lines.map(line => line.selfId), REQUESTS.slice(0, 3).map(row => row[0]), 'highest priority requests own the shop');
-    assert.deepEqual(records(9101).filter(row => row.kind === 'buy_ad').map(row => row.lines[0].selfId), REQUESTS.slice(3).map(row => row[0]), 'five remaining requests use meetings');
+    assert.deepEqual(shop(9101).lines.map(line => line.selfId), REQUESTS.slice(0, LINES).map(row => row[0]), 'highest priority requests own the shop');
+    assert.deepEqual(records(9101).filter(row => row.kind === 'buy_ad').map(row => row.lines[0].selfId), REQUESTS.slice(LINES).map(row => row[0]), 'the remaining requests use meetings');
     assert.equal(Afk.findOwnerProjection(9101).actor.fetchPrivateStoreType(), Afk.BUY);
-    assert.equal(shop(9101).escrowAdena, cost(REQUESTS.slice(0, 3)));
+    assert.equal(shop(9101).escrowAdena, cost(REQUESTS.slice(0, LINES)));
     assert.equal(await wallet(9101) + shop(9101).escrowAdena, 1000000);
     const original = shop(9101);
     await apply(9101);
@@ -396,10 +398,10 @@ async function run() {
 
     await Market.withdrawBuyAds(9101, 79);
     assert(shop(9101), 'fulfilling one item keeps other purchase lines open');
-    assert.equal(shop(9101).lines.filter(row => row.count > 0).length, 2);
+    assert.equal(shop(9101).lines.filter(row => row.count > 0).length, LINES - 1);
     await apply(9101, remaining.slice(1));
-    assert.deepEqual(shop(9101).lines.map(row => row.selfId), [1864, 1865, 1866], 'a free line promotes the next meeting request');
-    assert(!records(9101).filter(row => row.kind === 'buy_ad').some(row => row.lines[0].selfId === 1866), 'promotion retires the duplicate meeting offer atomically');
+    assert.deepEqual(shop(9101).lines.map(row => row.selfId), [1864, 1865, 1866, 1867], 'a free line promotes the next meeting request');
+    assert(!records(9101).filter(row => row.kind === 'buy_ad').some(row => row.lines[0].selfId === 1867), 'promotion retires the duplicate meeting offer atomically');
     await apply(9101, []);
     assert.equal(records(9101).length, 0);
     assert.equal(await wallet(9101), 1000000 - 200, 'closing refunds every remaining purchase reservation');
@@ -416,7 +418,7 @@ async function run() {
     assert(records(9102).every(row => row.kind === 'buy_ad' && row.custodyPolicy === 1));
     assert.equal(await wallet(9102), 1000000);
     await apply(9102, REQUESTS.slice(0, 5));
-    assert.equal(shop(9102).lines.length, 3, 'the next decision promotes requests when a place becomes available');
+    assert.equal(shop(9102).lines.length, LINES, 'the next decision promotes requests when a place becomes available');
 
     // A more important purchase replaces a sale at the same reserved place.
     await bot(9103);
@@ -497,7 +499,7 @@ async function run() {
     assert.deepEqual(records(9107).filter(row => row.kind === 'buy_ad').map(row => [row.id, row.revision]), standingAds);
     assert.equal(await wallet(9107) + Market.buyOrderEscrow(9107), 1000000);
 
-    const batch = Plan.buyBatch(REQUESTS.map(([selfId, count, price]) => ({ selfId, count, price })));
+    const batch = Plan.buyBatch(Life.snapshot(9104), REQUESTS.map(([selfId, count, price]) => ({ selfId, count, price })));
     assert.equal(batch.buyAds.length, 8, 'worker transport carries the shop and meeting slots');
     const captured = Decision.capture({ inputKey: 'eight-purchase-requests', network: {
         activity: { activity: 'shopping', kind: 'buy', rootKey: 'power:79:7', itemId: 79, amount: 1, price: 100 },
@@ -523,7 +525,7 @@ async function run() {
                 worth: () => 100, trip, persona: { traits: {} }, network: { moneyPrice: .001 } } });
     } finally { Pricing.bid = previousBid; }
     assert.deepEqual(planned.map(row => row.selfId), [1864, 1865, 1866, 1867]);
-    const deduplicatedPlan = { ...Plan.buyBatch(planned), buyShop: Afk.BUY };
+    const deduplicatedPlan = { ...Plan.buyBatch(Life.snapshot(9112), planned), buyShop: Afk.BUY };
     await Market.executePlan(Life.snapshot(9112), deduplicatedPlan, { reviewGoal: false });
     const once = records(9112).flatMap(record => record.lines.map(line => line.selfId));
     assert.deepEqual(once.sort((a, b) => a - b), [1864, 1865, 1866, 1867],

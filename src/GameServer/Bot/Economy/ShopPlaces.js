@@ -161,6 +161,26 @@ const PLAZAS = Object.freeze({
         margin: 55,
         locZ: -2781,
         botShops: true
+    }),
+    // Gludin and Heine (our choice: no captured square; read from geodata, level
+    // ground at the town's merchant height, walkable on every place): the D hub of
+    // the Gludin hunters and the harbour market, where the crafters take their
+    // consigned shots, so a crafter there has a shop for them. Their centre stays the
+    // town's respawn point (TownRespawn), where travel to the town arrives.
+    // Gludin: the open ground north of the respawn point, around the D shot merchant.
+    Gludin: Object.freeze({
+        boundary: rect(-81000, -80300, 149840, 150260),
+        margin: 60,
+        center: Object.freeze({ locX: -80752, locY: 149776 }),
+        locZ: -3040
+    }),
+    // Heine: the street between the fountain and the respawn hall, around the
+    // fixed traders' stalls.
+    Heine: Object.freeze({
+        boundary: rect(110980, 111820, 218880, 219200),
+        margin: 55,
+        center: Object.freeze({ locX: 111386, locY: 219413 }),
+        locZ: -3544
     })
 });
 

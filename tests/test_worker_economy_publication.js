@@ -135,8 +135,8 @@ async function runWorker(state, predicate, followUp = null, init = {}) {
     // A near body hears a board offer its held build wants: a player's new SELL line of its
     // watched weapon within its wallet wakes its build on its near mind, and its near
     // decision answers the post it holds (no new post), as a far bot's next step would.
-    // Its 2M wallet is short of the reserve store's C dual (2.94M at the valve row):
-    // a piece the store sells it now is an executable purchase, which watches no board.
+    // No store sells it the C dual (the reserve sells to suppliers only): a piece the
+    // store sold it would be an executable purchase, which watches no board.
     const watcher = { ...state, characterId: 765415, level: 61, exp: 146307211, adena: 2000000, stats: { classId: 2, generatedCold: true } };
     await runWorker(watcher, decidedFor(watcher.characterId), async ({ result: first, until, received, table }) => {
         assert.notEqual(Decisions.compact(first.payload.economyDecision).activity?.itemId, 2517, 'no seller yet: it shops elsewhere');

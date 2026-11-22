@@ -71,11 +71,15 @@ function mergedPosition(left, right, n) {
 
 // A record as the table carries it: [id, kind, storeType, ownerId, town,
 // botOwned, lines[[lineId, selfId, enchant, count, price, pricing, fills]], revision,
-// custodyPolicy, escrowAdena], lines with stock only. `record` has the main
+// custodyPolicy, escrowAdena, soldOut?], lines with stock only. `record` has the main
 // thread's fields (AfkTradeService projectionStore or a database record);
 // `escrowAdena` is the database record's (a projected store has none). A
 // record without stock lines holds no escrow (escrow = sum of count x price).
-function rowOf(record, escrowAdena = record.escrowAdena) {
+// soldOut (only when any): the ids of the lines a deal emptied, which the record
+// keeps at count 0 with their fills until its owner lists again (`database`: the
+// database record's lines, when `record` is its projected store); an owner's own
+// withdrawal deletes a line, so it never appears here.
+function rowOf(record, escrowAdena = record.escrowAdena, database = record.lines || record.items || []) {
     const lines = [];
     for (const line of record.lines || record.items || []) {
         const count = Number(line.count);
@@ -83,10 +87,16 @@ function rowOf(record, escrowAdena = record.escrowAdena) {
         lines.push([Number(line.afkTradeLineId ?? line.id), Number(line.selfId), Number(line.enchant || 0), count,
             Number(line.price), line.pricing || null, Number(line.fills || 0)]);
     }
-    return [Number(record.shopId ?? record.id), String(record.kind || 'shop'), Number(record.storeType),
+    const row = [Number(record.shopId ?? record.id), String(record.kind || 'shop'), Number(record.storeType),
         Number(record.ownerId), record.town || null, record.botOwned === true ? 1 : 0, lines,
         Number(record.revision ?? record.afkTradeRevision) || null, Number(record.custodyPolicy || 0),
         Number(record.storeType) === BUY ? Math.max(0, Number(escrowAdena || 0)) : 0];
+    const soldOut = [];
+    for (const line of database) {
+        if (!(Number(line.count) > 0) && Number(line.fills || 0) > 0) soldOut.push(Number(line.afkTradeLineId ?? line.id));
+    }
+    if (soldOut.length) row.push(soldOut);
+    return row;
 }
 
 // The adena a table row's buy record holds (BotAfkMarketService.buyOrderEscrow
@@ -99,7 +109,7 @@ function recordOf(row) {
     return {
         id: Number(row[0]), kind: row[1], storeType: Number(row[2]), ownerId: Number(row[3]), town: row[4] || null,
         botOwned: row[5] === 1 || row[5] === true,
-        revision: row[7] ?? null, custodyPolicy: Number(row[8] || 0),
+        revision: row[7] ?? null, custodyPolicy: Number(row[8] || 0), ...(row[10] ? { soldOut: row[10] } : {}),
         lines: (row[6] || []).map(([lineId, selfId, enchant, count, price, pricing, fills]) => ({ lineId, selfId, enchant,
             count, price, ...(pricing ? { pricing } : {}), fills: Number(fills || 0) }))
     };

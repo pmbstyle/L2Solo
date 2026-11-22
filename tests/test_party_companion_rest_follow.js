@@ -114,7 +114,10 @@ function authoredKitInputs(actor, session) {
     const priceContext = { characterId: state.characterId, understanding: persona?.understanding ?? 0.3,
         marketTrades: state.marketTrades, board: AfkTrade.boardIndex(), timestamp,
         knowledgeEnabled: invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled() };
+    // A graded shot's price is what a bot pays for it (botBuyPrice), not a belief.
     const price = id => {
+        if (invoke('GameServer/Bot/Economy/ProductionPolicy').GRADED_SHOTS.has(Number(id)))
+            return invoke('GameServer/Bot/Economy/StaticMerchantPricing').botBuyPrice(id);
         const prior = invoke('GameServer/Bot/Economy/PriceBelief').prior(id, priceContext);
         return prior ? Math.exp(prior.mu) : 0;
     };
@@ -2491,12 +2494,14 @@ try {
     assert(cWeapon, 'the native C-grade sword catalog must exist');
     equippedErrandKit(errandBot, cWeapon.selfId);
     const shotSeller = fakeActor(2090038, { locX: 83600, locY: 148300, locZ: -3406 });
-    shotSeller.fetchName = () => 'Squeesh';
-    shotSeller.fetchPrivateStore = () => ({ storeType: 1, town: 'Giran',
+    // A player's private store (no configured store sells a bot shots).
+    shotSeller.fetchName = () => 'ShotTrader';
+    shotSeller.fetchPrivateStoreType = () => 1;
+    shotSeller.fetchPrivateStore = () => ({ storeType: 1, kind: 'player', town: 'Giran',
         items: [{ selfId: 1464, count: 999999, price: 150 }] });
     // Original unfunded setup: retaining the rank-only weapon and no Adena
     // must neither create an errand nor manufacture inventory/money.
-    publishSessions([errandLeaderSession, zeroWalletErrandSession, fakeSession('bot_shot_seller', shotSeller)]);
+    publishSessions([errandLeaderSession, zeroWalletErrandSession, fakeSession('player_shot_seller', shotSeller)]);
     deliverNearDecision(zeroWalletErrandSession);
     FollowingState.tick(zeroWalletErrandSession, zeroWalletErrandBot, {}, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
@@ -2515,7 +2520,7 @@ try {
     // Isolate the stock errand within the native equipment review cooldown.
     errandSession.lastCompanionEquipmentCheckAt = Date.now();
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-    publishSessions([errandLeaderSession, errandSession, fakeSession('bot_shot_seller', shotSeller)]);
+    publishSessions([errandLeaderSession, errandSession, fakeSession('player_shot_seller', shotSeller)]);
     assert(Economy.basics(Economy.stateForActor(errandBot, errandSession)).stock('shots').usePerHour > 0,
         'the equipped zero-wallet control must have positive native shot use');
     FollowingState.tick(errandSession, errandBot, {}, {
@@ -2530,24 +2535,22 @@ try {
         'an unfunded actor cannot mint a shot stack');
     const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
     // The original zero-wallet scene above keeps its legacy quote 150.
-    // This separate positive scene uses the authored Squeesh price (15 at
-    // the default rate), rather than raising the wallet against a fake quote.
-    const authoredSqueeshPrice = Pricing.sellersOf(1464)
-        .find(row => row.sourceName === 'Squeesh' && row.town === 'Giran').price;
-    shotSeller.fetchPrivateStore = () => ({ storeType: 1, town: 'Giran',
-        items: [{ selfId: 1464, count: 999999, price: authoredSqueeshPrice }] });
+    // This separate positive scene lists at the bots' C soulshot price (the
+    // crafters' ask ceiling), rather than raising the wallet against a fake quote.
+    const crafterShotPrice = Pricing.botPurchasePrice(1464);
+    shotSeller.fetchPrivateStore = () => ({ storeType: 1, kind: 'player', town: 'Giran',
+        items: [{ selfId: 1464, count: 999999, price: crafterShotPrice }] });
     const physicalShotQuote = MarketOpportunity.hotOffers(1464, { town: 'Giran', buyerCharacterId: errandBot.fetchId() })
-        .find(offer => offer.sourceName === 'Squeesh');
+        .find(offer => offer.sourceName === 'ShotTrader');
     assert(physicalShotQuote && physicalShotQuote.price > 0);
     const authoredShotInputs = fundAuthoredKit(errandBot, errandSession, inputs => {
         assert(inputs.shotUse > 0, 'the equipped native C weapon must have positive authored shot use');
         // The regenerated T106 table gives this DPS actor potion use too: fundAuthoredKit funds its reserve.
         return Math.ceil(inputs.shotUse) * physicalShotQuote.price;
-    }, 'Giran stock: one authored hour at the actual Squeesh quote');
+    }, 'Giran stock: one authored hour at the trader\'s actual quote');
     const desiredShotQuantity = Math.ceil(authoredShotInputs.shotUse);
-    assert.strictEqual(physicalShotQuote.price,
-        Pricing.sellersOf(authoredShotInputs.shotId).find(row => row.sourceName === 'Squeesh' && row.town === 'Giran').price,
-        'the scene quote must equal the independently authored static merchant price');
+    assert.strictEqual(physicalShotQuote.price, Pricing.botPurchasePrice(authoredShotInputs.shotId),
+        'the scene quote must equal the bots\' price of the shot (the crafters\' ask ceiling)');
     // At the precision the kit rates keep (StatsPacket.roundRate).
     assert.strictEqual(Economy.basics(Economy.stateForActor(errandBot, errandSession)).stock('shots').usePerHour,
         authoredShotInputs.shotUse,
@@ -2560,7 +2563,7 @@ try {
         errandLines.push(text);
         return true;
     };
-    publishSessions([errandLeaderSession, errandSession, fakeSession('bot_shot_seller', shotSeller)]);
+    publishSessions([errandLeaderSession, errandSession, fakeSession('player_shot_seller', shotSeller)]);
     deliverNearDecision(errandSession);
     // The spot's kit use lives in the bot's earning answer, the one it held solo.
     const errandStats = invoke('GameServer/Bot/AI/DecisionEvents').statsFor(errandSession);
@@ -2575,7 +2578,7 @@ try {
     assert.strictEqual(errandSession.companionShopping?.kind, 'restock_shots', 'town errand should describe the actual missing supply');
     assert.strictEqual(errandSession.shoppingTarget?.town, 'Giran', 'companion errand should stay in the player town');
     assert.strictEqual(errandSession.shoppingTarget?.actorId, shotSeller.fetchId(),
-        'shot errands must target the actual static merchant instead of an ordinary NPC');
+        'shot errands must target the player\'s store instead of an ordinary NPC');
     assert(errandLines.some((line) => line.includes('returning') || line.includes('back to camp')), 'companion should announce its return before shopping');
     assert.strictEqual(errandBot.fetchPrivateStore?.(), undefined, 'companion errand must never create a private sale store');
     assertFundedStockKitUnchanged();
@@ -2624,7 +2627,7 @@ try {
         Object.assign(errandBot, { ...field, locX: field.locX + 40 });
         Object.assign(errandSession, { plan: 'following', companionShopping: undefined, shoppingTarget: undefined,
             resumeAfterShopping: undefined, shoppingDoneAnnounced: false, lastCompanionTownErrandAt: 0 });
-        publishSessions([errandLeaderSession, errandSession, fakeSession('bot_shot_seller', shotSeller)]);
+        publishSessions([errandLeaderSession, errandSession, fakeSession('player_shot_seller', shotSeller)]);
         deliverNearDecision(errandSession);
         assert(invoke('GameServer/Inventory/ShotStock').needsActorRestock(errandBot), 'the field scene keeps the companion short of shots');
         FollowingState.tick(errandSession, errandBot, {}, {

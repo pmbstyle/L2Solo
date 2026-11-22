@@ -55,6 +55,8 @@ function dGradeMarketFor(state = {}) {
 function targetTownForItems(state, items = [], options = {}) {
     // A bot with karma trades in Floran.
     if (Karma.closesTowns(state?.stats?.karma)) return Karma.TOWN_NAME;
+    // A supplier trades in its held store town (SupplierRoles.storeTown).
+    if (state?.stats?.storeTown?.town) return state.stats.storeTown.town;
     const ranks = items.map(rankOf);
     const hasHigherGrade = ranks.some((rank) => ['c', 'b', 'a', 's'].includes(rank));
     const hasDGrade = ranks.includes('d');
@@ -205,13 +207,11 @@ function openingTown(state, items, timestamp = Date.now()) {
     return { town, shopTown: { town, at: timestamp } };
 }
 
-// Where a bot's sale trip goes: the town of a buyer bidding on its bag (a
-// buy ad's bidder, else a static buyer); else the town of its shop, which
+// Where a bot's sale trip goes: the town of a buy ad's bidder on its bag; else the town of its shop, which
 // never moves; else the town its shop will open in (openingTown).
 function saleTown(state, timestamp = Date.now()) {
     if (Karma.closesTowns(state?.stats?.karma)) return { town: Karma.TOWN_NAME, shopTown: null };
-    const buyerTown = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService').bestTownFor(state)?.town
-        || invoke('GameServer/Bot/Economy/StaticBuyerService').bestTownFor(state)?.town;
+    const buyerTown = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService').bestTownFor(state)?.town;
     if (buyerTown) return { town: buyerTown, shopTown: null };
     const shop = invoke('GameServer/AfkTrade/AfkTradeService').findOwnerProjection(state?.characterId)?.shop;
     if (shop?.town) return { town: shop.town, shopTown: null };
