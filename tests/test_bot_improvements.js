@@ -209,6 +209,12 @@ async function main() {
         assert.equal(Crystals.outcome(fighter,mob,0,{at:2199}),null);
         const step=Crystals.outcome(fighter,mob,0,{at:2200});assert.equal(step.toId,4630);
         const stepped=Life.cachedState(state.characterId);
+        const stale=await Owner.commitBatch([{revision:stepped.simulation.revision,nextState:stepped,
+            proposal:{bagChanged:false,durable:{soulCrystals:[step]}},options:{allowLifecycle:true}}]);
+        assert.equal(stale[0].ok,false);
+        assert.equal(stale[0].detail,'cold_soul_crystal_projection_changed');
+        assert.equal((await DB.fetchItems(state.characterId)).find(row=>row.id===step.objectId).selfId,4629,
+            'a stale bag rolls back the native upgrade');
         const committed=await Owner.commitBatch([{revision:stepped.simulation.revision,nextState:{...stepped,inventory:fighter.state.inventory},
             proposal:{...InventorySummary.bagChange(stepped.inventory,fighter.state.inventory),durable:{soulCrystals:[step]}},options:{allowLifecycle:true}}]);
         assert.equal(committed[0].ok,true);state=Life.cachedState(state.characterId);
@@ -227,6 +233,125 @@ async function main() {
             elapsedMs:12000,timestamp:at,rng:()=>0});
         assert(partyResult.memberResults.some(row=>row.result.soulCrystals?.length>0),'actual party resolver forwards own crystal outcomes');
         console.log('PASS actual party Drain Soul outcome aggregation');
+
+        const BotCrystal = invoke('GameServer/Bot/Economy/BotSoulCrystal');
+        const Improvements = invoke('GameServer/Bot/Economy/BotImprovementService');
+        const hammer = SA.recipes.find(row => row.id === '1005:9').sourceId;
+        const funding = [10000, .001, 10000, 0, .01, cash.amount, 358];
+        state = await seed([{ selfId: hammer, name: 'Big Hammer', amount: 1, equipped: true,
+            slot: Data.items.find(row => row.selfId === hammer).etc.slot, enchant: 2 }],
+        { activity: 'shopping', stats: { money: funding, activityLeaf: 12345 } });
+        const townVisit = { town: 'Giran', startedAt: Date.now(), completed: false };
+        state = await Life.upsertState({ ...state, stats: { ...state.stats, townVisit } }, 'fixture_sa_visit');
+        assert.equal((await Improvements.reviewColdCrystalVisit(state)).stats.soulCrystalGoal, undefined,
+            'the usual errands finish first');
+        const kitFact = invoke('GameServer/Bot/Economy/DecisionSections').kit;
+        const beforeQuestKit = kitFact(state);
+        state = await Improvements.reviewColdCrystalVisit({ ...state, stats: { ...state.stats, townVisit: { ...townVisit, completed: true } } });
+        const commitment = state.stats.soulCrystalGoal;
+        assert(commitment, 'an ordinary Giran visit starts the quest for the weapon it wears');
+        assert.equal(state.stats.townVisit.completed, true, 'adding the quest does not reopen the town visit');
+        assert.equal(kitFact(state), beforeQuestKit, 'starting the quest does not invalidate the gear decision');
+        state = await Life.upsertState(state, 'fixture_sa_visit_complete');
+        assert.equal(state.stats.activityLeaf, 12345, 'the quest does not complete the gear decision');
+        const install = SA.recipes.find(row => row.id === commitment[1]);
+        const target = SA.costs(install).find(cost => NativeCrystals.catalog.crystals[cost.selfId]).selfId;
+        const mobForGoal = { ...mob, selfId: Number(Object.keys(NativeCrystals.catalog.npcs)
+            .find(id => NativeCrystals.catalog.npcs[id].maxStage === 10)) };
+        const spotPreference = BotCrystal.spotPreference(state);
+        const ranked = invoke('GameServer/Bot/AI/SpotSearch').rank;
+        const camp = (id, value, npcEntries = []) => ({ spot: { id, npcEntries }, value });
+        const farm = camp('farm', 100), crystal = camp('crystal', 98, [mobForGoal]);
+        const weak = camp('slow_crystal', 95, [mobForGoal]);
+        assert(spotPreference(crystal.spot));
+        const pick = candidates => ranked(state, { candidates, sorted: true, value: row => row.value },
+            { habit: true, preferred: spotPreference, allowed: row => row !== weak }).pick;
+        assert.equal(pick([farm, crystal]), crystal);
+        assert.equal(pick([farm, weak]), farm, 'the side activity respects the hunt safety verdict');
+        assert.equal(BotCrystal.spotPreference({ ...state, stats: { ...state.stats,
+            equipmentPlan: { status: 'active', next: { spotId: 'gear_source' } } } }), null);
+        const replacingWeapon = { ...state, stats: { ...state.stats, equipmentPlan: {
+            status: 'active', target: { slot: state.inventory[hammer].instances[0].slot }
+        } } };
+        const blockedFighter = { state: replacingWeapon, vitals: { hp: 3000, mp: 3000, maxMp: 3000 }, cooldowns: {} };
+        assert.equal(Crystals.tryCast(blockedFighter, mobForGoal, 50, 1000), false, 'a weapon upgrade takes priority over its SA');
+        assert.equal(blockedFighter.vitals.mp, 3000);
+
+        async function drain(roll) {
+            const hunting = { state: { ...state }, vitals: { hp: 3000, mp: 3000, maxMp: 3000 },
+                cooldowns: {}, readyAt: 0, skillUses: 0 };
+            assert(Crystals.tryCast(hunting, mobForGoal, 50, 1000));
+            const progress = Crystals.outcome(hunting, mobForGoal, roll, { at: 2200 });
+            assert(progress);
+            const nextState = await Life.prepareResolve(state, {
+                patch: { inventory: hunting.state.inventory },
+                soulCrystals: [progress]
+            }, { persist: false, projectClassProgression: true });
+            assert.equal(nextState.inventory[progress.fromId], undefined, 'normal hunt projection removes the old stage');
+            assert.equal(nextState.inventory[progress.toId].instances[0].id, progress.objectId);
+            const adopted = await Owner.commitBatch([{ revision: state.simulation.revision,
+                nextState,
+                proposal: { ...InventorySummary.bagChange(state.inventory, nextState.inventory), durable: { soulCrystals: [progress] } },
+                options: { allowLifecycle: true } }]);
+            assert.equal(adopted[0].ok, true);
+            state = Life.cachedState(state.characterId);
+            const physical = (await DB.fetchItems(state.characterId)).filter(row =>
+                row.selfId === progress.fromId || row.selfId === progress.toId);
+            assert.deepEqual(physical.map(row => [row.id, row.selfId]), [[progress.objectId, progress.toId]]);
+        }
+        const crystalBag = Life.inventorySummaryFromItems([
+            { id: 1, selfId: 4629, amount: 1 },
+            { id: 2, selfId: 4662, amount: 1 }
+        ]);
+        Crystals.applyInventoryStep(crystalBag, { fromId: 4629, toId: 4662, objectId: 1 });
+        assert.equal(crystalBag[4662].amount, 2);
+        assert.deepEqual(crystalBag[4662].instances.map(row => row.id).sort(), [1, 2],
+            'a break preserves both physical objects when the bag already has a broken crystal');
+        await drain(.95);
+        assert(!BotCrystal.spotPreference(state), 'a broken crystal has no route preference');
+        state = await Improvements.reviewColdCrystalVisit(state);
+        assert.deepEqual(state.stats.soulCrystalGoal, commitment, 'the next magister visit restarts the same recipe');
+        for (let stage = 0; stage < NativeCrystals.catalog.crystals[target].stage; stage++) await drain(0);
+        assert.equal(state.inventory[target].amount, 1);
+        assert.equal(Crystals.tryCast({ state, vitals: { mp: 3000 }, cooldowns: {} }, mobForGoal, 50, 1000), false,
+            'the exact crystal for the recipe is kept for the smith');
+        assert.equal(await DB.replaceSoulCrystal(state.characterId, state.inventory[target].instances[0].id, target,
+            NativeCrystals.catalog.crystals[target].nextId, 'Overleveled crystal', NativeCrystals.crystalIds, () => true), false,
+        'the native award also respects the planned stage');
+        assert.equal(BotCrystal.spotPreference(state), null, 'a finished crystal gives no spot preference');
+        const reserved = await Improvements.reviewColdCrystalVisit(state);
+        assert.equal(reserved.stats.lastImprovement.kind, 'crystal_quest');
+        assert.equal(reserved.adena, cash.amount, 'the gemstone cannot borrow from the protected gear budget');
+        state = await Life.upsertState({ ...reserved, stats: { ...reserved.stats, money: [10000, .001, 10000, 0] } }, 'fixture_free_sa_budget');
+        state = await Improvements.reviewColdCrystalVisit(state);
+        assert.equal(state.stats.lastImprovement.kind, 'sa');
+        assert.equal(state.stats.soulCrystalGoal, null);
+        assert.equal(state.stats.activityLeaf, 12345, 'installation leaves the held gear step in place');
+        assert.equal(state.inventory[install.productId].instances[0].id, commitment[0]);
+        assert.equal(state.inventory[install.productId].instances[0].enchant, 2);
+        assert(state.adena < cash.amount, 'the missing gemstone is bought from a real town NPC');
+        const gem = SA.costs(install).find(cost => cost.selfId !== target);
+        const matchingFundedRow = [10000, .001, 10000, 0, .01, 300000, gem.selfId];
+        assert.deepEqual(invoke('GameServer/Bot/Economy/PurchaseFunding').packetAfterPurchase(matchingFundedRow, 5000,
+            { itemId: gem.selfId, side: .001 }), matchingFundedRow, 'a same-item side purchase leaves funded rows intact');
+        console.log('PASS normal bot town visit, exact crystal stage, protected gear budget and SA installation');
+
+        const damaged = await Improvements.reviewColdCrystalVisit(await seed([{
+            selfId: hammer, name: 'Big Hammer', amount: 1, equipped: true,
+            slot: Data.items.find(row => row.selfId === hammer).etc.slot
+        }], { activity: 'shopping' }));
+        const starter = Crystals.single(damaged), advancedId = NativeCrystals.catalog.crystals[starter.selfId].nextId;
+        const advancedName = Data.items.find(row => row.selfId === advancedId).template.name;
+        await DB.execute(['UPDATE items SET selfId=?, name=? WHERE id=?', [advancedId, advancedName, starter.id]]);
+        await DB.setItem(damaged.characterId, { selfId: starter.selfId, name: starter.name, amount: 1 });
+        assert.deepEqual(await DB.repairColdSoulCrystalBags(), { repaired: 1, removed: 1 });
+        assert.deepEqual(await DB.repairColdSoulCrystalBags(), { repaired: 0, removed: 0 });
+        const savedBag = (await DB.execute(['SELECT inventorySummary FROM bot_life_state WHERE characterId=?',
+            [damaged.characterId]]))[0];
+        assert.equal(InventorySummary.read(savedBag.inventorySummary)[advancedId].instances[0].id, starter.id);
+        assert.deepEqual((await DB.fetchItems(damaged.characterId)).filter(row => NativeCrystals.catalog.crystals[row.selfId])
+            .map(row => [row.id,row.selfId]), [[starter.id,advancedId]]);
+        console.log('PASS startup repair keeps the original progressed crystal and removes the stale duplicate');
 
         state=await seed([{selfId:1049,name:'Spellbook: Ice Bolt',amount:1}],{classId:10,level:14});
         const current=Life.cachedState(state.characterId);

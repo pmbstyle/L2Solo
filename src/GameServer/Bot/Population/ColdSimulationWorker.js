@@ -1180,6 +1180,7 @@ tables.watch('clan_supplies', {
     remove: key => clanSupplyMoved(key)
 });
 tables.watch(ClanDyeStock.TABLE, {
+    reset: () => {},
     put: key => clanSupplyMoved(key),
     remove: key => clanSupplyMoved(key)
 });

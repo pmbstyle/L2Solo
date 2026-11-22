@@ -821,6 +821,8 @@ function recordFromSession(session, phase, reason = '') {
         coldCombat: ColdCombatProfile.capture(actor, timestamp),
         hennas: [...(session.hennas || [])],
         soulCrystalQuest: session.questStates?.get(350)?.isStarted() === true,
+        soulCrystalGoal: Object.hasOwn(session.coldLifeState?.stats || {}, 'soulCrystalGoal')
+            ? session.coldLifeState.stats.soulCrystalGoal : cache.get(characterId)?.stats?.soulCrystalGoal,
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,
         supplyErrand: session.companionShopping?.kind === 'player_resource_purchase'
             ? {
@@ -2054,7 +2056,11 @@ const BotLifeState = {
                     (SELECT karma FROM characters WHERE id = characterId))
                 WHERE COALESCE(json_extract(statsJson, '$.karma'), 0)
                     <> (SELECT karma FROM characters WHERE id = characterId)`, []]))
-            .then(() => Database.reconcileBotClanGoals?.()).then(() => removeRetiredStaticMerchantStates()).then(() => Database.recoverConstPartyActivities()).then(() => recoverStaleHotStates()).then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => discardFulfilledEquipmentPlans()).then(() => hydrateCache()).then((count) => {
+            .then(() => Database.reconcileBotClanGoals?.()).then(() => removeRetiredStaticMerchantStates()).then(() => Database.recoverConstPartyActivities()).then(() => recoverStaleHotStates())
+            .then(() => Database.repairColdSoulCrystalBags()).then(({ repaired, removed }) => {
+                if (repaired) utils.infoSuccess('BotLife', 'repaired %d Soul Crystal bags, removed %d duplicate items', repaired, removed);
+            })
+            .then(() => recoverDissolvedPartyMembers()).then(() => recoverStaleCraftWaits()).then(() => migrateAcquisitionPartyWaits()).then(() => clearPassivePartyRequests()).then(() => discardInvalidEquipmentPlans()).then(() => discardFulfilledEquipmentPlans()).then(() => hydrateCache()).then((count) => {
             const repairs = [...cache.values()]
                 .map(canonicalizeAreaState)
                 .map(recoverOrphanedGiranState)
@@ -2895,6 +2901,10 @@ const BotLifeState = {
             ...(targetCombat ? { targetCombat } : {})
         };
         let inventory = { ...(state.inventory || {}) };
+        if (result.soulCrystals?.length) {
+            const { applyInventoryStep } = invoke('GameServer/Bot/Population/ColdSoulCrystal');
+            for (const step of result.soulCrystals) applyInventoryStep(inventory, step);
+        }
         // ARCH-NOTE: the resolver already consumed authored summon materials
         // from its private combat inventory. Lifecycle normally rebuilds from
         // the input (shots/potions have separate counters), so carry only these

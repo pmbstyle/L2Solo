@@ -8,7 +8,6 @@ const Funding = require('./PurchaseFunding');
 const Equipment = require('../AI/BotEquipmentCompatibility');
 const Network = require('./WishNetwork');
 const Progression = require('../AI/PersonalGearProgression');
-const SoulCrystals = require('../../Items/SoulCrystalProgression');
 const DualSwords = require('../../Items/C4DualSwordCombinations');
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -606,11 +605,6 @@ function buildProjection(state, ctx, deps) {
             ...(observed || { availableUnits: 0 }) }];
         const drop = !scrapExchange && !marketOnly && sourcePath(id);
         if (drop) paths.push(drop);
-        if (SoulCrystals.catalog.crystals[id]) {
-            ctx.nodeInputs?.wholeBag();
-        }
-        const crystal = invoke('GameServer/Bot/Economy/BotImprovementPolicy').crystalPath(state, id, ctx, deps.spots || []);
-        if (crystal) paths.push(crystal);
         const recipes = Recipes.resolveVariantsByProductId(id);
         const targetTemplate = need('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(id));
         const unseal = targetTemplate?.etc?.rank === 'b' && [9, 12].includes(Number(targetTemplate.etc.slot))
@@ -908,7 +902,7 @@ function buildProjection(state, ctx, deps) {
             }
         }
     }
-    // Paid enchant, SA and henna are objects of the same power queue.
+    // Paid enchant and henna are objects of the same power queue.
     // Missing materials inherit that value; only a genuinely ready leaf applies.
     blocks?.lap('sources');
     for (const improvement of invoke('GameServer/Bot/Economy/BotImprovementPolicy').opportunities(state, ctx)) {

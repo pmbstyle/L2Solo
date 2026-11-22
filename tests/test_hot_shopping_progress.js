@@ -163,7 +163,7 @@ async function run() {
         const purchaseTimer = [...timers.entries()].find(([, timer]) => timer.at === now + 4000);
         timers.delete(purchaseTimer[0]);
         const boardWork = purchaseTimer[1].fn();
-        await Promise.resolve();
+        await new Promise(setImmediate);
         assert.equal(typeof finishBoard, 'function');
         cancelForRaid(boardVisit);
         boardVisit.plan = 'shopping';

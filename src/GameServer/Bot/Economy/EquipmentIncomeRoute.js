@@ -215,7 +215,8 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     const { pick, ranked } = Search.rank(state, { candidates: [true, false].flatMap(candidates), fits, value,
         tie: (a, b) => Number(a.spot.avgLevel || 1) - Number(b.spot.avgLevel || 1) || String(a.spot.id).localeCompare(String(b.spot.id)) },
     { excluded, repelled: invoke('GameServer/Bot/Population/SpotRecords').reader(state, invoke('GameServer/Bot/AI/BotPersona').of(state)),
-        allowed: (candidate, spot) => asked(spot), maxChecks, mode: 'solo', count: true });
+        allowed: (candidate, spot) => asked(spot), maxChecks, mode: 'solo', count: true,
+        preferred: require('./BotSoulCrystal').spotPreference(state) });
     if (!pick) {
         // No camp of its window it may take (a healer's kit refused by every camp near its level): easier
         // ground, the leveling goal's own rule (SpotSearch.easierGround), under the window's clauses but its

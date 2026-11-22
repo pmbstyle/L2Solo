@@ -3107,7 +3107,7 @@ const PopulationService = {
             }
             if (listingResult.listed && listingState.activity !== 'shopping') return listingState;
             const sale = saleVisit(listingState);
-            return ColdMarketService.finishTownErrands(listingState, { saleVisit: sale }).then((restockedState) => {
+            return ColdMarketService.finishTownErrands(listingState, { saleVisit: sale }).then(async (restockedState) => {
                 if (LifeState.hotRow(restockedState.characterId)) return LifeState.hotRow(restockedState.characterId);
                 // A deal in preparation keeps the bot in town: a sale visit saved its
                 // end before the meeting was staged (ColdMarketService.finishTownErrands).
@@ -3142,6 +3142,14 @@ const PopulationService = {
                         return saved || restockedState;
                     });
                 }
+                try {
+                    restockedState = await improvement.reviewColdCrystalVisit(restockedState);
+                } catch (error) {
+                    FailureLog.note('population.soul_crystal_visit', error);
+                    restockedState = LifeState.cachedState(id) || restockedState;
+                }
+                if (LifeState.hotRow(id)) return LifeState.hotRow(id);
+                if (TradeMeetingService.hasPreparation(id) || restockedState.stats?.tradeMeeting) return restockedState;
                 const returnState = GoalExecutor.finishMarketVisit(restockedState);
                 if (returnState) exchangeWaits.delete(id);
                 return returnState

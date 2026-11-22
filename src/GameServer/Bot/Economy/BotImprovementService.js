@@ -1,6 +1,9 @@
 'use strict';
 const DiagnosticConfig = require('../Population/PopulationConfig');
 const Policy = require('./BotImprovementPolicy');
+const BotCrystal = require('./BotSoulCrystal');
+const Funding = require('./PurchaseFunding');
+const Packet = require('./StatsPacket');
 const DecisionEvents = require('../AI/DecisionEvents');
 const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
 // lazy: the town catalogue reads main's NPC data; the worker loads this module too.
@@ -49,6 +52,95 @@ function acquisitionTravel(state, leaf, timestamp = Date.now()) {
     }, timestamp);
     if (travel && state.stats?.marketReturn) travel.stats.marketReturn = state.stats.marketReturn;
     return travel;
+}
+
+function crystalBasket(state, step, town) {
+    if (step.kind !== 'sa') return null;
+    const reserved = require('./ItemDisposition').reservedEquipmentAmounts(state);
+    for (const cost of BotCrystal.costsFor(step)) {
+        const amount = cost.amount - Math.max(0, Number(state.inventory?.[cost.selfId]?.amount || 0) - Number(reserved[cost.selfId] || 0));
+        if (amount <= 0) continue;
+        // The exact crystal comes from the quest. Only a gemstone is bought here.
+        if (![2131, 2132].includes(cost.selfId) || reserved[cost.selfId]) return false;
+        const offer = require('./NpcRestockPlan').quoteFor(cost.selfId, town);
+        const packet = state.stats?.money;
+        if (!offer || !Packet.hasMoney(packet) || amount * offer.price > Funding.budgetFor(packet, state.adena, 0, -Infinity)) return false;
+        return { seller: offer, lines: [{ selfId: cost.selfId, amount, unitPrice: offer.price,
+            autoEquip: false, funding: { side: Packet.moneyPrice(packet) } }] };
+    }
+    return null;
+}
+
+function crystalRoles(town) {
+    return { magister: catalog().improvementTowns(roleOf('crystal_quest')).has(town),
+        smith: catalog().improvementTowns(roleOf('sa')).has(town) };
+}
+
+const crystalRefusal = error => rejectedInput(error) || [
+    'economy_state_changed', 'economy_funding_changed', 'economy_funding_missing',
+    'economy_owner_changed', 'economy_intent_changed', 'economy_sequence_changed',
+    'economy_admission_pressure', 'economy_operation_in_flight', 'npc_seller_changed', 'npc_quote_changed',
+    'npc_actor_changed', 'improvement_actor_retired', 'improvement_hot_source_changed'
+].includes(error?.message);
+
+async function reviewColdCrystalVisit(state) {
+    if (state.phase !== 'cold' || state.activity !== 'shopping' || state.level < 40
+        || state.stats?.townVisit && state.stats.townVisit.completed !== true || !inTown(state)) return state;
+    const town = state.currentRegion, roles = crystalRoles(town);
+    const Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const visit = state.stats?.townVisit;
+    // Restocking can complete the visit on its returned state before the row
+    // is saved. A purchase or improvement returns the native row for this visit.
+    const completedVisit = current => {
+        const saved = current.stats?.townVisit;
+        return current.phase === 'cold' && visit?.completed && saved?.town === visit.town
+            && saved?.startedAt === visit.startedAt && !saved.completed
+            ? { ...current, stats: { ...current.stats, townVisit: visit } } : current;
+    };
+    try {
+        const step = BotCrystal.visitStep(state, roles);
+        if (!step) return state;
+        const basket = crystalBasket(state, step, town);
+        if (basket === false) return state;
+        if (basket) {
+            const purchase = await require('./NpcPurchaseBasket').purchase(state, basket);
+            state = purchase.state || state;
+            if (!purchase.ok || purchase.hot || state.phase !== 'cold' || state.currentRegion !== town) return completedVisit(state);
+        }
+        const result = await invoke('Database').applyBotImprovement(state.characterId, step, { coldState: state });
+        const saved = Life.acceptLifecycleRow(result.coldLifeRow, 'soul_crystal_visit');
+        invoke('GameServer/Bot/Economy/EconomyContext').forget(state.characterId);
+        return completedVisit(saved);
+    } catch (error) {
+        if (!crystalRefusal(error)) throw error;
+        return completedVisit(Life.cachedState(state.characterId) || state);
+    }
+}
+
+async function reviewHotCrystalVisit(session, current) {
+    const actor = session.actor;
+    if (!(actor?.fetchLevel?.() >= 40) || session.partyCompanion || session.companionShopping || !current()) return;
+    const town = invoke('GameServer/Bot/AI/TownTransitPolicy').townAt(actor);
+    if (!town) return;
+    const near = invoke('GameServer/World/World').fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), 300);
+    const atStation = kind => near.some(npc => stationMatches(npc, { kind })
+        && Approach.canInteract(Approach.pointOf(actor), Approach.npcTarget(npc)));
+    const roles = { magister: atStation('crystal_quest'), smith: atStation('sa') };
+    if (!roles.magister && !roles.smith) return;
+    const state = invoke('GameServer/Bot/Economy/EconomyContext').stateForActor(actor, session);
+    try {
+        const step = BotCrystal.visitStep(state, roles);
+        if (!step) return;
+        const basket = crystalBasket(state, step, town);
+        if (basket === false) return;
+        if (basket) {
+            const purchase = await require('./NpcPurchaseBasket').purchaseForActor(actor, basket);
+            if (!purchase.ok || !purchase.hot || !current()) return;
+        }
+        await reviewHot(session, { sideStep: step, current });
+    } catch (error) {
+        if (!crystalRefusal(error)) throw error;
+    }
 }
 // options.decide(): the worker's decision made on exactly this state, or null;
 // without one the wish network is built here.
@@ -118,19 +210,19 @@ async function reviewCold(state, options = {}) {
     pendingCold.set(state.characterId,work); return work;
 }
 // The improvement the near body's held decision chose (DecisionEvents.held).
-function reviewHot(session) {
+function reviewHot(session, options = {}) {
     const actor = session?.actor;
     if (!actor || actor.isDead?.() || !String(session.accountId || '').startsWith('bot_')) return Promise.resolve(null);
     if (pendingHot.has(actor)) return pendingHot.get(actor);
     // A step done waits for the worker's answer (stepDone): the held card still names it.
-    if (DecisionEvents.inBag(session, DONE)) return Promise.resolve(null);
+    if (!options.sideStep && DecisionEvents.inBag(session, DONE)) return Promise.resolve(null);
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const context = DecisionEvents.held(session);
-    const improvement = chosen(context.state,context);
+    const improvement = options.sideStep || chosen(context.state,context);
     if (!improvement) return Promise.resolve(null);
     const World = invoke('GameServer/World/World');
     const record = World.registeredActorById(actor.fetchId());
-    const current = () => session.actor === actor && World.registeredActorById(actor.fetchId()) === record
+    const current = () => (!options.current || options.current()) && session.actor === actor && World.registeredActorById(actor.fetchId()) === record
         && record?.session === session && record.retired !== true && actor.fetchIsOnline?.() !== false && !actor.isDead?.();
     if (!current()) return Promise.resolve(null);
     const packet = context.statsPacket || context.state?.stats || {};
@@ -149,7 +241,7 @@ function reviewHot(session) {
     }}).then(result => {
         // A body gone during the write (cooled, logged off, dead) took its bag along: the
         // committed step still ends once, on the row where the bot is now (raiseOn).
-        if (!current()) return stepDone(actor.fetchId()).then(() => result);
+        if (!current()) return options.sideStep ? result : stepDone(actor.fetchId()).then(() => result);
         const backpack = actor.backpack, before = new Map(backpack.fetchItems().map(item => [item.fetchId(),item]));
         const ids = new Set(result.changedIds || []);
         const after = new Map(result.items.map(item => [item.id,item]));
@@ -167,6 +259,8 @@ function reviewHot(session) {
             const quest = invoke('GameServer/Quest/QuestService').stateFor(session, invoke('GameServer/Quest/quests/Q350_EnhanceYourWeapon'));
             quest.state = 'started'; quest.variables = {cond:'1'};
         }
+        if (options.sideStep) DecisionEvents.replaceStats(session, { ...DecisionEvents.statsFor(session),
+            soulCrystalGoal: result.soulCrystalGoal });
         if (result.hennas) { session.hennas = result.hennas; invoke('GameServer/Henna/HennaService').refreshHennaStats(session); }
         if (result.result === 'luxury_exchange') invoke('GameServer/Bot/AI/BotEquipmentUpgrade').applyBestUpgrades(session, { force: true });
         invoke('GameServer/Skills/ToggleSkills').syncEquipment(session,actor);
@@ -174,9 +268,11 @@ function reviewHot(session) {
         backpack.visibleLook = null; backpack.inventoryRevision = Number(backpack.inventoryRevision || 0) + 1;
         session.dataSendToMe?.(invoke('GameServer/Network/Response').itemsList(backpack.fetchItems()));
         session.dataSendToMe?.(invoke('GameServer/Network/Response').userInfo(actor));
-        Economy.forget(actor.fetchId()); stepDone(actor.fetchId(), session); return result;
+        Economy.forget(actor.fetchId());
+        if (!options.sideStep) stepDone(actor.fetchId(), session);
+        return result;
     }).catch(error => {
-        if (current() && rejectedInput(error)) DecisionEvents.rejectSession(session, accepted, `improvement:${improvement.kind}:${error.message}`);
+        if (!options.sideStep && current() && rejectedInput(error)) DecisionEvents.rejectSession(session, accepted, `improvement:${improvement.kind}:${error.message}`);
         throw error;
     }).finally(() => pendingHot.delete(actor));
     pendingHot.set(actor,work); return work;
@@ -194,5 +290,5 @@ function stationTarget(actor, improvement) {
     return npc ? { npcId:npc.fetchId(), npcSelfId:npc.fetchSelfId(), name:npc.fetchName(), town:town.name,
         locX:npc.fetchLocX(),locY:npc.fetchLocY(),locZ:npc.fetchLocZ(),head:npc.fetchHead?.() } : null;
 }
-module.exports = { reviewCold, reviewHot, chosen, inTown, selfCrystallization, acquisitionTravel, Policy, stationTarget,
+module.exports = { reviewCold, reviewHot, reviewColdCrystalVisit, reviewHotCrystalVisit, chosen, inTown, selfCrystallization, acquisitionTravel, Policy, stationTarget,
     summary: () => DiagnosticConfig.developerDiagnostics ? ({ improvementDeferred, improvementRetired }) : { enabled: false } };

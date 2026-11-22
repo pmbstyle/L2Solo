@@ -63,8 +63,9 @@ function budgetFor(packet, wallet, escrow, r, capture = null, root = 0) {
 // bounded packet and priority rule; crafting inputs can name their admitted
 // root ratio even when the funded root item is the eventual product.
 function packetAfterPurchase(packet, spent, funding = {}) {
+    // A side purchase used the wallet above all the funded rows.
     if (!Packet.hasMoney(packet) || !(spent > 0)
-        || !Number.isFinite(spent) || funding.free === true) return packet;
+        || !Number.isFinite(spent) || funding.free === true || funding.side !== undefined) return packet;
     const rows = Packet.fundedRows(packet), root = Number(funding.root) || 0;
     let rate = null, itemRow = -1;
     if (funding.r !== undefined && funding.r !== Infinity) {

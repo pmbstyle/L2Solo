@@ -66,21 +66,22 @@ function movedInput(link, before, now, error = 0, bounds = null) {
 // The kit fact of a view: class, level, worn gear, hennas, skills, the hot
 // capture (view.kitHashes: ColdCombatProfile.kitEvents, a hash of each of combatView's parts,
 // hashed once per view), the craft
-// (level, station), the soul crystal quest and the karma flip that closes the
+// (level, station), and the karma flip that closes the
 // towns. Effects and night are no economy input, so a buff or the day/night
 // flip moves no fact; the clan is a relations fact; the recipe book is its own
 // fact; the workshop's listing is the workshop decision's own answer (its fees
 // and fills move no gear). Its parts do not read the clock.
 function kitFact(view) {
+    // Keep the old inactive quest bit so saved gear decisions keep their hash.
     return hash([view.kitHashes, view.craftLevel, view.craftStationId,
-        view.soulCrystalQuest, view.closesTowns]);
+        false, view.closesTowns]);
 }
 // The kit part of the far reader (stateView), without the bag scan.
 function kitView(state) {
     const stats = state.stats || {};
     return { kitHashes: CombatProfile.kitEvents(state), gear: CombatProfile.gearOf(state),
         craftLevel: Number(state.craftLevel ?? stats.dwarvenCraftLevel) || 0, craftStationId: stats.craftStationId ?? null,
-        soulCrystalQuest: !!stats.soulCrystalQuest, closesTowns: Karma.closesTowns(stats.karma) };
+        closesTowns: Karma.closesTowns(stats.karma) };
 }
 function kit(state) {
     return kitFact(kitView(state));

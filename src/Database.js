@@ -6603,9 +6603,24 @@ const Database = {
                 invalidColumn: Object.keys(requestedPatch).find((column) => !COLD_SIMULATION_PATCH_COLUMNS.has(column))
             };
         };
-        // The proposal's columns and the stats object its owner passes: no
-        // row read and no parse.
-        const proposalPartition = (request, fields) => coldSimulationPartition(fields.requestedPatch, request, request.stats || {});
+        // Check the proposed columns and stats without reading the live row.
+        const proposalPartition = (request, fields) => {
+            const physical = request.physical;
+            if (physical?.soulCrystals?.length) {
+                // A receipt moves the original item. Refuse a stale bag before
+                // the generic sync can recreate a previous stage.
+                const steps = physical.soulCrystals, final = steps.at(-1);
+                const matches = inventory => {
+                    const crystal = inventory?.[final.toId];
+                    return crystal?.amount > 0 && crystal.instances?.some(item => item.id === final.objectId)
+                        && steps.every(step => !(inventory[step.fromId]?.amount > 0));
+                };
+                if (!matches(physical.inventory) || !matches(jsonObject(fields.requestedPatch.inventorySummary))) {
+                    return { ok: false, reason: 'cold_soul_crystal_projection_changed' };
+                }
+            }
+            return coldSimulationPartition(fields.requestedPatch, request, request.stats || {});
+        };
         const validatedRaidKeys = new Set();
         const validateAtomicGroups = () => atomicGroups.forEach((group, groupId) => {
             const expectedIds = new Set((group[0]?.atomicGroup?.memberIds || []).map(Number).filter(Boolean));
@@ -8486,6 +8501,16 @@ const Database = {
             const quest = one('SELECT state FROM character_quests WHERE characterId = ? AND questId = 350', [characterId]);
             const item = one('SELECT selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [id, characterId]);
             if (quest?.state !== 'started' || !item || item.selfId !== expectedSelfId || item.amount !== 1 || item.equipped) return false;
+            const goal = one(`SELECT json_extract(statsJson, '$.soulCrystalGoal[0]') AS weaponId,
+                json_extract(statsJson, '$.soulCrystalGoal[1]') AS recipeId
+                FROM bot_life_state WHERE characterId = ?`, [characterId]);
+            if (goal?.recipeId) {
+                const target = [goal.weaponId, goal.recipeId];
+                const BotCrystal = invoke('GameServer/Bot/Economy/BotSoulCrystal');
+                if (!BotCrystal.allowedStage(target, expectedSelfId)) return false;
+                const weapon = one('SELECT selfId, equipped FROM items WHERE id = ? AND characterId = ?', [target[0], characterId]);
+                if (!weapon?.equipped || !BotCrystal.matchesWeapon(target, weapon.selfId)) return false;
+            }
             const quantity = one(`SELECT SUM(amount) AS count FROM items WHERE characterId = ? AND amount > 0 AND selfId IN (${crystalIds.map(() => '?').join(',')})`, [characterId, ...crystalIds]);
             if (quantity.count !== 1) return false;
             write('UPDATE items SET selfId = ?, name = ? WHERE id = ? AND characterId = ?', [selfId, name, id, characterId]);
@@ -9016,6 +9041,52 @@ const Database = {
         }, 'cold:soul-crystals'));
     },
 
+    repairColdSoulCrystalBags() {
+        return inTransaction(() => {
+            const Native = invoke('GameServer/Items/SoulCrystalProgression');
+            const Life = invoke('GameServer/Bot/Population/BotLifeState');
+            const ids = [...Native.crystalIds, 4662, 4663, 4664];
+            const rows = all(`SELECT b.characterId, b.inventorySummary FROM bot_life_state b
+                JOIN character_quests q USING (characterId)
+                WHERE b.phase = 'cold' AND json_type(b.statsJson, '$.soulCrystalGoal') = 'array'
+                    AND q.questId = 350 AND q.state = 'started'`);
+            let repaired = 0, removed = 0;
+            for (const row of rows) {
+                const inventory = InventorySummary.read(row.inventorySummary);
+                const projected = ids.filter(id => inventory[id]?.amount > 0);
+                if (projected.length !== 1) continue;
+                const [fromId] = projected;
+                const from = Native.catalog.crystals[fromId], held = inventory[fromId];
+                const instanceId = held.instances?.[0]?.id;
+                if (!from || held.amount !== 1 || !instanceId) continue;
+                const canonical = one('SELECT * FROM items WHERE characterId = ? AND id = ?', [row.characterId, instanceId]);
+                if (!canonical || canonical.equipped || canonical.amount !== 1 || canonical.selfId === fromId) continue;
+                const advanced = Native.catalog.crystals[canonical.selfId];
+                if (canonical.selfId !== from.brokenId && (advanced?.color !== from.color || advanced.stage <= from.stage)) continue;
+                // The damaged projection names the original object under its
+                // old stage. It can also have recreated that old stage under a
+                // fresh id. Leave other combinations of physical items alone.
+                const others = all(`SELECT id, selfId, amount, equipped FROM items
+                    WHERE characterId = ? AND amount > 0 AND id <> ?
+                        AND selfId IN (${ids.map(() => '?').join(',')})`, [row.characterId, instanceId, ...ids]);
+                const duplicate = others[0];
+                if (others.length && (others.length !== 1 || duplicate.selfId !== fromId
+                    || duplicate.id <= instanceId || duplicate.amount !== 1 || duplicate.equipped)) continue;
+                if (duplicate) {
+                    write('DELETE FROM items WHERE id = ? AND characterId = ?', [duplicate.id, row.characterId]);
+                    removed++;
+                }
+                delete inventory[fromId];
+                Object.assign(inventory, Life.inventorySummaryFromItems([canonical]));
+                const summary = InventorySummary.saved(inventory);
+                write(`UPDATE bot_life_state SET inventorySummary = ?, ${bagRevisionSet('?')},
+                    simulationRevision = simulationRevision + 1 WHERE characterId = ?`, [summary, summary, row.characterId]);
+                repaired++;
+            }
+            return { repaired, removed };
+        }, 'bot-life:repair-soul-crystal-bags');
+    },
+
     applyBotImprovement(characterId, proposal, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_improvement_before_write', characterId);
         const state = options.coldState;
@@ -9055,6 +9126,22 @@ const Database = {
             };
             let result, changedIds = [], hennas, equipmentPatch;
             const Policy = invoke('GameServer/Bot/Economy/BotImprovementPolicy');
+            const side = proposal.soulCrystalGoal != null;
+            if (side) {
+                const life = one('SELECT * FROM bot_life_state WHERE characterId = ?', [characterId]);
+                const BotCrystal = invoke('GameServer/Bot/Economy/BotSoulCrystal');
+                const Life = invoke('GameServer/Bot/Population/BotLifeState');
+                const physical = Life.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [characterId]));
+                const source = life && reserveStateUnsafe(life, SavedStats.merge(life.statsJson, life.mindJson), physical);
+                if (!source || !BotCrystal.validateStep(source, proposal)) throw Error('improvement_source_changed');
+                if (proposal.kind === 'sa') {
+                    const reservations = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(source);
+                    for (const cost of BotCrystal.costsFor(proposal)) {
+                        if (Number(physical[cost.selfId]?.amount || 0) - Number(reservations[cost.selfId] || 0) < cost.amount)
+                            throw Error('improvement_missing_materials');
+                    }
+                }
+            }
             if (proposal.kind === 'enchant') {
                 const Rules = invoke('GameServer/Items/C4EnchantRules');
                 const item = one('SELECT * FROM items WHERE id = ? AND characterId = ?', [proposal.objectId, characterId]);
@@ -9210,13 +9297,14 @@ const Database = {
                 changedIds.push(57, symbol.dyeSelfId); result = 'henna';
             } else throw Error('invalid_bot_improvement');
             guard();
-            if (state) {
+            if (state || side) {
                 const current = one('SELECT statsJson, mindJson FROM bot_life_state WHERE characterId = ?', [characterId]);
                 const stats = SavedStats.merge(current.statsJson, current.mindJson);
                 Object.assign(stats, equipmentPatch);
                 stats.lastImprovement = { kind: proposal.kind, result, at: now(), objectId: proposal.objectId || null };
                 if (hennas) stats.hennas = hennas;
                 if (result === 'crystal_quest') stats.soulCrystalQuest = true;
+                if (side) stats.soulCrystalGoal = result === 'sa' ? null : proposal.soulCrystalGoal;
                 if (result === 'break' || result === 'blessed-fail') {
                     const lossHours = Number(proposal.lossHours || 0);
                     stats.frustration = Number(stats.frustration || 0) + (Number.isFinite(lossHours) ? Math.max(0, lossHours) : 0);
@@ -9227,7 +9315,9 @@ const Database = {
                 mutate('UPDATE bot_life_state SET statsJson = ?, mindJson = ? WHERE characterId = ?', [columns.statsJson, columns.mindJson, characterId]);
             }
             const coldLifeRow = syncEconomySnapshotUnsafe(characterId, state, changedIds);
-            return { result, coldLifeRow, hennas, questStarted: result === 'crystal_quest', changedIds, items: all('SELECT * FROM items WHERE characterId = ? ORDER BY id', [characterId]) };
+            return { result, coldLifeRow, hennas, questStarted: result === 'crystal_quest', changedIds,
+                ...(side ? { soulCrystalGoal: result === 'sa' ? null : proposal.soulCrystalGoal } : {}),
+                items: all('SELECT * FROM items WHERE characterId = ? ORDER BY id', [characterId]) };
         }, 'bot:improvement'));
     },
 

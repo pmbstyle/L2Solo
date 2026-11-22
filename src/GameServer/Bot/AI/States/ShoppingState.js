@@ -583,7 +583,7 @@ module.exports = {
         // and its improvement; the station is found here, near the body.
         const decision = held(session);
         if (!session.companionShopping
-            && invoke('GameServer/Clan/ClanConsumableSupply').reviewActorDecision(session, decision.network.activity)) return;
+            && invoke('GameServer/Clan/ClanConsumableSupply').reviewActorDecision(session, decision.network?.activity)) return;
         // A stock order (purpose stock) is no equipment plan: only its
         // workshop target carries it (stockWorkshopTarget).
         const personalCraft = session.companionShopping || decision.personalCraft?.purpose === 'stock' ? null : decision.personalCraft;
@@ -1293,6 +1293,15 @@ module.exports = {
             await restockWork;
             if (!current()) return;
             if (!LifeState.hotRow(bot.fetchId())) return;
+            if (!restockFailure && !session.partyCompanion && !shoppingMeetingPending(session, bot)) {
+                try {
+                    await invoke('GameServer/Bot/Economy/BotImprovementService').reviewHotCrystalVisit(session,
+                        () => current() && !shoppingMeetingPending(session, bot));
+                } catch (error) {
+                    utils.infoWarn('Improvement', 'Soul Crystal visit for %s: %s', bot.fetchName(), error.message);
+                }
+                if (!current() || !LifeState.hotRow(bot.fetchId())) return;
+            }
             session.shoppingRestock = undefined;
             if (restockFailure) {
                 session.shoppingRestockFailures = Number(session.shoppingRestockFailures || 0) + 1;

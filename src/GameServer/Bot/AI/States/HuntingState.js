@@ -1258,12 +1258,22 @@ module.exports = {
                             }
                         }
 
-                        const crystal = bot.backpack.fetchItems().find(item => invoke('GameServer/Items/SoulCrystalProgression').crystal(item));
-                        if (crystal && npc.fetchHp() <= npc.fetchMaxHp() / 2 && !npc.fetchSoulCrystalAbsorber?.(bot)
-                            && invoke('GameServer/Items/SoulCrystalProgression').canUse(session, crystal, npc)) {
+                        const progression = invoke('GameServer/Items/SoulCrystalProgression');
+                        const stats = session.coldLifeState?.stats;
+                        const goal = stats?.soulCrystalGoal;
+                        const rule = session.questStates?.get(350)?.isStarted() && progression.targetRule(npc);
+                        const crystals = rule?.maxStage <= 10 && npc.fetchHp() <= npc.fetchMaxHp() / 2
+                            && !npc.fetchSoulCrystalAbsorber?.(bot)
+                            ? bot.backpack.fetchItems().filter(item => progression.crystal(item) && item.fetchAmount() > 0) : null;
+                        const crystal = crystals?.length === 1 && crystals[0];
+                        if (crystal && crystal.fetchAmount() === 1 && progression.crystal(crystal).stage < rule.maxStage
+                            && progression.canUse(session, crystal, npc)
+                            && (!goal || invoke('GameServer/Bot/Economy/BotSoulCrystal')
+                                .canAdvanceActor(bot, goal, crystal.fetchSelfId(), stats.equipmentPlan))) {
                             const itemSkill = invoke('GameServer/Items/C4ItemSkills').resolve(crystal.fetchSelfId());
                             const skill = bot.backpack.buildItemSkill(itemSkill);
-                            if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && bot.canUseSkill?.(skill) !== false) {
+                            if (skill && bot.fetchMp() - skill.fetchConsumedMp() >= (goal ? bot.fetchMaxMp() / 4 : 0)
+                                && bot.canUseSkill?.(skill) !== false) {
                                 bot.select({ id: npc.fetchId() });
                                 bot.backpack.useDrainSoulItem(session, crystal.fetchId(), itemSkill, skill);
                                 if (bot.state.fetchCasts()) return;
