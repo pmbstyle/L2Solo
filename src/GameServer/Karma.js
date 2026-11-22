@@ -38,5 +38,11 @@ function townFor(karma, town) {
     return closesTowns(karma) ? TOWN_NAME : town;
 }
 
+// A shared appointment authorizes no transport of its own.
+function meetingRouteAllowed(karma, town, route) {
+    return !closesTowns(karma) || town === TOWN_NAME && route.fee === 0 && !route.scroll
+        && (route.method === 'walk' || /^meeting:[1-9][0-9]*$/.test(route.method));
+}
+
 module.exports = { MIN_KARMA, MAX_KARMA, XP_DIVIDER, TOWN_NAME, pkKillKarma, karmaWashForExperience, karmaLostForExperience,
-    closesTowns, townFor };
+    closesTowns, townFor, meetingRouteAllowed };

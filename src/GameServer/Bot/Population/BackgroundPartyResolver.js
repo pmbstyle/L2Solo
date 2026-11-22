@@ -190,7 +190,7 @@ function assembling(party, members, spot, timestamp, reason, short = false) {
 
 const BackgroundPartyResolver = {
     resolveMeetingLifecycle({ party, members, timestamp = Date.now(), episodeId = null, assessRelationship = null }) {
-        if (!party || !members?.length || !Assembly.meetingPending(members)) return null;
+        if (!party || !members?.some(member => member.stats?.tradeMeeting && !member.stats.partyMeeting)) return null;
         // A confirmed hot victory is terminal even if a personal agreement is held.
         if (party.stats?.objective?.sourceKind === 'raid' && party.stats?.raidEncounter?.status === 'defeated') {
             return { ...completedRaidResult(party, members, party.stats.raidEncounter, timestamp), atomic: true };

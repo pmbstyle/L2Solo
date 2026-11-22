@@ -121,6 +121,7 @@ const HotActivation = {
 
         return loadState.then((state) => {
             if (!state) return { ok: false, reason: 'missing_state' };
+            if (state.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting') return refused('party_meeting_trip', state);
             if (playerInvitations.has(state.characterId) && !options.clanLeaderInvite) return { ok: false, reason: 'player_invite_pending', state };
             const playerInvite = ['remote_invite', 'party_invite'].includes(reason);
             if (playerInvite && state.party?.partyId) return { ok: false, reason: 'already_grouped', state };
@@ -197,6 +198,8 @@ const HotActivation = {
                     utils.infoWarn('ColdWorker', 'activation fence fallback for %s: %s', state.name, fence.reason);
                 }
                 const current = appearance(LifeState.cachedState(state.characterId) || state);
+                if (current.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting')
+                    throw Object.assign(Error('party_meeting_trip'), { activationRefusal: 'party_meeting_trip' });
                 if (playerInvite && current.party?.partyId) throw Object.assign(Error('already_grouped'), { partyRefusal: true });
                 const moved = current.spotId !== state.spotId || ['locX', 'locY', 'locZ']
                     .some(key => current.loc?.[key] !== state.loc?.[key]);

@@ -1920,10 +1920,9 @@ function startKernel(config = {}) {
                 ...(untrained ? { classId: projectedClassId } : {}),
                 ...(result.soulCrystals?.length ? { soulCrystals: result.soulCrystals } : {})
             };
-            // Accepted custody owns the next physical transition. Resume the
-            // original economic plan after the meeting releases the actor.
+            // Custody and the party's reserved return own the physical transition.
             const kitMoved = DecisionSections.kitMoved(state, projected);
-            if (raidPreparing || state.stats?.tradeMeeting) return { state: projected,
+            if (raidPreparing || state.stats?.tradeMeeting || state.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting') return { state: projected,
                 durable: Object.keys(durable).length ? durable : null, kitMoved };
             const economyPlan = stepEconomy ? lifecyclePlan.economyPlan || null : null;
             const record = kernel.states.get(Number(projected.characterId));
@@ -1989,7 +1988,7 @@ function startKernel(config = {}) {
         reviewRecruits: ({ party, members, timestamp }) => PartyGoalCalculation.recruitCheck(party, members,
             { spots: planningSpots, timestamp, bridgeReason }),
         planLifecycle: async ({ state, timestamp }) => {
-            if (state.stats?.tradeMeeting) return null;
+            if (state.stats?.tradeMeeting || state.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting') return null;
             // The mind the step read: its packet carries its bits as their change from it
             // (Situations.stepMind), a raise after a decision (its trip's ask) included.
             const received = state.stats;

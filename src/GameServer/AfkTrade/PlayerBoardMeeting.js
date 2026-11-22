@@ -7,6 +7,7 @@ function status(session, { life = () => invoke('GameServer/Bot/Population/BotLif
     const state = meeting.otherId && life().cachedState(meeting.otherId);
     const result = { name: state?.name || 'Merchant', town: meeting.town || '', phase: 'Waiting for the merchant', seconds: 0 };
     if (!state) return result;
+    if (state.stats?.partyMeeting === meeting.id) return { ...result, phase: 'Waiting to leave the party' };
     const atPoint = loc => loc && Math.hypot(Number(loc.locX) - meeting.locX,
         Number(loc.locY) - meeting.locY, Number(loc.locZ) - meeting.locZ) <= 200;
     if (atPoint(state.loc)) return { ...result, phase: 'Merchant at the meeting point' };

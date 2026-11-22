@@ -378,29 +378,48 @@ async function resumePartyMarketBreak(state, timestamp) {
     const token = state.stats.partyMarketReturn;
     const party = BackgroundPartyState.find(token.partyId);
     const warehouse = token.cleanupReason === 'craft_warehouse';
+    const meeting = token.cleanupReason === 'trade_meeting';
     const matching = PartyMarketBreak.sameObjective(party, token);
     const prepared = { ...state, activity: 'party_wait', stats: { ...state.stats,
-        partyMarketReturn: null, clanPartyObjective: warehouse ? state.stats.clanPartyObjective : token.objective,
-        partyRequest: warehouse ? state.stats.partyRequest : token.objective } };
+        partyMarketReturn: null, clanPartyObjective: warehouse || meeting ? state.stats.clanPartyObjective : token.objective,
+        partyRequest: warehouse || meeting ? state.stats.partyRequest : token.objective } };
+    if (meeting && party?.status === 'hot') {
+        const waiting = { ...state, timing: { ...state.timing, nextResolveAt: timestamp + 30000 } };
+        const saved = await LifeState.upsertState(waiting, 'meeting_party_return_wait');
+        return { ok: !!saved, state: saved || state, reason: 'meeting_party_hot' };
+    }
     if (party?.status === 'active' && matching && party.memberIds.length < partyLimitsForObjective(party?.stats?.objective).maxSize) {
         const members = await LifeState.statesForParty(party.partyId);
         if (members.length !== party.memberIds.length) return { ok: false, state, reason: 'party_return_retry' };
+        if (meeting) {
+            const leader = members.find(member => member.characterId === party.leaderId);
+            const waiting = party.stats?.travel || party.stats?.pveEncounter || leader?.stats?.travel;
+            if (waiting || !leader || !require('./PartyHuntingAssembly').nearby([leader, state])) {
+                const next = waiting || !leader ? { ...state, timing: { ...state.timing, nextResolveAt: timestamp + 5000 } }
+                    : GoalExecutor.finishMarketVisit(state, timestamp, { recoverMissingReturn: true });
+                const saved = next && await LifeState.upsertState(next, 'meeting_party_return');
+                return { ok: !!saved, state: saved || state, reason: 'meeting_party_return' };
+            }
+        }
         const absences = { ...party.stats?.marketAbsences };
         delete absences[state.characterId];
         const roster = [...members, prepared];
+        const nextResolveAt = meeting ? Math.max(timestamp, Number(party.nextResolveAt || 0)) : timestamp;
         const result = await commitPartyMembership({ ...party,
             memberIds: roster.map(member => member.characterId),
             roleCoverage: PartyComposition.roleCoverage(roster),
-            nextResolveAt: timestamp, stats: { ...party.stats, marketAbsences: absences } }, roster, null);
+            nextResolveAt, stats: { ...party.stats, marketAbsences: absences } }, roster, null,
+            meeting ? { expectedPartyRevision: party.revision } : undefined);
         return { ok: !!result.party, state: LifeState.cachedState(state.characterId) || state,
             reason: result.party ? 'returned_to_clan_party' : 'party_return_retry' };
     }
-    if (warehouse) {
+    if (warehouse || meeting) {
         // An ordinary party may fill or dissolve while its member shops. It
         // has no clan request to wait on, so resume the personal route.
         const solo = { ...prepared, activity: 'hunting', timing: { ...(prepared.timing || {}), nextResolveAt: timestamp + 30000 } };
-        const saved = await LifeState.upsertState(solo, 'craft_warehouse_party_unavailable');
-        return { ok: !!saved, state: saved || state, reason: 'craft_warehouse_party_unavailable' };
+        const reason = meeting ? 'meeting_party_unavailable' : 'craft_warehouse_party_unavailable';
+        const saved = await LifeState.upsertState(solo, reason);
+        return { ok: !!saved, state: saved || state, reason };
     }
     // A dissolved or full party must not turn the clan assignment into solo combat.
     const saved = await LifeState.upsertState(prepared, 'clan_party_return_wait');
@@ -612,7 +631,7 @@ function commitPartyMembership(party, members = [], event = null, options = {}) 
         return held && held.id !== party.stats?.objective?.preparationId;
     })) return Promise.resolve({ party: null, assigned: [], failed: selected, reason: 'raid_supply_reserved' });
     if (selected.some(member => !member.party?.partyId && !member.partyId
-        && !invoke('GameServer/AfkTrade/TradeMeetingService').canJoinParty(member.characterId, member))) {
+        && !invoke('GameServer/AfkTrade/TradeMeetingService').canJoinParty(member.characterId, member, undefined, party.partyId))) {
         return Promise.resolve({ party: null, assigned: [], failed: selected, reason: 'party_trade_busy' });
     }
     if (ClanEquipmentPartyPolicy.needsReview(party, selected)) {
@@ -2305,7 +2324,8 @@ const PopulationService = {
             .filter((party) => {
                 const limits = partyLimitsForObjective(party?.stats?.objective || null);
                 if (party.stats?.travel || party.stats?.pveEncounter
-                    || PartyMarketBreak.pending(party).length || (party.memberIds || []).length >= limits.maxSize) return false;
+                    || PartyMarketBreak.pending(party, Date.now(), id => LifeState.cachedState(id)).length
+                    || (party.memberIds || []).length >= limits.maxSize) return false;
                 // A pending join waits for its far leader's step; a leader near
                 // the player has none, so the check runs here again.
                 if (party.stats?.pendingRecruits && LifeState.cachedState(party.leaderId)?.phase === 'cold') return false;
@@ -2738,13 +2758,21 @@ const PopulationService = {
         // The rebuff's hall answer, a hall visit under way or a restart in the hall
         // (ColdVisit).
         const hallVisit = invoke('GameServer/ClanHall/ColdVisit');
-        const visit = !joinedBackgroundParty(state) && hallVisit.needed(state);
+        const meetingReturn = state.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting';
+        const visit = !meetingReturn && !joinedBackgroundParty(state) && hallVisit.needed(state);
         if (workerHall) Config.developerDiagnostics && Diagnostics.count('hall_visit', visit ? 'visit' : 'fall_through');
         if (visit) {
             // ARCH-NOTE: Hall dispatch bypasses the ordinary resolve branch; keep Main's captured admission through its inner writer.
             return hallVisit.resolve(state, startedAt, options);
         }
         if (PartyMarketBreak.ready(state)) return resumePartyMarketBreak(state, startedAt);
+        if (meetingReturn && !state.stats?.tradeMeeting
+            && !state.stats?.travel && state.stats?.marketReturn && ['hunting', 'shopping'].includes(state.activity)) {
+            const returning = GoalExecutor.finishMarketVisit(state, startedAt, { recoverMissingReturn: true });
+            if (returning) return LifeState.upsertState(returning, 'meeting_party_return')
+                .then(saved => ({ ok: !!saved, state: saved || state }));
+        }
+        if (meetingReturn) return COLD_RESOLVE_NEXT;
         const karmaPolicy = invoke('GameServer/Bot/Population/ColdKarmaPolicy');
         const karmaPlan = karmaPolicy.active(state) ? karmaPolicy.plan(state, SpotProfiles.ensure(), startedAt) : null;
         if (karmaPlan && !joinedBackgroundParty(state)) {
@@ -3203,7 +3231,8 @@ const PopulationService = {
             if (!request.precomputedResult) {
                 return Promise.resolve({ ok: false, reason: 'worker_result_required', state });
             }
-            if (require('./RaidSupplyPolicy').held(state)) return await this.resolveColdState(state, request, options);
+            if (state.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting' || require('./RaidSupplyPolicy').held(state))
+                return await this.resolveColdState(state, request, options);
             const card = request.precomputedPlan?.economyDecision;
             const acquisitionLeaf = card && invoke('GameServer/Bot/Population/ColdEconomyDecision').compact(card).activity;
             if (acquisitionLeaf?.activity !== 'improving' && /^henna:\d+$/.test(acquisitionLeaf?.rootKey || '')) {

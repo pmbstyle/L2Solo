@@ -4193,6 +4193,25 @@ function isBotOwnerUnsafe(ownerId) {
     return BoardRules.isBotAccount(one('SELECT username FROM characters WHERE id = ?', [Number(ownerId)])?.username);
 }
 
+function botKarmaUnsafe(characterId, life) {
+    const row = life === undefined ? one('SELECT phase,statsJson FROM bot_life_state WHERE characterId=?', [characterId]) : life;
+    if (row?.phase === 'hot') {
+        const actor = invoke('GameServer/World/World').registeredActorById(characterId)?.session?.actor;
+        const karma = actor?.fetchKarma?.();
+        if (karma != null) return karma;
+    }
+    return jsonObject(row?.statsJson).karma;
+}
+
+function floranMeetingPoint() {
+    const { marketTown } = invoke('GameServer/Bot/Economy/MarketTownPolicy');
+    return { town: Karma.TOWN_NAME, ...marketTown(Karma.TOWN_NAME).center };
+}
+
+function meetingAdConfig(config, karma) {
+    return Karma.townFor(karma, config.town) === config.town ? config : { ...config, ...floranMeetingPoint() };
+}
+
 // A cold bot learns of a deal at its next save: what the deal owes it waits on
 // the board. A player or a hot actor gets it at once (the main thread owns its
 // bag and refreshes the actor after the commit).
@@ -4559,6 +4578,7 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false, bid
     checkBotCapsUnsafe(characterId, kind);
 
     const conditional = ['buy_ad', 'sell_ad'].includes(kind) && isBotOwnerUnsafe(characterId);
+    if (conditional) config = meetingAdConfig(config, botKarmaUnsafe(characterId));
     let escrowAdena = 0;
     if (!conditional && storeType === BoardRules.BUY) {
         escrowAdena = rows.reduce((sum, line) => {
@@ -4698,9 +4718,12 @@ function reconcileBotPurchasesUnsafe(characterId, held, configs, purchase, times
 
 function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp, { bidWallet = null } = {}) {
     if (configs.length > BoardRules.BOT_RECORDS.buy_ad) throw Error('board_cap_reached');
+    const bot = isBotOwnerUnsafe(characterId);
+    const karma = bot ? botKarmaUnsafe(characterId) : 0;
     const key = (town, line) => `${town || ''}:${Number(line.selfId)}:${Number(line.enchant || 0)}`;
     const current = new Map(held.map(shop => [key(shop.town, shop.lines[0]), shop]));
-    const identities = new Set(), wanted = configs.map(config => {
+    const identities = new Set(), wanted = configs.map(input => {
+        const config = meetingAdConfig(input, karma);
         const line = config.lines[0], selfId = Number(line.selfId), count = Number(line.count);
         const enchant = Number(line.enchant || 0), identity = `${selfId}:${enchant}`;
         if (!Number.isSafeInteger(selfId) || selfId <= 0 || selfId === 57
@@ -4717,7 +4740,7 @@ function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp, { bidWa
         if (!previous && line.pricing) pricingValues(line.pricing);
         return { config, line, previous, count, price, reserve };
     });
-    if (isBotOwnerUnsafe(characterId)) {
+    if (bot) {
         for (const row of wanted) if (!row.previous || row.count > Number(row.previous.lines[0].count)) checkConditionalBidUnsafe(characterId, row.line, row.price, bidWallet);
         const revision = Number(one('SELECT simulationRevision FROM bot_life_state WHERE characterId=?', [characterId])?.simulationRevision || 0);
         const keep = new Set(wanted.filter(row => row.previous).map(row => row.previous.id));
@@ -5870,6 +5893,42 @@ const Database = {
         }, 'board:migrate-world');
     },
 
+    // Starter-market ads lacked Z. Floran ads used the centroid above the square.
+    repairBoardMeetingOfferLocations() {
+        const { marketTown } = invoke('GameServer/Bot/Economy/MarketTownPolicy');
+        const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
+        return inTransaction(() => {
+            let repaired = 0;
+            for (const town of ['Elven Village', 'Dark Elven Village']) {
+                const { locX, locY, locZ } = marketTown(town).center;
+                repaired += write(`UPDATE afk_trade_shops SET locZ = ?, revision = revision + 1
+                    WHERE town = ? AND locX = ? AND locY = ? AND locZ = 0 AND status = 'active'
+                        AND custodyPolicy = 1 AND kind IN ('sell_ad', 'buy_ad')`, [locZ, town, locX, locY]).affectedRows;
+            }
+            const { town, locX, locY, locZ } = floranMeetingPoint();
+            const legacy = ShopPlaces.fillCenter(town);
+            return repaired + write(`UPDATE afk_trade_shops SET locX=?, locY=?, locZ=?, revision=revision+1
+                WHERE town=? AND locX=? AND locY=? AND locZ=? AND status='active'
+                    AND custodyPolicy=1 AND kind IN ('sell_ad','buy_ad')`,
+            [locX, locY, locZ, town, legacy.locX, legacy.locY, ShopPlaces.PLAZAS[town].locZ]).affectedRows;
+        }, 'board:repair-meeting-offer-locations');
+    },
+
+    // Existing quotes keep their stock and terms when their merchant receives karma.
+    moveKarmaMeetingAds(ownerId = null) {
+        const { town, locX, locY, locZ } = floranMeetingPoint();
+        return inTransaction(() => {
+            if (ownerId !== null && !Karma.closesTowns(botKarmaUnsafe(ownerId))) return [];
+            const owners = ownerId === null
+                ? `ownerId IN (SELECT characterId FROM bot_life_state WHERE json_extract(statsJson,'$.karma') > 0)`
+                : 'ownerId = ?';
+            const changed = all(`UPDATE afk_trade_shops SET town=?,locX=?,locY=?,locZ=?,revision=revision+1,updatedAt=?
+                WHERE status='active' AND custodyPolicy=1 AND kind IN ('buy_ad','sell_ad') AND town IS NOT ?
+                    AND ${owners} RETURNING id`, [town, locX, locY, locZ, now(), town, ...(ownerId === null ? [] : [ownerId])]);
+            return ownerId === null ? changed.length : changed.map(({ id }) => afkTradeShopUnsafe(id));
+        }, 'board:move-karma-meeting-ads');
+    },
+
     // The owner changes the price (and count) of one of its lines: a sell
     // line gives back the rest of its stock, a buy line's escrow follows.
     repriceAfkTradeShop(ownerId, lineId, price, expectedRevision = null, quantity = null, rival = null) {
@@ -6464,11 +6523,13 @@ const Database = {
             // accepted obligations while their party's native owner advances them.
             const MeetingService = require('./GameServer/AfkTrade/TradeMeetingService');
             const Admission = require('./GameServer/Bot/Population/PartyAdmission');
-            const blocked = batch.filter(entry => entry.row.partyId
-                && String(entry.expectedPartyId || '') !== String(entry.row.partyId)
-                && !Admission.partyTradeAllowed('party', {}, null,
-                    MeetingService.hasPreparation(entry.row.characterId),
-                    !!TradeMeetings.anchor(Number(entry.row.characterId))))
+            const blocked = batch.filter(entry => {
+                if (!entry.row.partyId || String(entry.expectedPartyId || '') === String(entry.row.partyId)) return false;
+                const id = Number(entry.row.characterId);
+                const ticket = jsonObject(currentById.get(id)?.statsJson).partyMarketReturn;
+                return ticket?.cleanupReason === 'trade_meeting' && ticket.partyId !== entry.row.partyId
+                    || !Admission.partyTradeAllowed('party', {}, null, MeetingService.hasPreparation(id), !!TradeMeetings.anchor(id));
+            })
                 .map(entry => Number(entry.row.characterId));
             if (blocked.length) return { ok: false, reason: 'party_trade_busy', conflicts: blocked };
 
@@ -12245,6 +12306,24 @@ Object.assign(Database, require('./GameServer/ClanHall/Repository')({
     rememberClanContributionUnsafe
 }));
 
+function tradeMeetingPartyUnsafe(partyId, characterId) {
+    const row = partyId && one('SELECT * FROM bot_background_parties WHERE partyId=?', [partyId]);
+    if (!row) return null;
+    const memberIds = JSON.parse(row.memberIdsJson || '[]').map(Number);
+    if (memberIds.length < 2 || memberIds.length > 9 || !memberIds.includes(characterId)) return null;
+    const party = { ...row, memberIds, stats: jsonObject(row.statsJson) };
+    const members = all(`SELECT characterId, partyId, phase, activity, hp, level, statsJson, mindJson,
+        locX, locY, locZ, currentRegion, spotId FROM bot_life_state
+        WHERE characterId IN (${memberIds.map(() => '?').join(',')})`, memberIds).map(member => ({ ...member,
+        loc: { locX: member.locX, locY: member.locY, locZ: member.locZ }, stats: jsonObject(member.statsJson) }));
+    return { party, members, member: members.find(member => member.characterId === characterId) };
+}
+
+function tradeMeetingAbsenceUnsafe(id) {
+    const row = one('SELECT statsJson FROM bot_life_state WHERE characterId=?', [id]);
+    return row && { stats: jsonObject(row.statsJson) };
+}
+
 const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
     one, all, write, now, take: afkTradeTakeItemUnsafe, debit: afkTradeDebitAdenaUnsafe,
     // A meeting's receipts and refunds go straight into the bags, a far actor's
@@ -12267,14 +12346,27 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
     canCompleteReceive: (id, life, itemId, count, pending, meetingId) => checkArrowPurchaseUnsafe(id, itemId, count, life, pending, meetingId),
     protection: (id, step, selfId, used) => checkEconomyMaterialProtectionUnsafe(id, step, selfId, used, true),
     position: tradeMeetingPositionUnsafe,
-    canStartTrade: (id, state) => require('./GameServer/Bot/Population/PartyAdmission').partyTradeAllowed(
-        'trade', state, invoke('GameServer/World/World').registeredActorById(id)?.session),
+    botKarma: botKarmaUnsafe,
+    canStartTrade: (id, state, playerTrade) => {
+        const session = invoke('GameServer/World/World').registeredActorById(id)?.session;
+        const Admission = require('./GameServer/Bot/Population/PartyAdmission');
+        if (jsonObject(state?.statsJson).partyMarketReturn?.cleanupReason === 'trade_meeting') return false;
+        if (Admission.partyTradeAllowed('trade', state, session)) return true;
+        if (!playerTrade || session || state?.playerPartyId) return false;
+        const group = tradeMeetingPartyUnsafe(state?.partyId, id);
+        return !!group && require('./GameServer/Bot/Population/PartyMarketBreak').canMeet(group.party, group.member, group.members,
+            now(), null, tradeMeetingAbsenceUnsafe);
+    },
     // stopTrip and startTrip do not move the revision: TradeMeeting's terminal
     // and leg run them in the transaction whose fence (`snapshot` below) moves
     // both actors' rows.
     stopTrip: meeting => {
         for (const actor of [meeting.actorA, meeting.actorB]) {
             write("UPDATE bot_life_state SET activity='shopping',statsJson=json_remove(statsJson,'$.travel') WHERE characterId=? AND json_extract(statsJson,'$.travel.meetingId')=?", [actor, meeting.id]);
+            write("UPDATE bot_life_state SET statsJson=json_remove(statsJson,'$.partyMeeting') WHERE characterId=? AND json_extract(statsJson,'$.partyMeeting')=?", [actor, meeting.id]);
+            if (!TradeMeetings.anchor(actor)) write(`UPDATE bot_life_state SET activity='shopping',nextResolveAt=?
+                WHERE characterId=? AND phase='cold' AND hp>0 AND activity NOT IN ('dead','resting','fighting')
+                  AND json_extract(statsJson,'$.travel') IS NULL AND json_extract(statsJson,'$.partyMarketReturn.cleanupReason')='trade_meeting'`, [now(), actor]);
             // The physical receipt survives a retained session or process restart;
             // its old companion workflow must not block future activation forever.
             write("UPDATE bot_life_state SET statsJson=json_remove(statsJson,'$.supplyErrand') WHERE characterId=? AND json_extract(statsJson,'$.supplyErrand.meetingToken')=?", [actor, meeting.token]);
@@ -12398,7 +12490,7 @@ function tradeMeetingPositionUnsafe(id) {
     if (!row || row.phase !== 'cold') return null;
     return { characterId: id, locX: row.locX, locY: row.locY, locZ: row.locZ,
         alive: Number(row.hp) > 0 && row.activity !== 'dead',
-        available: !['traveling', 'fighting', 'dead'].includes(row.activity) };
+        available: !['traveling', 'fighting', 'dead'].includes(row.activity) && !(row.partyId && jsonObject(row.statsJson).partyMeeting) };
 }
 function withTradeMeetingFlush(id, work, label) {
     return inTransaction(() => TradeMeetings.meeting(Number(id)), `${label}:owners`).then(row => {
@@ -12490,6 +12582,38 @@ Object.assign(Database, {
     },
     acceptTradeMeeting(request, preparation) {
         return withCharacterFlushes([request.actorA, request.actorB], () => inTransaction(() => TradeMeetings.accept(request, preparation), 'board:meeting-accept'));
+    },
+    departTradeMeetingParty(id, meetingId) {
+        return withTradeMeetingFlush(meetingId, () => {
+            const meeting = TradeMeetings.meeting(meetingId);
+            if (!meeting || meeting.state !== 'accepted') return null;
+            const row = one('SELECT partyId, statsJson FROM bot_life_state WHERE characterId=?', [id]);
+            if (jsonObject(row?.statsJson).partyMeeting !== meetingId) return null;
+            const group = tradeMeetingPartyUnsafe(row.partyId, id);
+            const at = now(), Break = require('./GameServer/Bot/Population/PartyMarketBreak');
+            if (!group || !Break.canMeet(group.party, group.member, group.members, at, meetingId, tradeMeetingAbsenceUnsafe))
+                return TradeMeetings.terminal(meetingId, false, 'party_unavailable');
+            const { party, member, members } = group;
+            if (party.stats.pveEncounter || ['resting', 'fighting'].includes(member.activity)) return null;
+
+            const { token, marketReturn } = Break.meetingDeparture(party, member, at);
+            const { releaseMember } = require('./GameServer/Bot/Population/BackgroundPartyLifecycle');
+            const state = releaseMember({ ...member, party: { partyId: party.partyId },
+                stats: SavedStats.merge(member.stats, member.mindJson) }, at, 'trade_meeting');
+            const { statsJson, mindJson } = SavedStats.statsColumns({ ...state.stats,
+                leaderId: null, partyMeeting: null, partyMarketReturn: token, marketReturn });
+            write(`UPDATE bot_life_state SET partyId=NULL,activity='hunting',activityStartedAt=?,nextResolveAt=?,
+                statsJson=?,mindJson=?,simulationRevision=simulationRevision+1,updatedAt=? WHERE characterId=?`,
+            [at, at, statsJson, mindJson, at, id]);
+            const remaining = members.filter(state => state.characterId !== id);
+            const coverage = require('./GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(remaining);
+            const stats = { ...party.stats, ...Break.stats(party, { characterId: id, stats: { partyMarketReturn: token } }) };
+            write(`UPDATE bot_background_parties SET memberIdsJson=?,roleCoverageJson=?,statsJson=?,
+                revision=revision+1,updatedAt=? WHERE partyId=?`,
+            [JSON.stringify(party.memberIds.filter(memberId => memberId !== id)), JSON.stringify(coverage), JSON.stringify(stats), at, party.partyId]);
+            return { meeting, pending: true, coldLifeRows: { [id]: normalizeRow(coldSimulationRow(id)) },
+                partyRow: one('SELECT * FROM bot_background_parties WHERE partyId=?', [party.partyId]) };
+        }, 'board:meeting-party-departure');
     },
     fetchTradeMeetingByToken(token) {
         return inTransaction(() => one('SELECT * FROM board_trade_meetings WHERE token=?', [String(token)]), 'board:meeting-replay');

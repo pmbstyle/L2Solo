@@ -88,6 +88,25 @@ async function main() {
     assert.equal(proposal.options.allowParty, true);
     assert(!batch.payload.proposals.some(entry => entry.partyResolution?.requirementRefreshedAt), 'a pending meeting holds the re-plan');
 
+    const booked = members.map(state => state.characterId === 1 ? state : { ...state, activity: 'grouped',
+        stats: { tradeMeeting: [7, 1], partyMeeting: 7 } });
+    assert.equal(Resolver.resolveMeetingLifecycle({ party, members: booked, timestamp: at }), null,
+        'a party departure reservation lets the normal resolver finish the current fight');
+    let lastFight;
+    const awaiting = new ColdSimulationKernel({ now: () => at,
+        resolveSolo: () => { throw Error('booked merchant is still in the party'); },
+        resolveParty: input => { lastFight = input.lastFight; return Resolver.resolve(input); },
+        projectResolve: (state, resolution) => ({ ...state, ...resolution.patch }), emit() {} });
+    for (const state of booked) {
+        awaiting.upsert({ state });
+        awaiting.inFlight.set(state.characterId, { state, startedAt: at, partyId: party.partyId });
+    }
+    const waitingParty = { ...party, stats: {}, nextResolveAt: at };
+    awaiting.partyPut(party.partyId, waitingParty);
+    awaiting.partyRuns.set(party.partyId, { party: waitingParty, members: booked, startedAt: at, spot: null });
+    await awaiting.resolvePartyStep(party.partyId);
+    assert.equal(lastFight, true, 'a group with a booked departure starts no new fight');
+
     const selected = [];
     let selectorAt = at;
     const selector = new ColdSimulationKernel({ now: () => selectorAt,

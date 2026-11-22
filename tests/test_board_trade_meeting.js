@@ -256,6 +256,34 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         assert.equal(migrated.lines[0].count, 5); assert.equal(migrated.lines[0].price, 100);
         assert.equal(migrated.lines[0].intentRevision, -1); assert.equal(migrated.lines[0].intentJson, null);
         assert.deepEqual(difference(await flows(), journal), difference(await held(), holdings), 'legacy custody migration is journal-neutral');
+
+        const giran = await prepare('karma-cancels-giran', sellSkin);
+        const setKarma = value => Database.execute(["UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.karma',?) WHERE characterId=?", [value, ids[1]]]);
+        const beforeGiran = await Promise.all(ids.map(bag));
+        await setKarma(240);
+        await assert.rejects(Database.acceptTradeMeeting(giran), /trade_meeting_point_changed/);
+        assert.deepEqual(await Promise.all(ids.map(bag)), beforeGiran);
+        await setKarma(0);
+        const giranId = (await Database.acceptTradeMeeting(giran)).meeting.id;
+        await setKarma(240);
+        assert.equal((await Database.arriveTradeMeeting(giranId)).meeting.state, 'cancelled');
+        await Database.arriveTradeMeeting(giranId);
+        assert.deepEqual(await Promise.all(ids.map(bag)), beforeGiran, 'changing karma refunds the accepted meeting exactly once');
+        for (const trigger of ['arrival', 'payment']) {
+            await setKarma(0);
+            const onFoot = { fee: 0, scroll: false, method: 'walk', durationMs: 0 };
+            const viaTown = { fee: 8100, scroll: true, method: 'soe_gatekeeper', durationMs: 25000 };
+            const floran = { ...await prepare(`karma-blocks-floran-${trigger}`, sellSkin, [onFoot, viaTown]),
+                town: 'Floran Village', point: { locX: 17368, locY: 170200, locZ: -3504 } };
+            const id = (await Database.acceptTradeMeeting(floran)).meeting.id;
+            await setKarma(240);
+            const result = trigger === 'arrival' ? await Database.arriveTradeMeeting(id)
+                : await Database.payTradeMeetingLeg(id, 1, 1, `soe:${point.locX}:${point.locY}:${point.locZ}`, 0, true);
+            assert.equal(result.meeting.state, 'cancelled');
+            assert.equal(result.meeting.reason, 'karma_blocks_route');
+            assert.equal(result.meeting.nextLegB, 1, 'the disallowed leg never starts');
+            assert.deepEqual(await Promise.all(ids.map(bag)), beforeGiran, 'the cancellation refunds the item, fare and unused scroll');
+        }
         console.log('native meeting reserve/replay/route/refund/completion/mutual/cleanup/migration conservation pass');
     } finally { await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

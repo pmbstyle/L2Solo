@@ -109,6 +109,7 @@ function townLooked(stats, timestamp = Date.now()) {
 }
 function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
     const next = finishVisit(state, timestamp, options);
+    if (state?.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting') return next;
     return next && { ...next, stats: townLooked(next.stats, timestamp) };
 }
 
@@ -121,9 +122,10 @@ function purchaseElsewhere(state, timestamp) {
 }
 
 function finishVisit(state, timestamp, options) {
-    if (!state || !['shopping', 'merchant'].includes(state.activity)) return null;
-    if (CombinedErrands.pending(state, timestamp, state.currentRegion).length
-        || (state.stats?.townVisit && state.stats.townVisit.completed !== true)) return null;
+    const meetingReturn = state?.stats?.partyMarketReturn?.cleanupReason === 'trade_meeting';
+    if (!state || (meetingReturn ? state.stats.tradeMeeting : !['shopping', 'merchant'].includes(state.activity))) return null;
+    if (!meetingReturn && (CombinedErrands.pending(state, timestamp, state.currentRegion).length
+        || (state.stats?.townVisit && state.stats.townVisit.completed !== true))) return null;
     // An errand its job decided during the visit for another town (ColdMarketService.acquire:
     // a bot in a visit leaves at its end), else the held step's purchase in another town (the
     // visit deferred it, ColdMarketService.tryPurchase), is the visit's next trip, before the
@@ -193,7 +195,8 @@ function finishVisit(state, timestamp, options) {
         spotId: savedSpot?.id || destination.spotId,
         townName: destinationTown?.name || regionName || 'Hunting Ground',
         viaTown: destinationTown?.name || null,
-        arrivalActivity: clanReturn ? 'party_wait' : 'hunting',
+        // A meeting return is a field trip, including when the merchant has karma.
+        arrivalActivity: clanReturn && !meetingReturn ? 'party_wait' : 'hunting',
         arrivalEvent: 'returned_to_spot',
         clearMarketReturn: true
     }, timestamp, { extraStats: clanReturn ? { shopTown: null } : { partyMarketReturn: null, shopTown: null } });

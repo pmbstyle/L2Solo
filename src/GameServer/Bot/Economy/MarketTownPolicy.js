@@ -13,7 +13,10 @@ const GLUDIO_D_GRADE_SHARE_PERCENT = 15;
 
 // The starter villages and the captured plaza centre their market travel goes to.
 const NO_GRADE_MARKETS = Object.freeze(['Talking Island', 'Elven Village', 'Dark Elven Village', 'Orc Village', 'Dwarven Village']
-    .map((name) => ({ name, ...ShopPlaces.PLAZAS[name].travelCenter, radius: 12000 })));
+    .map((name) => {
+        const { locZ, travelCenter } = ShopPlaces.PLAZAS[name];
+        return { name, locZ, ...travelCenter, radius: 12000 };
+    }));
 
 // Markets outside TownPathfinder's geodata atlas still have their real town
 // centre. Travel and board ads use it; a shop uses its captured polygon.
@@ -21,10 +24,10 @@ function marketTown(name) {
     const market = NO_GRADE_MARKETS.find((candidate) => candidate.name === name);
     if (market) return {
         name: market.name,
-        center: { locX: market.locX, locY: market.locY, locZ: market.locZ || 0 }
+        center: { locX: market.locX, locY: market.locY, locZ: market.locZ }
     };
     const plaza = ShopPlaces.PLAZAS[name];
-    if (plaza) return { name, center: { ...(plaza.center || ShopPlaces.fillCenter(name)), locZ: plaza.locZ } };
+    if (plaza) return { name, center: { locZ: plaza.locZ, ...(plaza.center || ShopPlaces.fillCenter(name)) } };
     const town = Object.values(TownRespawn.towns).find((candidate) => candidate.name === name);
     return town ? { name, center: { locX: town.locX, locY: town.locY, locZ: town.locZ } } : null;
 }

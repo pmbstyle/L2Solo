@@ -2,6 +2,7 @@ const BOT_WAKEUP_THROTTLE_MS = 750;
 const FailureLog = require('../../../FailureLog');
 const { killEffect } = require('../../World/KillEffect');
 const BotPvpMemory = require('../../Bot/AI/BotPvpMemory');
+const Karma = require('../../Karma');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const PvpRules = invoke('GameServer/PvpRules');
 
@@ -129,11 +130,15 @@ function creditKill(session, source, victim) {
         }).catch(error => FailureLog.note('death.pvp_memory', error)));
     }
     if (outcome !== 'none') {
-        const tally = PvpRules.tallyAfterKill({ pvp: attacker.fetchPvp(), pk: attacker.fetchPk(), karma: attacker.fetchKarma(),
+        const previousKarma = attacker.fetchKarma();
+        const tally = PvpRules.tallyAfterKill({ pvp: attacker.fetchPvp(), pk: attacker.fetchPk(), karma: previousKarma,
             level: attacker.fetchLevel() }, outcome, owner.fetchLevel());
         attacker.setPvp(tally.pvp);
         attacker.setPk(tally.pk);
         attacker.setKarma(tally.karma);
+        if (isBotSession(attackerSession) && !Karma.closesTowns(previousKarma) && Karma.closesTowns(tally.karma)) {
+            killEffect('death.pk_meeting_ads', () => invoke('GameServer/AfkTrade/AfkTradeService').merchantBecamePk(attacker.fetchId()));
+        }
         attackerSession.dataSendToMe(ServerResponse.userInfo(attacker));
         attackerSession.dataSendToOthers(ServerResponse.charInfo(attacker), attacker);
         attackerSession.dataSendToOthers(ServerResponse.relationChanged(attacker), attacker);

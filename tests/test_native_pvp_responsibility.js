@@ -146,7 +146,7 @@ try {
     // in defense. The kill's journal row says B defended; A's death trace names A as opener.
     {
         const fs = require('fs'), vm = require('vm'), { createRequire } = require('node:module');
-        const traces = [], memories = [], journal = invoke('PvpJournal');
+        const traces = [], memories = [], pkMerchants = [], journal = invoke('PvpJournal');
         const filename = require.resolve('../src/GameServer/Actor/Generics/Die.js');
         const dieDeps = {
             'GameServer/Network/Response': { die: () => Buffer.from([0]) },
@@ -165,6 +165,7 @@ try {
         patch(invoke(path.actor), 'die', box.exports);
         for (const key of ['userInfo', 'charInfo', 'relationChanged']) patch(invoke('GameServer/Network/Response'), key, () => Buffer.from([0]));
         patch(invoke('Database'), 'updateCharacterPvpPkKarma', () => Promise.resolve());
+        patch(invoke('GameServer/AfkTrade/AfkTradeService'), 'merchantBecamePk', id => pkMerchants.push(id));
         patch(invoke('Database'), 'recordBotPvpOutcome', memory => { memories.push(memory); return Promise.resolve(); });
         patch(invoke('GameServer/Social/CombatHelpMemory'), 'recordDefeat', () => {});
         const fighter = (human = false) => {
@@ -197,6 +198,8 @@ try {
         hit(defender, human);
         assert.deepStrictEqual(memories[1].sides, [[defender.fetchId()], [human.fetchId()]]);
         assert.deepStrictEqual(memories[1].bots, [defender.fetchId()], 'a human is recorded as a participant without bot memory');
+        assert(defender.fetchKarma() > 0);
+        assert.deepStrictEqual(pkMerchants, [defender.fetchId()], 'the hot kill publishes the first karma gain to the board');
 
         const killer = fighter(), victim = fighter(), ally = fighter();
         const encounter = { key: 'managed-kill', startedAt: Date.now() - 1000, expiresAt: Date.now() + 10000, seen: [],
