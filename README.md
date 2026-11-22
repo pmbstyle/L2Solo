@@ -22,8 +22,8 @@ Support, updates, and communication. Join the Discord to stay up to date with de
 ⚔️ [Game client](https://drive.google.com/file/d/1u0nW3m9c6Hql8sR9POQAcvglxIno23lv/view?usp=sharing)
 Clean C4 client protocol 656
 
-🧩 [L2Solo client mod](https://drive.google.com/file/d/16snZK_8KQOzGfgEO6hmAoXOtkL4iMhM8/view?usp=sharing)
-Optional but recommended for a better experience
+🧩 [L2Solo client mod](https://drive.google.com/file/d/1T1HFhTrkfq0qN7v5rONDbZwD35E82YdS/view?usp=sharing)
+Optional but highly recommended for a better experience
 
 
 💻 Simulation - everything that is happening in the game world besides player actions.
@@ -106,6 +106,8 @@ For example, a tank looking for a **Blue Wolf Breastplate** could buy one from a
 For more party and trade commands, see the [in-game command reference](#in-game-commands).
 
 ## Latest updates
+- **2026-11-20** Multi-party support. Ant Queen, Core, and Orfen. Epic jewelry. Bot economy improvements and bug fixes.
+- **2026-11-13** Bot AI improvements, clan raid expeditions, party and movement fixes
 - **2026-11-09** Shot production and recipe supply, bot recovery, inventory and cross-floor combat fixes, Windows launcher updates
 - **2026-11-08** Bug fixes, bot progression, garden of eva doors, launcher update
 - **2026-11-07** L2Solo launcher, server and bot progression optimization, bug fixes
@@ -126,12 +128,12 @@ For more party and trade commands, see the [in-game command reference](#in-game-
 - **2026-09-06** Bot PvP, save game, save TP location, optimization, chat, navigation
 - **2026-09-04** Player clan warehouse use for equipment exchange, bug fixes
 - **2026-09-02** AFK trade, market observer, xN mob fix
-- **2026-08-31** Expand bot world simulation, arena duels, and server knowledge tools
-- **2026-08-28** Skills, bot behavior, gear planning, and seeder fixes and improvements
 
 <details>
 <summary>Earlier</summary>
 
+- **2026-08-31** Expand bot world simulation, arena duels, and server knowledge tools
+- **2026-08-28** Skills, bot behavior, gear planning, and seeder fixes and improvements
 - **2026-08-27** Add LLM-driven clan management
 - **2026-08-26** Observer update, better and faster, player clan crest control, player clan goal control
 - **2026-08-25** Bot clans update follow-up, bug fixes
@@ -198,6 +200,7 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - AoE agro
 - Party loot
 - Raid bosses
+- AQ, Core, Orfen
 
 ### ✴️ Will be added
 
@@ -222,9 +225,9 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 <!-- STABLE_DOWNLOADS -->
 | Platform | Download |
 |----------|----------|
-| **Windows** | [L2Solo-Launcher-0.2.3-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.2/L2Solo-Launcher-0.2.3-windows-x64-Setup.exe) |
-| **macOS** | [L2Solo-Launcher-0.2.3-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.2/L2Solo-Launcher-0.2.3-mac-arm64.dmg) |
-| **Linux** | [L2Solo-Launcher-0.2.3-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.2/L2Solo-Launcher-0.2.3-linux-x86_64.AppImage) |
+| **Windows** | [L2Solo-Launcher-0.2.4-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.0/L2Solo-Launcher-0.2.4-windows-x64-Setup.exe) |
+| **macOS** | [L2Solo-Launcher-0.2.4-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.0/L2Solo-Launcher-0.2.4-mac-arm64.dmg) |
+| **Linux** | [L2Solo-Launcher-0.2.4-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.0/L2Solo-Launcher-0.2.4-linux-x86_64.AppImage) |
 <!-- STABLE_DOWNLOADS_END -->
 
 On Windows, if you see the standard warning that the app publisher is unknown, click 'More info' and 'Run anyway'.
