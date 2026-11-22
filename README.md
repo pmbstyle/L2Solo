@@ -155,62 +155,6 @@ For more party and trade commands, see the [in-game command reference](#in-game-
 
 See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 
-## Game Checklist
-
-### ✅ What's done
-
-**Server:**
-- Server launcher
-- Authentication: create account, login (C4 client, protocol 656)
-- Character creation
-- Variable server rates for each server start: (x1/x10/x50) XP, SP, party XP/SP, drop/adena/spoil multipliers
-- Real-time player web map that shows bots and players
-- Partial or full wipe anytime
-
-**World:**
-- Complete geodata for all locations
-- Complete live economy
-- Teleports via NPC or .admin menu
-- Live world / local / party / trade chats
-- NPC shops in towns
-- Profession change (first to third)
-- Auto-learn skills (no books or NPC needed)
-- Quests (0-20lvl + 1st profession change)
-- Private trade or craft
-- Clans, including bot clans
-- PK system
-- Save game
-- Clan halls
-- SA
-
-**Character:**
-- Progression depending on chosen rates
-- Full C4 skill coverage: self, targeted, AoE, effects, items, and class skills
-- Potions, scrolls, spoil, SA, manor, etc
-- Party with bots with native (/invite, /leave), plus `.botparty` / `.bp` to find bots and invite them to the party
-- All armor sets
-- Soulshots/Spiritshots
-- Death, respawn
-
-**Mobs:**
-- Attack
-- Skill usage
-- Drop table (scales from server rates)
-- Social agro
-- AoE agro
-- Party loot
-- Raid bosses
-- AQ, Core, Orfen
-
-### ✴️ Will be added
-
-- Olympiad, heroes
-- Sieges (bot- or player -driven)
-- World bosses
-- Full quests, including profession change
-- Better bot AI brain
-- Complete Lineage 2 C4 experience
-
 <p align="center">
 <img src="https://github.com/user-attachments/assets/ddb9c791-63ef-4c9f-861a-be822340a866" />
 
@@ -225,9 +169,9 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 <!-- STABLE_DOWNLOADS -->
 | Platform | Download |
 |----------|----------|
-| **Windows** | [L2Solo-Launcher-0.2.4-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.0/L2Solo-Launcher-0.2.4-windows-x64-Setup.exe) |
-| **macOS** | [L2Solo-Launcher-0.2.4-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.0/L2Solo-Launcher-0.2.4-mac-arm64.dmg) |
-| **Linux** | [L2Solo-Launcher-0.2.4-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.0/L2Solo-Launcher-0.2.4-linux-x86_64.AppImage) |
+| **Windows** | [L2Solo-Launcher-0.2.4-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.1/L2Solo-Launcher-0.2.4-windows-x64-Setup.exe) |
+| **macOS** | [L2Solo-Launcher-0.2.4-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.1/L2Solo-Launcher-0.2.4-mac-arm64.dmg) |
+| **Linux** | [L2Solo-Launcher-0.2.4-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.2.1/L2Solo-Launcher-0.2.4-linux-x86_64.AppImage) |
 <!-- STABLE_DOWNLOADS_END -->
 
 On Windows, if you see the standard warning that the app publisher is unknown, click 'More info' and 'Run anyway'.
