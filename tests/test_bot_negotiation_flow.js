@@ -100,6 +100,19 @@ try {
     const afterReset = BotNegotiationService.quoteItem(bot, player, 922, 1);
     assert.strictEqual(afterReset.ok, true);
     assert.notStrictEqual(afterReset.negotiation.id, previousId, 'negotiation IDs must remain unique across service resets');
+
+    // At x50 a 30,000,000 adena item is quoted from 1,500,000,000: the negotiated
+    // ceiling (1,000,000,000 at x1) follows the Adena rate, so it stays over the bot's floor.
+    const Rates = invoke('GameServer/ProgressionRates'), profile = Rates.profile;
+    try {
+        Rates.profile = () => ({ adena: 50, multiplier: 50 });
+        BotNegotiationService.declinePrice(bot, player);
+        botBackpack.items.push(new Item(923, { selfId: 9023, name: 'Negotiated Blade', kind: 'Other.Material', price: 30000000, amount: 1, stackable: true, equipped: false, slot: 0 }));
+        const dear = BotNegotiationService.quoteItem(bot, player, 923, 1);
+        assert.strictEqual(dear.ok, true, dear.reason);
+        assert(dear.negotiation.minimumUnitPrice > 1000000000 && dear.negotiation.maximumUnitPrice >= dear.negotiation.minimumUnitPrice,
+            `x50: the negotiated ceiling stays over the floor (${dear.negotiation.minimumUnitPrice}..${dear.negotiation.maximumUnitPrice})`);
+    } finally { Rates.profile = profile; }
     console.log('Bot negotiation flow checks passed');
 } finally {
     BotSocialMemory.getSnapshot = originalSnapshot;

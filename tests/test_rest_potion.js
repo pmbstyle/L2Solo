@@ -167,7 +167,8 @@ try {
     assert.equal(walletless.target, Math.max(Math.ceil(walletless.usePerHour),
         invoke('GameServer/Bot/Economy/ConsumableTarget').target(walletless.usePerHour, walletless.targetHours)),
     'no money, only the survival drink\'s stock');
-    const poor = Economy.basics(hunter(price * 3), { timestamp: T }).stock('potions');
+    // A wallet of three bottles at the bot's own bottle price (its kit's unit price).
+    const poor = Economy.basics(hunter(walletless.unitPrice * 3), { timestamp: T }).stock('potions');
     assert(poor.target <= walletless.target + 3, `the wallet bounds the stock (${poor.target} over ${walletless.target})`);
     // A build that keeps its foundation (a money build: the wallet is no
     // foundation section) bounds the stock by the wallet it has now.

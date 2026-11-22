@@ -12,6 +12,7 @@ const BotMerchantStoreService = invoke('GameServer/Bot/Economy/BotMerchantStoreS
 const NEGOTIATION_TTL_MS = 90 * 1000;
 const MAX_ROUNDS = 3;
 const MAX_QUANTITY = 100;
+// The x1 ceiling of a negotiated unit price; the server's Adena rate scales it.
 const MAX_UNIT_PRICE = 1_000_000_000;
 const NEGOTIABLE_BOT_PLANS = new Set(['merchant', 'following']);
 
@@ -116,7 +117,7 @@ function pricePolicy(bot, player, item, quantity, listing = null) {
             referenceUnitPrice,
             desiredUnitPrice,
             minimumUnitPrice,
-            maximumUnitPrice: MAX_UNIT_PRICE,
+            maximumUnitPrice: BotEconomyPricing.scalePrice(MAX_UNIT_PRICE),
             quantity,
             relation: relation.name,
             rationale,
@@ -130,7 +131,7 @@ function pricePolicy(bot, player, item, quantity, listing = null) {
     const minimumFactor = 0.72 + persona.traits.caution * 0.08 + relation.modifier * 0.35;
     const maximumFactor = 1.18 + persona.traits.ambition * 0.10 + persona.traits.assertiveness * 0.08 + Math.max(0, relation.modifier);
     const minimumUnitPrice = Math.max(1, Math.floor(referenceUnitPrice * minimumFactor));
-    const maximumUnitPrice = Math.min(MAX_UNIT_PRICE, Math.max(minimumUnitPrice, Math.ceil(referenceUnitPrice * maximumFactor)));
+    const maximumUnitPrice = Math.min(BotEconomyPricing.scalePrice(MAX_UNIT_PRICE), Math.max(minimumUnitPrice, Math.ceil(referenceUnitPrice * maximumFactor)));
     const desiredUnitPrice = Math.max(minimumUnitPrice, Math.min(maximumUnitPrice, Math.round(referenceUnitPrice * desiredFactor)));
     const rationale = relation.name === 'trusted'
         ? 'I can offer my trusted companion a meaningful discount.'
@@ -375,7 +376,7 @@ function quoteItem(bot, player, itemObjectId, amount = 1, offeredTotalPrice = nu
         }
         const offeredUnitPrice = offeredTotal / quantity;
         if (offeredUnitPrice >= policy.minimumUnitPrice) {
-            currentUnitPrice = Math.min(MAX_UNIT_PRICE, offeredUnitPrice);
+            currentUnitPrice = Math.min(BotEconomyPricing.scalePrice(MAX_UNIT_PRICE), offeredUnitPrice);
             reason = 'player_offer_in_range';
         } else {
             state = 'countered';
