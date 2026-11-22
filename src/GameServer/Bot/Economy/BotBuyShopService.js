@@ -31,6 +31,7 @@ async function publish(state, wanted, town, { priority = 0, expectedAuthority = 
     const kit = wanted.reduce((sum, line) => sum + Math.max(0, Number(line.survivalCost) || 0), 0);
     let money = Funding.spendable(budgetState, 0, { upperBound: true, survivalCost: kit });
     let shopLines = [], meetings = [];
+    const lineCap = Rules.shopLines(state, Rules.BUY);
     const roots = new Set();
     const mayUseShop = priority !== Rules.SELL && (!current || current.storeType === Rules.BUY || priority === Rules.BUY);
     const inTown = state.currentRegion === town && BotImprovementService.inTown(state);
@@ -43,7 +44,7 @@ async function publish(state, wanted, town, { priority = 0, expectedAuthority = 
     }
     for (const line of wanted) {
         const cost = Number(line.count) * Number(line.price);
-        if (loc && shopLines.length < Rules.BOT_SHOP_LINES && cost <= money
+        if (loc && shopLines.length < lineCap && cost <= money
             && (!line.intent?.key || !roots.has(line.intent.key))) {
             const previous = records.filter(record => record.storeType === Rules.BUY && record.town === town)
                 .flatMap(record => record.lines).find(old => key(old) === key(line) && old.price === line.price);

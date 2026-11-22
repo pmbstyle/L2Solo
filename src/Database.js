@@ -4211,15 +4211,12 @@ function checkRecordRevisionUnsafe(shop, expected) {
     if (!shop || Number(shop.revision) !== Number(expected)) throw new Error('afk_trade_shop_changed');
 }
 
-// Per-bot caps (BoardRules): a shop holds at most BOT_SHOP_LINES lines; a bot
-// holds at most BOT_RECORDS[kind] records of another kind. Over the cap the
-// new record is refused and nothing moves.
-function checkBotCapsUnsafe(ownerId, kind, lineCount) {
-    if (!isBotOwnerUnsafe(ownerId)) return;
-    if (kind === 'shop') {
-        if (lineCount > BoardRules.BOT_SHOP_LINES) throw new Error('board_cap_reached');
-        return;
-    }
+// Per-bot caps (BoardRules): a bot holds at most BOT_RECORDS[kind] records of
+// a kind other than its shop (whose lines the private store rule bounds, as a
+// player's: openBoardRecordUnsafe). Over the cap the new record is refused and
+// nothing moves.
+function checkBotCapsUnsafe(ownerId, kind) {
+    if (kind === 'shop' || !isBotOwnerUnsafe(ownerId)) return;
     const held = Number(one('SELECT COUNT(*) AS count FROM afk_trade_shops WHERE ownerId = ? AND kind = ?',
         [Number(ownerId), kind]).count || 0);
     if (held + 1 > Number(BoardRules.BOT_RECORDS[kind] || 0)) throw new Error('board_cap_reached');
@@ -4528,7 +4525,6 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false, bid
         if (active && !config.replace) throw new Error('afk_trade_already_active');
         if (config.expectedRevision !== undefined) checkRecordRevisionUnsafe(active, config.expectedRevision);
         if (active && keepsShopRecord(active, config, storeType)) {
-            checkBotCapsUnsafe(characterId, kind, rows.length);
             return republishSellShopUnsafe(characterId, active, config, rows, timestamp);
         }
         // Replacing a remote shop returns its escrow and reserves the new
@@ -4543,7 +4539,7 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false, bid
         [characterId, kind, Number(line.selfId), Math.max(0, Math.floor(Number(line.enchant || 0)))]);
         if (same) throw new Error('board_ad_exists');
     }
-    checkBotCapsUnsafe(characterId, kind, rows.length);
+    checkBotCapsUnsafe(characterId, kind);
 
     const conditional = ['buy_ad', 'sell_ad'].includes(kind) && isBotOwnerUnsafe(characterId);
     let escrowAdena = 0;
@@ -4661,7 +4657,6 @@ function reconcileBotPurchasesUnsafe(characterId, held, configs, purchase, times
     const ads = reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp, { bidWallet: wallet });
     let shop = same ? current : null;
     if (config && !same) {
-        checkBotCapsUnsafe(characterId, 'shop', rows.length);
         let total = 0;
         for (const line of rows) {
             if (line.intent) TradeIntent.encode(line.intent);
@@ -8528,7 +8523,7 @@ const Database = {
     purchaseNpcInventoryBasket(characterId, details = {}) {
         if (Array.isArray(details.lines) && details.lines.length > 12) return Promise.reject(Error('invalid npc basket'));
         if (details.lines?.some(line => line.fundingParts?.length > 12 || line.errands?.length > 8)) return Promise.reject(Error('invalid npc basket attribution'));
-        // statsPatch: stats the purchase writes with its receipt (a valve row's piece count).
+        // statsPatch: stats the purchase writes with its receipt (a consigned row's owed units).
         const { economyCommand = null, coldState = null, validate = null, statsPatch = null } = details;
         const seller = details.seller ? { ...details.seller } : null;
         const captured = Array.isArray(details.lines) ? details.lines.map(line => ({ ...line,
@@ -8632,7 +8627,8 @@ const Database = {
             parts.sort((left, right) => left.order - right.order);
             for (const part of parts) {
                 const spent = part.amount * part.unitPrice, funding = { ...part.funding, itemId: part.selfId };
-                checkEconomyFundingUnsafe(characterId, step, spent, funding, remainingWallet, remainingPacket);
+                // A part that pays nothing (a consigned unit) takes no money: no funding to check.
+                if (spent > 0) checkEconomyFundingUnsafe(characterId, step, spent, funding, remainingWallet, remainingPacket);
                 remainingWallet -= spent;
                 remainingPacket = PurchaseFunding.packetAfterPurchase(remainingPacket, spent, funding);
             }

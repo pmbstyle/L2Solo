@@ -61,7 +61,7 @@ function keepRetainedBids(state, owned, wanted, moneyPrice, escrow = 0, held = n
             || wanted.some(row => Number(row.selfId) === Number(line.selfId) && Number(row.count) < Number(line.count))));
     if (!candidates.length) return wanted;
     const needs = require('./TradeIntent').retainedProjectIntents(state, { moneyPrice }, () => 1);
-    const output = wanted.slice(), limit = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad;
+    const output = wanted.slice(), limit = BoardRules.buyWants(state);
     for (const line of candidates) {
         const need = needs.filter(row => Number(row.itemId) === Number(line.selfId) && (!held || row.key !== held))
             .reduce((best, row) => !best || Number(row.amount) > Number(best.amount) ? row : best, null);
@@ -172,6 +172,8 @@ function heldPurchaseRoot(goal) {
 }
 
 function linesFor(state, goal, { money = Infinity, watchList, ...options } = {}) {
+    // A station trader buys nothing from bots: its stock is the reserve's (SupplierRoles).
+    if (require('./SupplierRoles').isStationTrader(state)) return [];
     const held = heldPurchaseRoot(goal);
     const goals = (watchList || require('../Population/ColdEconomyDecision').economyFor(state).watchList)
         .filter(row => !held || row.key !== held).map(row => ({ type: 'buy_craft_material',
@@ -181,7 +183,7 @@ function linesFor(state, goal, { money = Infinity, watchList, ...options } = {})
         && !goals.some(row => row.target.itemId === goal.target.itemId)) goals.unshift(goal);
     const wallet = Number(state.adena || 0);
     // the buy ads cap (shop lines + buy ads) is cut here; the later slices (ColdEconomyPlan.buyBatch, BotAfkMarketService) see at most that.
-    const limit = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad;
+    const limit = BoardRules.buyWants(state);
     if (Diagnostics.active()) {
         Diagnostics.count('cap', 'buy_ads', 'check');
         if (goals.length > limit) {
@@ -206,7 +208,7 @@ function linesFor(state, goal, { money = Infinity, watchList, ...options } = {})
     }
     const townFor = options.townFor || (items => invoke('GameServer/Bot/Economy/MarketTownPolicy').targetTownForItems(state, items));
     let town = townFor(candidates.map(group => ({ selfId: Number(group[0].target.itemId) })));
-    const materialBids = invoke('GameServer/Bot/Economy/CrafterStock').materialBids(state);
+    const materialBids = invoke('GameServer/Bot/Economy/CrafterStock').materialBids(state, { board: options.board });
     // Rejected lines can change the grade/town of a mixed order. Price the
     // final town too, before publication; this loop only removes candidates.
     for (let pass = 0; pass <= limit; pass++) {

@@ -133,8 +133,8 @@ async function run() {
     assert.deepStrictEqual(await bag(mover), before);
     assert.strictEqual((await Database.fetchAfkTradeShops(mover)).length, 2);
 
-    // Caps: 5 sell ads, 5 buy ads, 1 order, 3 shop lines; over a cap the
-    // record is refused and the item or the money stays.
+    // Caps: 5 sell ads, 5 buy ads, 1 order, and a shop of a player's store
+    // lines; over a cap the record is refused and the item or the money stays.
     for (const selfId of MATERIALS.slice(1, 5)) await AfkTrade.publishBot(mover, await sellAd(mover, selfId));
     assert.strictEqual(AfkTrade.ownerRecords(mover).filter((record) => record.kind === 'sell_ad').length, BoardRules.BOT_RECORDS.sell_ad);
     await assert.rejects(AfkTrade.publishBot(mover, await sellAd(mover, MATERIALS[5])), /board_cap_reached/);
@@ -145,17 +145,17 @@ async function run() {
     assert.strictEqual((await bag(mover))[57], wallet, 'a refused buy ad leaves its money in the wallet');
     await AfkTrade.publishBot(mover, buyAd(1876, 1, 100, 'order'));
     await assert.rejects(AfkTrade.publishBot(mover, buyAd(1877, 1, 100, 'order')), /board_cap_reached/);
-    // A dwarf may show 4 lines in a store (C4); a bot's shop still holds 3.
+    // A bot's shop holds a player's store lines (C4): a dwarf's 4, a fifth is refused.
     const shopper = await makeBot(MATERIALS.map((selfId) => ({ selfId, name: `Item ${selfId}`, amount: 20 })));
     await Database.execute(['UPDATE characters SET race = 4 WHERE id = ?', [shopper]]);
-    const shopLines = await Promise.all(MATERIALS.slice(0, 4).map(async (selfId) => (await sellAd(shopper, selfId)).lines[0]));
-    await assert.rejects(Database.createAfkTradeShop(shopper, { storeType: 1, town: 'Giran', lines: shopLines }), /board_cap_reached/);
+    const shopLines = await Promise.all(MATERIALS.slice(0, 5).map(async (selfId) => (await sellAd(shopper, selfId)).lines[0]));
+    await assert.rejects(Database.createAfkTradeShop(shopper, { storeType: 1, town: 'Giran', lines: shopLines }), /at most 4 item slots/);
     assert.deepStrictEqual(await bag(shopper), Object.fromEntries(MATERIALS.map((selfId) => [selfId, 20])));
 
     // The leave rule: every record of every kind closes; items and escrow go
     // back; nothing waits on the board.
     await AfkTrade.publishBot(shopper, { storeType: 1, town: 'Giran', locX: 81000, locY: 148000, locZ: -3466,
-        appearance: {}, lines: shopLines.slice(0, 3) });
+        appearance: {}, lines: shopLines.slice(0, 4) });
     assert.strictEqual(AfkTrade.ownerRecords(mover).length, 11, "5 sell ads, 5 buy ads, 1 order");
     await AfkTrade.leave(mover);
     await AfkTrade.leave(shopper);

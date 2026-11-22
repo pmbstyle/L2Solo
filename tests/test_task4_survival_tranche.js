@@ -117,7 +117,7 @@ async function run() {
     // the native check publish the bid the worker decided.
     const lines = BuyAdPolicy.linesFor(poor, goal, { economy, board: null, watchList: [], money });
     assert.deepEqual(lines.map(line => [line.selfId, line.count, line.price, line.survivalCost]), [[SHOT, bid.count, bid.price, 1000]]);
-    const batch = invoke('GameServer/Bot/Population/ColdEconomyPlan').buyBatch(lines);
+    const batch = invoke('GameServer/Bot/Population/ColdEconomyPlan').buyBatch(poor, lines);
     assert.deepEqual(batch, { buyAds: [[SHOT, bid.count, bid.price]], buyCaps: [bid.purchaseCap], buyKit: [1000] });
     await Market.executePlan(Life.cachedState(owner), batch);
     ads = await records();
