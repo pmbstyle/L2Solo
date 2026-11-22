@@ -20,7 +20,6 @@ const Craft = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const Shots = invoke('GameServer/Bot/Economy/ColdShotEconomyService');
 const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 const Opportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
-const Buyers = invoke('GameServer/Bot/Economy/StaticBuyerService');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const location = { locX: 83396, locY: 147904, locZ: -3400 };
 const previous = { buyers: Config.staticBuyersDisabled, shots: Config.staticShotsDisabled };
@@ -54,9 +53,8 @@ async function run() {
     Config.staticBuyersDisabled = false; Config.staticShotsDisabled = false;
     assert.equal(Policy.buyersDisabled(), false); assert.equal(Policy.shotsDisabled(), false);
     const playerDPrice = Pricing.cheapestPurchase(1463);
-    assert(Number.isFinite(playerDPrice)); assert(Buyers.buyersInTown('Giran').length > 0);
+    assert(Number.isFinite(playerDPrice));
     Config.staticBuyersDisabled = true; Config.staticShotsDisabled = true;
-    assert.equal(Buyers.buyersInTown('Giran').length, 0);
     assert.equal(Policy.allowsFixed({ selfId: 1463 }), false);
     assert.equal(Pricing.botPurchasePrice(1463), Infinity);
     assert.equal(Pricing.cheapestPurchase(1463), playerDPrice, 'player authored price unchanged');

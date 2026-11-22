@@ -84,11 +84,11 @@ for (let at = 1; at < 7; at++) bids.put({ id: 700 + at, ownerId: 500 + at, store
     town: 'Giran', revision: 1, lines: [{ lineId: 800 + at, selfId: 1864, count: 1, price: 500 - at }] });
 const exit = drain(Sources.exitValue(owner, 1864, bids));
 assert.equal(exit.value, 499, 'best bid of others; the own 900 bid is not an exit');
-// The fixed buyers take materials only from a gnome (the owner is a Warsmith).
-assert(Sources.fixedBuyerOffersFor(1864, owner).length > 0);
-assert.equal(exit.stages.filter(stage => stage === 'quote').length, Sources.QUOTE_DEPTH + Sources.fixedBuyerOffersFor(1864, owner).length);
+// A bot sells to no fixed buyer (the owner is a Warsmith, a gnome).
+assert.equal(exit.stages.filter(stage => stage === 'quote').length, Sources.QUOTE_DEPTH);
 const npcFloor = drain(Sources.exitValue(owner, 1864, null)).value;
-assert(npcFloor >= 0 && npcFloor < 499, 'without a board only NPC buyback and fixed buyers');
+assert.equal(npcFloor, invoke('GameServer/Items/NpcSellRules').npcBuyPrice(Number(invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, 1864).template.price)),
+    'without a board only the NPC buyback');
 const withBids = drain(Sources.prepare(owner, { board: bids, timestamp: 1000 })).value;
 assert.equal(withBids.options.ownStock.get(1864).unitValue, 499, 'prepare reads the same exit value');
 const EconomicTrip = require('../src/GameServer/Bot/Economy/EconomicTrip');
