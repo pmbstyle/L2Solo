@@ -125,8 +125,9 @@ class MarketBuyerWaiters {
 
 // The own-line situations of a board record's change (record: BoardIndex.recordOf;
 // previous: its indexed lines before; board: the index with the record put): a bot
-// owner's line filled (its fills moved: a sale, a bid answered; a line sold out leaves
-// the record and raises none) raises goal_done:line on it; a new SELL line raises
+// owner's line filled (its fills moved: a sale, a bid answered) or sold out (a line it
+// had indexed is among the record's soldOut: a deal emptied it; an owner's own
+// withdrawal is no fill) raises goal_done:line on it; a new SELL line raises
 // line_undercut on the bot owners of the same item's dearer SELL lines where it sells
 // (its town; an unplaced line every town) when it moves the best rival price that line
 // was priced against past its accepted noise (MarketPricing.rivalMoved, the look's own
@@ -140,7 +141,9 @@ class MarketBuyerWaiters {
 const Pricing = () => invoke('GameServer/Bot/Economy/MarketPricing');
 function lineEvents(record, previous, board, wake, capped = () => {}) {
     const ownerId = Number(record.ownerId), old = new Map(previous.map(line => [line.lineId, line]));
-    if (record.botOwned && record.lines.some(line => line.fills > Number(old.get(Number(line.lineId))?.fills ?? line.fills))) {
+    const soldOut = record.soldOut?.length ? new Set(record.soldOut.map(Number)) : null;
+    if (record.botOwned && (record.lines.some(line => line.fills > Number(old.get(Number(line.lineId))?.fills ?? line.fills))
+        || soldOut && previous.some(line => soldOut.has(Number(line.lineId))))) {
         wake(ownerId, 'goal_done:line');
     }
     if (Number(record.storeType) !== 1) return;
@@ -163,4 +166,15 @@ function lineEvents(record, previous, board, wake, capped = () => {}) {
     }
 }
 
-module.exports = { MarketBuyerWaiters, MAX_WANTS, lineEvents };
+// A bot owner's record left the board (previous: its indexed lines; the worker's table
+// remove): a deal that empties a record closes it (its last line sold out), or its
+// owner closed it. The table's remove carries no reason, so both raise goal_done:line
+// on the owner: a supplier whose last line sold is woken to restock (a station trader
+// steps only when woken), and an owner's own close costs it one look at the lines it
+// has left (none, mostly).
+function recordClosed(previous, wake) {
+    const line = previous[0];
+    if (line?.botOwned) wake(Number(line.ownerId), 'goal_done:line');
+}
+
+module.exports = { MarketBuyerWaiters, MAX_WANTS, lineEvents, recordClosed };

@@ -116,7 +116,7 @@ function unindexProjection(projection) {
 function indexProjection(projection) {
     const store = entryStore(projection);
     if (![SELL, BUY].includes(Number(store?.storeType))) return;
-    const row = rowOf(store, projection.shop.escrowAdena);
+    const row = rowOf(store, projection.shop.escrowAdena, projection.shop.lines || []);
     if (!row[6].length) return;
     board.put(recordOf(row), projection);
     changedOwners.add(Number(projection.shop.ownerId));
