@@ -41,7 +41,9 @@ async function run() {
 
     assert.equal(Shops.CraftStations.length, 35);
     const seeded = await Seeder.ensureCraftServices();
-    assert.deepEqual(seeded, { created: 3, seeded: 3 }, 'only the appended services are new');
+    // The station traders' seats (SupplierRoles.SEATS) are seated on the same pass.
+    const seats = invoke('GameServer/Bot/Economy/SupplierRoles').SEATS.length;
+    assert.deepEqual(seeded, { created: 3 + seats, seeded: 3 + seats }, 'only the appended services and the trader seats are new');
     for (let slot = 0; slot < 35; slot++) {
         const accountName = `bot_craft_${String(slot + 1).padStart(2, '0')}`;
         const [character] = await Database.fetchCharacters(accountName);

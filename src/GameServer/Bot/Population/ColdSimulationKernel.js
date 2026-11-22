@@ -386,6 +386,8 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
     if (Number(state.stats?.karma || 0) > 0) return resolverOrHeld(state);
     if (leads) return 'party';
     if (state.activity === 'crafting' && state.stats?.craftShop) return 'event_driven';
+    // A station trader (SupplierRoles.isStationTrader) steps when a raise wakes it, as a craft shop.
+    if (state.stats?.stationTrader) return 'event_driven';
     const stats = state.stats || {};
     if (require('./RaidSupplyPolicy').held(state)) {
         return ['shopping', 'merchant'].includes(state.activity) ? 'command' : resolverOrHeld(state);

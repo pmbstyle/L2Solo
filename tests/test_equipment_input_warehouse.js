@@ -127,6 +127,10 @@ async function run() {
         const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
         // Stock nobody sells takes no focus (T178): another bot sells the shots (the kind it
         // fires holding none: the earning decision's own rule, ShotStock.planForState).
+        // The city reserve store off: the case reads the crystal exchange alone, whatever
+        // reserve rows the stores carry (a purchase holds no inputs).
+        const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+        PopulationConfig.staticShotsDisabled = true;
         const shotBoard = new BoardIndex();
         shotBoard.put({ id: 938050, ownerId: id + 9, storeType: 1, kind: 'shop', town: 'Giran',
             lines: [{ lineId: 938051, selfId: invoke('GameServer/Inventory/ShotStock').planForState(native).selfId,
@@ -140,6 +144,7 @@ async function run() {
         assert.equal(next.target.slot, 10, 'the native choice retains the next robe upgrade');
         assert.equal(next.heldInputs[1458], Math.min(855, next.exchange.materials[0].amount),
             'the native choice captures its finite requirement rather than losing the whole stock');
+        PopulationConfig.staticShotsDisabled = false;
         const stronger = { kind: 'luxury_exchange', ...Luxury.recipes().get(441) };
         const preparing = { ...native, inventory: {}, stats: { ...native.stats, equipmentPlan: {
             strategy: 'luxury_exchange', status: 'active', target: { selfId: 441, slot: 10 }, exchange: stronger,
@@ -195,7 +200,6 @@ async function run() {
         delete sated.inventory[1458]; delete sated.inventory[178];
         // With no seller of C gear (the city reserve store off): a funded bot
         // would otherwise buy the next C robe there and that purchase is a leaf.
-        const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
         PopulationConfig.staticShotsDisabled = true;
         const satedContext = Economy.forState(sated, { timestamp: 1800000000000, board: new BoardIndex(), spots: [],
             routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
