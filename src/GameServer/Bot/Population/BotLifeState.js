@@ -66,10 +66,12 @@ cache.subscribePublications(({ characterId, state, previousState }) => {
 });
 // The lifecycles a bot's own row carries (its party request, its clan errands, a stay trip's return ticket), traced at
 // the commit that changes them: every committed state lands here (a step's commit, a main write, a native reply), a
-// projection never does; the boot's load (no state before) is no event. A stay trip's expiry is counted with the
-// trace off too.
+// projection never does; the boot's load (no state before) is no event. A stay trip's expiry and a town arrival are
+// counted with the trace off too.
 cache.subscribePublications(({ state, previousState }) => {
     if (workerProjectorRole || !state || !previousState) return;
+    // A far bot's town arrival (the step that raised arrived_town), counted by town and grade.
+    invoke('GameServer/Bot/Economy/TownArrivals').committed(previousState, state);
     if (previousState.stats?.partyMarketReturn !== state.stats?.partyMarketReturn)
         invoke('GameServer/Bot/Population/PartyMarketBreak').traceCommitted(previousState, state);
     if (!Trace.on()) return;

@@ -9,7 +9,6 @@ const MAX_SHOT_BYTES = 128;
 const { COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES } = require('./ColdEconomyDecision');
 const MAX_PLAN_PAYLOAD_BYTES = MAX_BYTES - COMMAND_HEADER_BYTES - 32 - 8;
 const BoardRules = require('../../AfkTrade/BoardRules');
-const MAX_BUYS = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad;
 const Listing = require('../Economy/MarketListingPolicy');
 const Ready = require('../Economy/ReadyTradeChoice');
 const Alternative = require('../Economy/BidPurchaseAlternative');
@@ -103,7 +102,7 @@ function* prepareNative(state, economy, options) {
     // A selected trade can keep succeeding or retrying for several visits.
     // It must not bypass corrections of the owner's other standing bids.
     const bidCtx = economy.trip?.details ? { ...ctx, travelDetails: economy.trip.details } : ctx;
-    for (const line of own.filter(row => row.storeType === 3 && row.count > 0 && row.pricing).slice(0, MAX_BUYS)) {
+    for (const line of own.filter(row => row.storeType === 3 && row.count > 0 && row.pricing).slice(0, BoardRules.buyWants(state))) {
         const ceiling = Math.min(Alternative.forLine(line, bidCtx), Alternative.cashCap(line, bidCtx));
         if (Number.isSafeInteger(ceiling) && ceiling >= 0 && ceiling < line.price)
             limits.push([line.lineId, line.recordId, line.revision, line.count, line.price, ceiling]);
@@ -141,11 +140,13 @@ function* prepareNative(state, economy, options) {
             characterId: state.characterId, timestamp: options.now });
         const visitTown = state.activity === 'shopping' && invoke('GameServer/Bot/Economy/ShopPlaces').hasPlaza(state.currentRegion)
             ? state.currentRegion : null;
-        const heldTown = standingShop?.town || state.stats?.shopTown?.town || visitTown;
+        // A supplier's shop stands in its held store town (SupplierRoles.storeTown).
+        const heldTown = state.stats?.storeTown?.town || standingShop?.town || state.stats?.shopTown?.town || visitTown;
         shopTown = heldTown || (yield* Town.chooseTown(state, listings.slice(0, 3), townOptions)).town;
         // Field quotes stay available until a real visit. In its chosen town the
-        // bot promotes its best quotes; an existing shop can be refreshed remotely.
-        const publishShop = !!standingShop || state.activity === 'shopping' && state.currentRegion === shopTown;
+        // bot promotes its best quotes; an existing shop there can be refreshed remotely
+        // (one standing elsewhere moves at a visit to its town).
+        const publishShop = standingShop?.town === shopTown || state.activity === 'shopping' && state.currentRegion === shopTown;
         const sell = [];
         let showcaseChanged = false;
         for (let at = 0; at < Math.min(8, listings.length); at++) {
@@ -195,7 +196,7 @@ function* prepareNative(state, economy, options) {
             lines = BuyAds.keepRetainedBids(state, own, lines, economy.network?.moneyPrice, options.buyOrderEscrow || 0,
                 BuyAds.heldPurchaseRoot(goal));
             let batch;
-            try { batch = buyBatch(lines); }
+            try { batch = buyBatch(state, lines); }
             // A bug in the buy build, kept apart from a refused line (both leave the buy unprepared).
             catch (error) { FailureLog.note('economy.buy_batch', error); batch = { buyAds: [null] }; }
             Object.assign(plan, batch);
@@ -281,8 +282,8 @@ function sellSigma(row, ctx) {
 function dropBuyBatch(plan) {
     delete plan.buyAds; delete plan.buyKit; delete plan.buyCaps;
 }
-function buyBatch(lines) {
-    const rows = lines.slice(0, MAX_BUYS);
+function buyBatch(state, lines) {
+    const rows = lines.slice(0, BoardRules.buyWants(state));
     const buyAds = rows.map(row => row.intent ? TradeIntent.encode(row.intent) : [row.selfId, row.count, row.price]);
     const buyKit = rows.map(row => Number(row.survivalCost) || 0);
     const buyCaps = rows.map(row => Number.isFinite(row.purchaseCap) ? Math.floor(row.purchaseCap) : null);
