@@ -4,6 +4,7 @@
 const { personalOfferAllowed } = require('../Population/PartyAdmission');
 const { admits } = require('./OfferQuery');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
+const SaleRefusals = require('./MeetingSaleRefusals');
 const BotImprovementService = invoke('GameServer/Bot/Economy/BotImprovementService');
 const MAX_INSPECTED = 20;
 const positive = value => Number.isSafeInteger(value) && value > 0;
@@ -64,9 +65,10 @@ function clanCraftPurchase(state, economy, board) {
     }
     return null;
 }
-function sale(answers, state) {
+function sale(answers, state, board) {
     for (const answer of answers || []) {
-        if (!personalOfferAllowed(answer.line, state)) continue;
+        if (SaleRefusals.rejects(board, answer.line, answer.count, state?.characterId)
+            || !personalOfferAllowed(answer.line, state)) continue;
         const tuple = encode(BUY, answer.line, answer.count, state);
         if (tuple) return tuple;
     }
@@ -83,6 +85,7 @@ function resolve(tuple, board, ownerId) {
     const [side, selfId, count, recordId, lineId, revision, price] = tuple;
     const line = board?.records?.get(recordId)?.find(row => row.lineId === lineId);
     const state = tradeStateForOwner(ownerId);
+    if (side === BUY && SaleRefusals.rejects(board, line, count, ownerId)) return null;
     if (line && side === SELL && line.custodyPolicy === 1
         && require('./MeetingPriceRefusals').rejects(line, count, state)) return null;
     return line && personalOfferAllowed(line, state) && line.storeType === side && executable(side, line, state) && line.selfId === selfId

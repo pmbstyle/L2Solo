@@ -67,6 +67,9 @@ invoke('GameServer/Bot/Economy/TradeIntent').project = () => [{
 invoke('GameServer/Bot/Population/ColdOccupationSources').npcOffersFor = id => id === 413
     ? [{ sourceType: 'npc', town: 'Giran', price: 80000 }] : [];
 invoke('GameServer/Bot/Economy/PurchaseFunding').spendable = (_state, _escrow, options) => options?.free ? 0 : 1000000;
+const listing = invoke('GameServer/Bot/Economy/MarketListingPolicy'), evaluate = listing.evaluate;
+listing.evaluate = (state, options) => state.characterId === 43 && options?.selectedAnswer
+    ? { answers: [] } : evaluate(state, options);
 `;
 
 (async () => {
@@ -94,7 +97,7 @@ invoke('GameServer/Bot/Economy/PurchaseFunding').spendable = (_state, _escrow, o
         await until(message => message.type === 'ready' && message.payload.phase === 'loaded', 120000);
         send('catalog_page', { catalog: 'spots', rows: [], done: true });
         send('catalog_page', { catalog: 'npc_offers', rows: [], done: true });
-        const { rowOf } = require('../src/GameServer/AfkTrade/BoardIndex');
+        const { BoardIndex, rowOf, recordOf } = require('../src/GameServer/AfkTrade/BoardIndex');
         const bid = rowOf({ shopId: 100, ownerId: 42, revision: 1, kind: 'buy_ad', storeType: 3,
             custodyPolicy: 1, town: 'Giran', botOwned: true,
             items: [{ afkTradeLineId: 1000, selfId: 413, count: 2, price: 188565, enchant: 0 }] });
@@ -118,9 +121,9 @@ invoke('GameServer/Bot/Economy/PurchaseFunding').spendable = (_state, _escrow, o
                 revision: 0, sequence: 1, needRevision: 0, route: { fee: 0, scroll: false, method: 'walk', durationMs: 0 } })),
             lines: [1, 2].map(itemId => ({ payer: 0, selfId: 413, enchant: 0, itemId, count: 1, price,
                 adId, adRevision: 1 })) });
-        const prepare = input => {
+        const prepare = (input, characterId = 42) => {
             for (const frame of Codec.pages(input)) send('command_request', { requests: [{
-                kind: 'meeting', characterId: 42, commandId: input.token, frame }] });
+                kind: 'meeting', characterId, commandId: input.token, frame }] });
         };
         prepare(request('expensive-purchase', 188565));
         const refused = await until(message => message.type === 'command_ack'
@@ -178,6 +181,20 @@ invoke('GameServer/Bot/Economy/PurchaseFunding').spendable = (_state, _escrow, o
         const consent = Codec.fromPages(frames);
         assert.equal(consent.lines.length, 2);
         assert(consent.lines.every(line => line.certificate?.[2] === 80000));
-        console.log('Real meeting worker: refuses overpayment before consent, permits full-quantity NPC-equivalent purchase');
+
+        const seller = { ...state, characterId: 43, name: 'Seller', inventory: { 413: { selfId: 413, amount: 2 } } };
+        send('snapshot_page', { rows: [{ state: seller }], ack: true });
+        await until(message => message.type === 'ready' && message.payload.phase === 'state_loaded' && message.payload.characterId === 43);
+        const token = 'seller-refuses-bid';
+        prepare(request(token, 188565), 43);
+        const sellerRefusal = await until(message => message.type === 'command_ack'
+            && message.payload.results?.some(row => row.commandId === token));
+        const board = new BoardIndex();
+        board.put(recordOf(bid)); board.put(recordOf(ask));
+        assert.equal(sellerRefusal.payload.results[0].reason, 'trade_meeting_sale_changed');
+        assert.equal(sellerRefusal.payload.results[0].saleFingerprint, board.itemFingerprint(413),
+            'the seller refusal carries the fingerprint that the main board can verify');
+        assert(Buffer.byteLength(JSON.stringify(sellerRefusal)) <= 768);
+        console.log('Real meeting worker: validates purchase terms and delivers the seller refusal with matching board evidence');
     } finally { await worker.terminate(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

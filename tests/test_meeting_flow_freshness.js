@@ -65,7 +65,9 @@ const native = require('./helpers/workerEconomyDecision');
     Market.supplyDeal(1463, 1000, 'Giran', timestamp - 1000);
     const duringMeetingMarket = marketSource.allRows().filter(row => ['h:1463', 'f:shot d'].includes(row[0]));
     assert.equal(Market.revisionOf('shot d'), priceRevision);
-    const prepared = await native(funded, { ...oldInput, duringMeetingMarket, meetingRequest: structuredClone(request) });
+    const prepared = await native({ ...funded, phase: 'hot', nearSeq: 1 }, { ...oldInput, duringMeetingMarket, duringMeetingRefresh: true,
+        meetingRequest: structuredClone(request) });
+    assert.equal(prepared.refreshInjected, true, 'an in-flight calculation survives the full hot snapshot path');
     assert.equal(prepared.flowInjected, true, 'the update arrives after the native graph was built');
     assert.equal(prepared.flowInvalidated, true, 'the real market watcher retires in-flight consent on flow alone');
     const packed = MeetingCodec.fromPages(prepared.frames);

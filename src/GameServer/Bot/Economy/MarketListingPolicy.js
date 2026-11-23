@@ -91,6 +91,7 @@ function traderContext(state, options = {}) {
         knowledgeEnabled: options.knowledgeEnabled,
         demandFor: options.demandFor,
         ownStock: options.ownStock,
+        firstSaleUnits: options.firstSaleUnits,
         canSell: options.canSell,
         derivedDemandValue: options.derivedDemandValue,
         derivedDemandSupported: options.derivedDemandSupported

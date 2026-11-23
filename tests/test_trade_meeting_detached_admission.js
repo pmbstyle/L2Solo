@@ -140,8 +140,28 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
         Afk.boardIndex().put({ id: 999103, ownerId: 999101, revision: 1, storeType: 1, town: 'Giran',
             lines: [{ lineId: 999104, selfId: 1867, count: 1, price: 90 }] });
         const prepared = [Afk.BUY, 1867, 1, buyAd.id, buyAd.lines[0].id, buyAd.revision, 100];
-        assert(invoke('GameServer/Bot/Economy/ReadyTradeChoice').resolve(prepared, Afk.boardIndex(), ids[1]),
+        assert(Choice.resolve(prepared, Afk.boardIndex(), ids[1]),
             'the seller has an executable pre-refusal plan');
+        let sellerChecks = 0;
+        Coordinator.requestMeetingPreparation = async (id, request) => {
+            if (id === ids[1]) {
+                sellerChecks++;
+                const error = Error('trade_meeting_sale_changed');
+                error.saleFingerprint = Afk.boardIndex().itemFingerprint(1867);
+                throw error;
+            }
+            return { approved: true, token: request.token, characterId: id };
+        };
+        const sellerRefusal = await Meetings.trade(ids[1], { shopId: buyAd.id }, 1867, 2);
+        for (let pass = 0; pass < 100 && Meetings.hasPreparation(ids[1]); pass++) await tick();
+        assert(!await Database.fetchTradeMeetingByToken(sellerRefusal.token));
+        assert.equal(Choice.resolve([prepared[0], prepared[1], 2, ...prepared.slice(3)], Afk.boardIndex(), ids[1]), null,
+            'a prepared sale cannot retry the refusal');
+        await assert.rejects(Meetings.trade(ids[1], { shopId: buyAd.id }, 1867, 2), /trade_meeting_sale_changed/);
+        assert.equal(sellerChecks, 1, 'the normal trade entry point refuses before a second worker request');
+        assert(Choice.resolve(prepared, Afk.boardIndex(), ids[1]), 'a smaller sale can still be checked');
+        assert(Afk.boardIndex().records.has(buyAd.id), 'a seller refusal leaves the public bid available');
+
         let refreshed = null;
         Events.raiseOn = id => { refreshed = id; return Promise.resolve(true); };
         Coordinator.requestMeetingPreparation = async (id, request) => {

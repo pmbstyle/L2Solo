@@ -11,6 +11,7 @@ const BotManager = invoke('GameServer/Bot/BotManager');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
 const TradeService = invoke('GameServer/Bot/TradeService');
+const SaleRefusals = require('../src/GameServer/Bot/Economy/MeetingSaleRefusals');
 
 // A hot bot selling loot to an AFK buy order offers only what a store sale
 // may take (TradeService.previewSaleToStore): not the materials its craft
@@ -23,7 +24,7 @@ require(npcTalkPath);
 
 function item(selfId, amount, options = {}) {
     return {
-        fetchId: () => 700000 + selfId,
+        fetchId: () => options.objectId ?? 700000 + selfId,
         fetchSelfId: () => selfId,
         fetchName: () => `Item ${selfId}`,
         fetchAmount: () => amount,
@@ -133,6 +134,39 @@ async function run() {
         AfkTrade._resetForTests();
     }
 
+    const GEAR = 18;
+    const gearBot = { ...bot, backpack: { fetchItems: () => [950011, 950012, 950013]
+        .map(objectId => item(GEAR, 1, { objectId })) } };
+    const gearState = { ...state, phase: 'hot', activity: 'shopping', currentRegion: 'Gludio',
+        inventory: {}, stats: { classId: 0 } };
+    const bid = { id: 950020, ownerId: 950021, ownerName: 'Buyer', ownerAccount: 'bot_950021', kind: 'buy_ad',
+        custodyPolicy: 1, storeType: AfkTrade.BUY, status: 'active', town: 'Gludio', title: '', revision: 1, expiresAt: 0,
+        ...GLUDIO, appearance: {}, lines: [{ id: 950022, selfId: GEAR, name: 'Gear', count: 3, price: 100000, enchant: 0 }] };
+    AfkTrade.refreshRecord(bid);
+    const Pricing = invoke('GameServer/Bot/Economy/PriceDecision'), choose = Pricing.chooseByValue;
+    try {
+        Pricing.chooseByValue = choices => choices.find(option => option.action === 'ad') || null;
+        const select = () => TradeService.findAfkBuyerForActor(gearBot, { name: 'Gludio' }, gearState, { now: 1800000000000 });
+        const selected = select();
+        assert.deepStrictEqual(selected?.sale, { [GEAR]: 3 }, 'the bid initially attracts all three copies');
+        const board = AfkTrade.boardIndex(), quote = board.records.get(bid.id)[0];
+        let submitted;
+        AfkTrade.sellToShop = async (id, _store, selfId, quantity) => {
+            assert.strictEqual(selfId, GEAR);
+            submitted = quantity;
+            SaleRefusals.remember(board, quote, quantity, id, board.itemFingerprint(selfId));
+            throw Error('trade_meeting_sale_changed');
+        };
+        const target = { ...MarketOpportunity.offerTarget(selected.offer, 'Gludio'), sale: selected.sale };
+        await ShoppingState.sellAndRestock({ actor: gearBot, plan: 'shopping', shoppingTarget: target, coldLifeState: gearState },
+            gearBot, null, { say() {} });
+        assert.strictEqual(submitted, 1, 'hot execution sends the first object alone');
+        assert.strictEqual(select(), null, 'a refusal for that object stops the aggregated lot from choosing the same bid');
+    } finally {
+        Pricing.chooseByValue = choose;
+        SaleRefusals.clear();
+        AfkTrade._resetForTests();
+    }
 }
 
 run().then(() => console.log('Hot AFK sale reservation checks passed'))

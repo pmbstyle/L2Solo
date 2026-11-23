@@ -130,7 +130,7 @@ function* prepareNative(state, economy, options) {
         const sale = Listing.evaluate(saleInput.state, saleInput.options);
         // A profitable surplus sale uses a meeting or a backed shop in the town
         // already reached. Leave the selected purchase/focus intact for review.
-        const answer = canTrade && !options.visit ? Ready.sale(sale.answers, state) : null;
+        const answer = canTrade && !options.visit ? Ready.sale(sale.answers, state, saleInput.options.board) : null;
         if (answer) return { take: answer, sell: [], withdraw: [], travel: null, ...bidLimits };
         // Only native acceptance reserves a quote; rejection keeps the plan.
         if (start?.take) return { ...start, ...bidLimits };

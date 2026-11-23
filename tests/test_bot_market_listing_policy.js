@@ -229,6 +229,35 @@ try {
     assert.equal(better.answers.length, 0, 'a different better bid cannot authorize the old selected buyer');
 } finally { PricingDecision.chooseByValue = originalChoice; }
 
+const SaleRefusals = require('../src/GameServer/Bot/Economy/MeetingSaleRefusals');
+const twoBids = new BoardIndex({ groupOf: MarketCounters.counterOf });
+const preferred = { id: 950030, kind: 'buy_ad', storeType: 3, custodyPolicy: 1, ownerId: 950031,
+    town: 'Giran', revision: 1, lines: [{ lineId: 950032, selfId: 1865, count: 2, price: 20000, enchant: 0 }] };
+twoBids.put(preferred);
+twoBids.put({ ...preferred, id: 950040, ownerId: 950041,
+    lines: [{ ...preferred.lines[0], lineId: 950042, price: 10000 }] });
+const buyerFor = seller => MarketListingPolicy.evaluate(seller, options({ board: twoBids, tripCost: sameTown,
+    keptAmounts: {}, preparedReservations: {} })).answers[0]?.line.recordId;
+try {
+    PricingDecision.chooseByValue = choices => choices.find(option => option.action === 'ad') || null;
+    assert.equal(buyerFor(tinyStock), preferred.id);
+    const quote = twoBids.records.get(preferred.id)[0];
+    const originalMarket = twoBids.itemFingerprint(quote.selfId);
+    assert(SaleRefusals.remember(twoBids, quote, 2, tinyStock.characterId, originalMarket));
+    assert.equal(buyerFor(tinyStock), 950040, 'a seller skips the rejected bid and considers the next one');
+    assert.equal(buyerFor({ ...tinyStock, characterId: 950050 }), preferred.id, 'another seller can still pick the bid');
+    twoBids.remove(950040);
+    assert.equal(buyerFor(tinyStock), preferred.id, 'a withdrawn alternative lets the same bid be evaluated again');
+    assert.equal(SaleRefusals.remember(twoBids, quote, 2, tinyStock.characterId, originalMarket), false,
+        'an older refusal arriving from the worker cannot block the current market');
+    assert(SaleRefusals.remember(twoBids, quote, 2, tinyStock.characterId, twoBids.itemFingerprint(quote.selfId)));
+    twoBids.put({ ...preferred, revision: 2 });
+    assert.equal(buyerFor(tinyStock), preferred.id, 'a new revision is eligible for the original seller');
+} finally {
+    PricingDecision.chooseByValue = originalChoice;
+    SaleRefusals.clear();
+}
+
 // No supported finite item demand exists. The public first price is not an
 // owner-blind recipe willingness or an observed listing lifetime.
 const withoutMarket = MarketListingPolicy.evaluate(state, options());

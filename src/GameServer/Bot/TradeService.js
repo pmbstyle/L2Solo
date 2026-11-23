@@ -301,9 +301,15 @@ function findAfkBuyerForActor(actor, town, state = null, options = {}) {
     const seller = ListingPolicy.actorState({ actor, coldLifeState: state });
     seller.inventory = { ...LifeState.inventorySummaryFromItems(items),
         ...(seller.inventory['57'] ? { 57: seller.inventory['57'] } : {}) };
+    // Shopping sends the first physical object's lot before any other copy.
+    const firstSaleUnits = new Map();
+    for (const item of items) {
+        const selfId = Number(item.fetchSelfId());
+        if (!firstSaleUnits.has(selfId)) firstSaleUnits.set(selfId, Number(item.fetchAmount()));
+    }
     const records = new Map();
     const board = MarketOpportunity.liveBuyBoard(town?.name, actor.fetchId());
-    for (const answer of ListingPolicy.evaluate(seller, { unlimited: true, now: options.now, board }).answers) {
+    for (const answer of ListingPolicy.evaluate(seller, { unlimited: true, now: options.now, board, firstSaleUnits }).answers) {
         if (answer.line.town !== town?.name) continue;
         const record = records.get(answer.line.recordId) || { line: answer.line, score: 0, sale: {} };
         // Expected receipts: a conditional bid pays only its willing units.

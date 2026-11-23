@@ -15,6 +15,7 @@ const { MAX_INSPECTED } = require('./ReadyTradeChoice');
 const PartyAdmission = require('../Population/PartyAdmission');
 const ColdEconomyDecision = require('../Population/ColdEconomyDecision');
 const BoardLook = require('./BoardLook');
+const SaleRefusals = require('./MeetingSaleRefusals');
 
 // A bot as a trader: its persona's parameters, its hour and its money, its
 // trips, and what its thread knows of the board. deps: { board, persona,
@@ -106,6 +107,7 @@ function traderContext(state, deps = {}) {
         adena,
         timestamp,
         board: deps.board || economy.board,
+        firstSaleUnits: deps.firstSaleUnits,
         npcOffersFor: deps.npcOffersFor || (() => []),
         purchaseNpcOffersFor: deps.purchaseNpcOffersFor || deps.npcOffersFor || (() => []),
         demandFor: deps.demandFor || economy.demandFor || demandFor,
@@ -140,8 +142,10 @@ function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0
     // physical answer still offers the bid's count; the trade checks money.
     const lines = (ctx.board?.list(selfId, BUY) || []).slice(0, MAX_INSPECTED);
     const seller = { characterId: Number(ctx.characterId), marketTrades: ctx.marketTrades || {} };
+    const firstSaleUnits = Math.min(units, ctx.firstSaleUnits?.get(Number(selfId)) ?? units);
     for (const line of lines) {
         if (line.ownerId === Number(ctx.characterId) || line.enchant !== Number(enchant || 0)) continue;
+        if (SaleRefusals.rejects(ctx.board, line, Math.min(firstSaleUnits, line.count), ctx.characterId)) continue;
         if (line.custodyPolicy === 1 && !PartyAdmission.personalOfferAllowed(line, ctx.state)) continue;
         const sale = PriceDecision.bidSale(seller, line, { board: ctx.board, persona: ctx.persona,
             timestamp: ctx.timestamp, units, residualUnitValue, belief });

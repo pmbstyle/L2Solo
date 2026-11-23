@@ -3,6 +3,7 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const { BUY } = require('../../AfkTrade/BoardIndex');
+const SaleRefusals = require('./MeetingSaleRefusals');
 
 const { bidFor } = require('./BuyAdPolicy');
 
@@ -89,8 +90,9 @@ async function sellToBestBuyer(state, town = state?.currentRegion, options = {})
     let seller = state;
     const sales = [];
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    const board = AfkTrade.boardIndex();
     for (const answer of options.answers || answers(state, options)) {
-        if (answer.line.town !== town) continue;
+        if (answer.line.town !== town || SaleRefusals.rejects(board, answer.line, answer.count, seller.characterId)) continue;
         const offer = AfkTrade.offerOf(answer.line, town);
         if (!offer) continue;
         const result = await settleLine(seller, answer.item, town, { offer, maxQty: answer.count });
