@@ -354,6 +354,46 @@ function nearHeld(record, row) {
     return row.phase === 'hot' && record.phase === 'hot' && Number(row.nearSeq || 0) < Number(record.nearSeq || 0);
 }
 
+function meetingFacts(state) {
+    // nearEvents has already applied the events in the transport envelope to stats.
+    const { updatedAt, nearSeq, raise, ...facts } = state;
+    if (!facts.stats) return facts;
+    const { lastReason, playedHours, ...stats } = facts.stats;
+    if (stats.coldCombat) {
+        const { capturedAt, cpAt, ...combat } = stats.coldCombat;
+        stats.coldCombat = combat;
+    }
+    facts.stats = stats;
+    return facts;
+}
+
+// A hot post refreshes the play clock and combat stamps even when the bot is idle.
+// Compare actual CP and physical stock, including changes at the same revision.
+function sameMeetingState(before, after) {
+    return before === after || Boolean(before && after && isDeepStrictEqual(meetingFacts(before), meetingFacts(after)));
+}
+
+// A refusal reports a few paths from the same projection used to compare the rows.
+function meetingChangePaths(before, after) {
+    if (!before || !after) return ['state'];
+    const paths = [];
+    const record = value => value && typeof value === 'object' && !Array.isArray(value);
+    function visit(left, right, parent, depth) {
+        for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
+            if (paths.length === 6) break;
+            const both = Object.hasOwn(left, key) && Object.hasOwn(right, key);
+            const a = left[key], b = right[key];
+            if (both && isDeepStrictEqual(a, b)) continue;
+            const path = parent ? `${parent}.${key}` : key;
+            const previousCount = paths.length;
+            if (both && depth > 0 && record(a) && record(b)) visit(a, b, path, depth - 1);
+            if (paths.length === previousCount) paths.push(path.slice(0, 56));
+        }
+    }
+    visit(meetingFacts(before), meetingFacts(after), '', 2);
+    return paths.length ? paths : ['state'];
+}
+
 // The decision bits a raise set since the bot's last state (its woken bits as
 // raised, Situations: a step answers them).
 const newlyWoken = (before, after) => !!(Number(after?.stats?.woken || 0) & ~Number(before?.stats?.woken || 0));
@@ -1541,7 +1581,7 @@ class ColdSimulationKernel {
             attempt.frames = []; attempt.preparing = true;
             Promise.resolve(this.prepareMeeting?.(id, input, attempt)).then(result => {
                 if (this.commandStartedAt.get(id) !== attempt) return;
-                if (!result || this.states.get(id)?.state !== attempt.state) throw Error('trade_meeting_stale_worker');
+                if (!result || !sameMeetingState(attempt.state, this.states.get(id)?.state)) throw Error('trade_meeting_stale_worker');
                 const frames = this.meetingResultPages(result, id, identity.commandId);
                 attempt.output = frames; attempt.acked = new Set(); attempt.sent = true;
                 for (const frame of frames) if (this.emit('command_request', { requests: [{ ...identity, frame }] },
@@ -1551,6 +1591,7 @@ class ColdSimulationKernel {
                 if (!this.cancelCommand(id, attempt)) return;
                 const result = { ...identity, pageIndex: -1, ok: false, reason: String(error.message || error) };
                 if (error.priceEvidence || error.priceFallback) result.priceEvidence = error.priceEvidence || error.priceFallback;
+                if (error.saleFingerprint) result.saleFingerprint = error.saleFingerprint;
                 // The sender checks the full envelope and can use the smaller
                 // evidence or omit it without losing the refusal itself.
                 this.emit('command_ack', { results: [result] }, null, null, error.priceFallback);
@@ -1659,10 +1700,15 @@ class ColdSimulationKernel {
         const id = Number(characterId), attempt = this.commandStartedAt.get(id), current = this.states.get(id);
         if (!attempt || typeof attempt !== 'object') return;
         if (attempt.kind === 'meeting') {
-            if (current?.state !== attempt.state) {
+            if (sameMeetingState(attempt.state, current?.state)) {
+                attempt.state = current.state;
+            } else {
+                const ownerChange = { paths: meetingChangePaths(attempt.state, current?.state) };
+                const postReason = current?.state.stats?.lastReason;
+                if (typeof postReason === 'string') ownerChange.postReason = postReason.slice(0, 56);
                 this.cancelCommand(id, attempt);
                 this.emit('command_ack', { results: [{ kind: 'meeting', characterId: id, commandId: attempt.commandId,
-                    pageIndex: -1, ok: false, reason: 'trade_meeting_owner_changed' }] });
+                    pageIndex: -1, ok: false, reason: 'trade_meeting_owner_changed', ownerChange }] });
             }
             return;
         }
@@ -3200,6 +3246,7 @@ class ColdSimulationKernel {
 
 module.exports = {
     ColdSimulationKernel,
+    sameMeetingState,
     DueHeap,
     PLAYER_FLUSH_TARGET_MS,
     deterministicRandom,

@@ -102,10 +102,19 @@ module.exports.nativeMeetingPreparation = async (id, timestamp, request) => {
     for (const party of request.parties) party.needRevision ??= party.revision;
     const Intent = require('../Economy/TradeIntent'), original = Intent.meetingPurchase;
     const originalStep = occupationPlanner.step;
-    let trace, flowInjected = false, flowInvalidated = false;
-    if (workerData.duringMeetingMarket?.length) occupationPlanner.step = work => {
+    let trace, refreshInjected = false, flowInjected = false, flowInvalidated = false;
+    if (workerData.duringMeetingRefresh || workerData.duringMeetingMarket?.length) occupationPlanner.step = work => {
         const done = originalStep(work);
-        if (!flowInjected && work.stage === WORK_STAGES.indexOf('candidate') + 1) {
+        const captured = work.stage === WORK_STAGES.indexOf('candidate') + 1;
+        if (captured && workerData.duringMeetingRefresh && !refreshInjected) {
+            refreshInjected = true;
+            const current = kernel.states.get(Number(id)).state;
+            const near = current.phase === 'hot' ? { nearSeq: Number(current.nearSeq || 0) + 1 } : {};
+            kernel.upsert({ state: { ...current, updatedAt: current.updatedAt + 1,
+                ...near,
+                stats: { ...current.stats, lastReason: 'fixture_refresh' } } });
+        }
+        if (captured && workerData.duringMeetingMarket?.length && !flowInjected) {
             flowInjected = true;
             tables.apply([{ name: 'market', from: 0, to: 1, full: false, last: true, removed: [],
                 rows: workerData.duringMeetingMarket.map(row => [row[0], row]) }]);
@@ -123,7 +132,7 @@ module.exports.nativeMeetingPreparation = async (id, timestamp, request) => {
     try {
         const prepared = await kernel.prepareMeeting(Number(id), request);
         return { request: prepared, frames: kernel.meetingResultPages(prepared, Number(id), request.token), trace,
-            flowInjected, flowInvalidated, forbiddenLoaded: Object.keys(require.cache)
+            refreshInjected, flowInjected, flowInvalidated, forbiddenLoaded: Object.keys(require.cache)
             .filter(key => /\/(?:Database|Network)\/|\/src\/Database\.js$|\/World\/World\.js$|\/Bot\/BotManager\.js$/.test(key)) };
     } catch (error) { error.meetingTrace = trace; throw error; }
     finally { Intent.meetingPurchase = original; occupationPlanner.step = originalStep; }
@@ -204,10 +213,10 @@ parentPort.on('message', async message => {
 
 // recipes: the bot's row of main's 'recipes' table ({ recipeBook, knownShotRecipes }), if any.
 module.exports = async function workerEconomyDecision(state, { recipes = null, timestamp = Date.now(),
-    boardRows = [], extraStates = [], tablePages = [], tables = [], recipeEarning = false, stepEconomy = false, nativeRoutes = false, marketPlan = false, marketWarm = null, fundingReview = null, townVisit = false, meetingRequest = null, duringMeetingMarket = [], plannerReuse = null } = {}) {
+    boardRows = [], extraStates = [], tablePages = [], tables = [], recipeEarning = false, stepEconomy = false, nativeRoutes = false, marketPlan = false, marketWarm = null, fundingReview = null, townVisit = false, meetingRequest = null, duringMeetingMarket = [], duringMeetingRefresh = false, plannerReuse = null } = {}) {
     const epoch = `native:economy-decision:${state.characterId}`;
     const messages = [];
-    const worker = new Worker(wrapper, { eval: true, workerData: { sharedGeodata: Geodata.sharedDescriptor(), workerEpoch: epoch, duringMeetingMarket, marketWarm,
+    const worker = new Worker(wrapper, { eval: true, workerData: { sharedGeodata: Geodata.sharedDescriptor(), workerEpoch: epoch, duringMeetingMarket, duringMeetingRefresh, marketWarm,
         workerPath: path.join(root, 'src/GameServer/Bot/Population/ColdSimulationWorker.js'), observer } });
     let fault;
     worker.on('message', message => messages.push(message)); worker.on('error', error => { fault = error; });

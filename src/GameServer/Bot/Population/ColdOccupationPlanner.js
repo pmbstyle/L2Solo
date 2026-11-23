@@ -313,6 +313,7 @@ class ColdOccupationPlanner {
                 try { this.unit(entry); }
                 catch (error) { entry.error = String(error?.message || error); this.reportError(entry, error); this.finish(entry, entry.mode === 'meeting'
                     ? { refused: true, reason: entry.error, ...(error.priceEvidence ? { priceEvidence: error.priceEvidence } : {}),
+                        ...(error.saleFingerprint ? { saleFingerprint: error.saleFingerprint } : {}),
                         ...(error.priceFallback ? { priceFallback: error.priceFallback } : {}) }
                     : UNANSWERED); }
                 clock = this.now();

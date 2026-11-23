@@ -568,15 +568,28 @@ class ColdSimulationCoordinator {
         // commit_ack clears in_flight in the worker. Wait for this owner's ACK,
         // independently of unrelated commits and the lifecycle command tail.
         const commitAck = this.commitAcknowledgements.get(id)?.promise;
-        Promise.all([this.commandTail, commitAck]).then(([, acknowledged]) => {
+        Promise.all([this.commandTail, commitAck]).then(async ([, acknowledged]) => {
             if (promise.settled) return;
             if (acknowledged === false) throw Error('trade_meeting_source_retired');
+            // Shopping can raise its arrival and request consent on the same turn.
+            // Let the body's coalesced post finish building before selecting the source.
+            if (LifeState.cachedState(id)?.phase === 'hot' && World.registeredActorById(id)?.session?.nearPost) {
+                await yieldToLoop();
+                if (promise.settled) return;
+            }
             if (!this.commandInflight.has(id)) this.commandInflight.set(id, promise);
             if (this.commandInflight.get(id) !== promise || this.worker !== worker || this.workerEpoch !== epoch || this.stopping)
                 throw Error('trade_meeting_source_retired');
             const state = LifeState.cachedState(id);
             if (!state) throw Error('trade_meeting_missing_state');
-            this.postCollections('snapshot_page', { rows: [{ state }] });
+            const queued = this.snapshotQueue.dirty.get(id)?.state;
+            // An arrival post may still be waiting in the critical publisher. Put it
+            // on this worker's FIFO before consent. The publisher still owns its queue
+            // entry and any recipe or memory publications associated with delivery.
+            const source = state.phase === 'hot' && queued?.nearSeq > (state.nearSeq || 0)
+                && EconomyCommit.sameAuthority(EconomyCommit.authority(state), EconomyCommit.authority(queued)) ? queued : state;
+            if (!this.post('snapshot_page', { rows: [StateWire.packEntry({ state: source })] }))
+                throw Error('trade_meeting_send_failed');
             const codec = invoke('GameServer/AfkTrade/TradeMeetingCodec');
             const msgId = `meeting:${id}:${token}`;
             const envelope = frame => Protocol.envelope('command_request', epoch,
@@ -778,6 +791,8 @@ class ColdSimulationCoordinator {
                 if (held?.meetingToken === result.commandId && result.ok === false) {
                     const error = Error(result.reason || 'trade_meeting_preparation_refused');
                     if (result.reason === 'trade_meeting_purchase_price_changed') error.priceEvidence = result.priceEvidence;
+                    if (result.reason === 'trade_meeting_sale_changed') error.saleFingerprint = result.saleFingerprint;
+                    if (result.reason === 'trade_meeting_owner_changed') error.ownerChange = { ...result.ownerChange, actorId: result.characterId };
                     this.finishMeetingPreparation(result.characterId, held, null, error);
                 }
             }

@@ -532,8 +532,9 @@ function meetingIdentity(value) {
 function fitMeetingAck(message, fallback) {
     const results = message?.type === 'command_ack' && message.payload?.results;
     if (!Array.isArray(results) || results.length !== 1 || !meetingIdentity(results[0])
-        || results[0].ok !== false || !results[0].priceEvidence || byteLength(message) <= 768) return message;
-    const { priceEvidence, ...result } = results[0];
+        || results[0].ok !== false || !(results[0].priceEvidence || results[0].saleFingerprint || results[0].ownerChange)
+        || byteLength(message) <= 768) return message;
+    const { priceEvidence, saleFingerprint, ownerChange, ...result } = results[0];
     if (fallback) {
         const candidate = { ...message, payload: { ...message.payload, results: [{ ...result, priceEvidence: fallback }] } };
         if (byteLength(candidate) <= 768) return candidate;

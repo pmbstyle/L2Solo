@@ -131,7 +131,7 @@ const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const { SpotContestOutbox } = require('./SpotContestOutbox');
 const FailureLog = require('../../../FailureLog');
-const { ColdSimulationKernel, PLAYER_FLUSH_TARGET_MS } = require('./ColdSimulationKernel');
+const { ColdSimulationKernel, PLAYER_FLUSH_TARGET_MS, sameMeetingState } = require('./ColdSimulationKernel');
 const PartyGoalCalculation = require('./PartyGoalCalculation');
 const { beginHuntingTrip } = require('./HuntingTravel');
 const PveEncounter = require('./ColdPveEncounter');
@@ -152,6 +152,7 @@ const CraftEligibility = require('../Economy/CraftEligibility');
 const CraftShopService = require('../Economy/CraftShopService');
 const RecipeBookCodec = require('../Economy/RecipeBookCodec');
 const EconomyCommit = require('../Economy/EconomyCommit');
+const SaleRefusals = require('../Economy/MeetingSaleRefusals');
 const VisitNeed = require('../../ClanHall/VisitNeed');
 const Rebuff = require('../AI/Rebuff');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
@@ -482,7 +483,8 @@ const occupationPlanner = new ColdOccupationPlanner({
                     const item = input.state.inventory?.[line.selfId];
                     const free = invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(input.state, item || {});
                     if (free < sold.get(line.selfId)) throw Error('trade_meeting_protected_stock');
-                    const quote = input.board?.records.get(line.adId)?.find(row => row.selfId === line.selfId);
+                    const quotes = input.board?.records.get(line.adId) || [];
+                    const quote = quotes.find(row => row.selfId === line.selfId);
                     if (Number(quote?.ownerId) !== ownId) {
                         if (!sellerDecision) {
                             const listing = invoke('GameServer/Bot/Economy/MarketListingPolicy');
@@ -495,7 +497,19 @@ const occupationPlanner = new ColdOccupationPlanner({
                         }
                         const answer = sellerDecision.answers.find(row => row.item.selfId === line.selfId
                             && Number(row.line.recordId) === line.adId && row.count >= line.count);
-                        if (!answer) throw Error('trade_meeting_sale_changed');
+                        if (!answer) {
+                            const matching = quotes.filter(row => row.selfId === line.selfId && row.revision === line.adRevision
+                                && Number(row.enchant || 0) === Number(line.enchant || 0) && row.price === line.price);
+                            const error = Error('trade_meeting_sale_changed');
+                            if (matching.length === 1 && matching[0].custodyPolicy === 1 && matching[0].storeType === 3) {
+                                error.saleFingerprint = input.board.itemFingerprint(line.selfId);
+                                if (SaleRefusals.remember(input.board, matching[0], sold.get(line.selfId), ownId, error.saleFingerprint)) {
+                                    occupationPlanner.cancel(ownId, 'action');
+                                    occupationPlanner.cancel(ownId, 'showcase');
+                                }
+                            }
+                            throw error;
+                        }
                     }
                 }
                 yield 'funding';
@@ -975,7 +989,11 @@ function nearEvents(id, previous, entry, applied) {
     const row = entry.state, stats = row.stats ||= {}, posted = stats.rebuff;
     // The worker owns the near mind: a post's mind keys are discarded and the
     // record's stand, so a late post cannot roll back a raise.
-    for (const key of SavedStats.MIND_KEYS) stats[key] = previous.stats?.[key];
+    const mind = previous.stats || {};
+    for (const key of SavedStats.MIND_KEYS) {
+        if (Object.hasOwn(mind, key)) stats[key] = mind[key];
+        else delete stats[key];
+    }
     // But for the one fact a body's executor writes there: it carried out its held
     // rebuff answer (HotTownRebuff.takeAnswer, done on main): the same answer is held
     // done here, or the bot would carry it out again once far.
@@ -2247,6 +2265,11 @@ function startKernel(config = {}) {
             // the state object), a finished one keyed on the step clock.
             const routeKey = EconomicTrip.key(entry.state);
             for (const held of occupationPlanner.entriesOf(id)) {
+                if (held.mode === 'meeting' && sameMeetingState(held.input.sourceState, entry.state)) {
+                    // Rebase ownership without replacing the prepared inputs, which include the meeting's incoming stock.
+                    occupationPlanner.rebase(held, { ...held.input, sourceState: entry.state });
+                    continue;
+                }
                 const keep = held.mode === 'wish' ? routeKey === held.fingerprint
                     : !IDENTITY_MODES.has(held.mode) && !(held.done && CLOCK_MODES.has(held.mode));
                 const incoming = !keep ? null : held.mode === 'wish'
@@ -2288,6 +2311,7 @@ function startKernel(config = {}) {
                     const error = Error(result?.reason || 'trade_meeting_preparation_pending');
                     if (result?.priceEvidence) error.priceEvidence = result.priceEvidence;
                     if (result?.priceFallback) error.priceFallback = result.priceFallback;
+                    if (result?.saleFingerprint) error.saleFingerprint = result.saleFingerprint;
                     throw error;
                 }
                 return result;

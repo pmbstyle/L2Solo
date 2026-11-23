@@ -186,6 +186,16 @@ function notifyNearFacts(session, reason) {
             // The cached row owns the revision (the handoff moved it);
             // session.coldLifeState may lag it.
             row.simulation = current.simulation;
+            // A body post observes this activation; it does not start a new one.
+            const lastHotAt = current.timing?.lastHotAt ?? null;
+            const previous = session.nearActivity?.lastHotAt === lastHotAt ? session.nearActivity
+                : { activity: current.activity, startedAt: current.timing?.activityStartedAt };
+            const observedAt = row.timing.activityStartedAt;
+            const startedAt = previous.activity === row.activity ? previous.startedAt ?? observedAt : observedAt;
+            session.nearActivity = { activity: row.activity, startedAt, lastHotAt };
+            row.timing.activityStartedAt = startedAt;
+            row.timing.lastHotAt = lastHotAt;
+            if (row.stats.restUntil != null) row.stats.restUntil += startedAt - observedAt;
             // The spot the bot was given, as a far traveler counts at its
             // travel spot; loc stays physical. A body that left its spot stands on none.
             row.spotId = session.currentSpot?.id ?? (spotReason === 'near_left' ? null : row.spotId);

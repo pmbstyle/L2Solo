@@ -7,6 +7,7 @@ const MeetingAnchor = require('./MeetingAnchor');
 const { partyTradeAllowed } = require('../Bot/Population/PartyAdmission');
 const PartyMarketBreak = require('../Bot/Population/PartyMarketBreak');
 const EconomyCommit = require('../Bot/Economy/EconomyCommit');
+const SaleRefusals = require('../Bot/Economy/MeetingSaleRefusals');
 const TableChannel = require('../Bot/Population/ColdTableChannel').shared;
 const Trace = require('../Bot/DecisionTrace');
 const FailureLog = require('../../FailureLog');
@@ -486,6 +487,10 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         || options.expectedPrice !== undefined && line.price !== options.expectedPrice
         || options.expectedRevision !== undefined && record.revision !== options.expectedRevision) throw Error('trade_meeting_quote_changed');
     const buyer = record.storeType === 1 ? characterId : record.ownerId, seller = record.storeType === 1 ? record.ownerId : characterId;
+    const quoteLine = { recordId: record.id, lineId: line.id, selfId: line.selfId, revision: record.revision,
+        storeType: record.storeType, custodyPolicy: record.custodyPolicy };
+    if (record.storeType === 3 && SaleRefusals.rejects(afk().boardIndex(), quoteLine, amount, seller))
+        throw Error('trade_meeting_sale_changed');
     const actors = [buyer, seller].sort((a, b) => a - b), sides = await Promise.all(actors.map(id => db().prepareTradeParticipant(id)));
     if (sides.some((side, index) => !canStartTrade(actors[index], side, sides[1 - index].phase === 'player')))
         throw Error('trade_meeting_party_busy');
@@ -551,10 +556,11 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
     const entry = staged.get(token);
     entry.ready = prepareActors(token).catch(async error => {
         invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('meeting', 'prepare_failed', error?.message || 'error');
+        if (error.message === 'trade_meeting_sale_changed' && error.saleFingerprint)
+            SaleRefusals.remember(afk().boardIndex(), quoteLine, amount, seller, error.saleFingerprint);
         discard(token);
-        // Only the payer's worker refuses; on a buy ad the payer is its owner.
-        // A buy store never refuses a seller: an owner that no longer needs the
-        // line, or will not pay its price, closes it and decides anew.
+        // A refusal from the buy ad's owner retires the line. A seller's
+        // refusal only affects that seller's choices.
         if (record.storeType === 3 && ['trade_meeting_need_changed', 'trade_meeting_purchase_price_changed']
             .includes(error.message)) await buyAdRefused(record, line);
         else if (error.message === 'trade_meeting_need_changed') await purchaseNeedChanged(buyer, errand);
@@ -689,8 +695,9 @@ async function trade(characterId, store, itemId, amount, options) {
     // own bilateral proof and native transaction checks; the old command's
     // async-local write guard must not survive into that independent action.
     entry.ready.then(() => db().withoutMutationAdmission(() => accept(token, characterId))).catch(error => {
-        utils.infoWarn('AfkTrade', 'meeting preparation %s: %s (actor=%d record=%d item=%d count=%d)',
-            token, error.message, characterId, store.shopId, itemId, amount);
+        utils.infoWarn('AfkTrade', 'meeting preparation %s: %s (actor=%d record=%d item=%d count=%d)%s',
+            token, error.message, characterId, store.shopId, itemId, amount,
+            error.ownerChange ? ` ownerChange=${JSON.stringify(error.ownerChange)}` : '');
     });
     return { pending: true, preparationId: token, token, outcome: 'preparing', purchased: false, sold: false, state: life().cachedState(characterId) };
 }
@@ -707,6 +714,7 @@ function presenceChanged(session) {
 }
 function reset() {
     invoke('GameServer/Bot/Economy/MeetingPriceRefusals').clear();
+    SaleRefusals.clear();
     unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
     unsubscribeParty?.();
     unsubscribeLife = unsubscribeMarketLife = unsubscribePlayer = unsubscribeBoard = unsubscribeParty = undefined;
