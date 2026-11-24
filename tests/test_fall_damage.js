@@ -65,6 +65,14 @@ try {
         assert.strictEqual(fall[0].readInt32LE(1), 296, 'Fall damage message must be 296');
         assert.strictEqual(fall[0].readInt32LE(9), 1, 'Fall damage argument must be a number');
         assert.strictEqual(fall[0].readInt32LE(13), 500, 'Fall damage message must carry the damage');
+        const low = actor();
+        low.hp = 100.5;
+        const lowSent = [];
+        low.session = { dataSendToMe: (b) => lowSent.push(b) };
+        validatePosition.isFalling(low, { locZ: 500 }, 1000);
+        assert.strictEqual(lowSent.length, 1, 'Fall damage over the HP must still send the message');
+        assert.strictEqual(lowSent[0].readInt32LE(9), 1, 'Argument must be a number, not text');
+        assert.strictEqual(lowSent[0].readInt32LE(13), 500, 'Message number must equal the computed damage');
         sent.length = 0;
         e.z = 500;
         e.fallingUntil = Date.now() + 10000;

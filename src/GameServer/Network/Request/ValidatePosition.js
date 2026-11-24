@@ -76,9 +76,9 @@ function isFalling(actor, data, now = Date.now()) {
     if (damage > 0 && currentHp > 1) {
         actor.setHp?.(Math.max(1, currentHp - Math.min(damage, currentHp - 1)));
         actor.statusUpdateVitals?.(actor);
-        // C4 FALL_DAMAGE_S1 (296).
-        actor.session?.dataSendToMe?.(Response.systemMessage.typed(296, { number: Math.min(damage, currentHp - 1) }));
     }
+    // C4 (Lisvus L2PcInstance.isFalling): FALL_DAMAGE_S1 (296) carries the computed damage, also at 1 HP.
+    if (damage > 0) actor.session?.dataSendToMe?.(Response.systemMessage.typed(296, { number: damage }));
     actor.fallingUntil = now + FALLING_VALIDATION_DELAY_MS;
     return false;
 }
