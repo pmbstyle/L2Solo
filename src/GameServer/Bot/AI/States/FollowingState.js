@@ -985,11 +985,13 @@ const FollowingState = {
 
     // Role, distance, party settings, pull state and the threat this companion answers; protected raid retreat.
     tickPartyContext(ctx) {
-        const { session, bot, playerSession, player } = ctx;
+        const { session, bot, playerSession } = ctx;
         const role = BotRoles.inferRole(bot);
-        const distance = point(bot).distance(point(player));
-        const leaderSeated = player.state?.fetchSeated?.() === true;
-        const restFormationTarget = leaderSeated ? followTargetFor(session, player) : null;
+        // A command-party leader's party is its own; the body it keeps range to and rests with is the commander.
+        const leader = invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session).actor;
+        const distance = point(bot).distance(point(leader));
+        const leaderSeated = leader.state?.fetchSeated?.() === true;
+        const restFormationTarget = leaderSeated ? followTargetFor(session, leader) : null;
         const restFormationDistance = restFormationTarget
             ? distance2d(loc(bot), restFormationTarget)
             : distance;

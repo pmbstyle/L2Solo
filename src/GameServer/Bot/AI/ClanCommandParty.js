@@ -223,6 +223,14 @@ function formationTarget(session) {
         locY: Math.round(commander.fetchLocY() + x * Math.sin(angle) + y * Math.cos(angle)), locZ: commander.fetchLocZ() };
 }
 
+// The body a command-party bot follows and rests with. The bot leader's party
+// is its own, but it walks beside the commander and sits when the commander sits,
+// as a main-party companion does; members follow their bot leader.
+function followBody(session) {
+    const group = groupFor(session);
+    return group && session === group.owner && current(group) ? group.commander : session.followPlayerSession;
+}
+
 function followLeader(session, bot) {
     const group = groupFor(session);
     if (!group || session !== group.owner || session.currentTargetId || bot.state?.fetchCasts?.() || bot.state?.fetchHits?.()) return false;
@@ -362,4 +370,4 @@ function handleCommand(player, text, isCurrent) {
 }
 
 module.exports = { groupFor, commanderFor, authorized, current, roster, combatSessions, memberAttached, memberDetached,
-    dismiss, dismissAll, recruit, movement, applyMemberOrder, formationTarget, followLeader, syncLoot, prepareRaid, handleMovement, canAttack, canTaunt, handleCommand };
+    dismiss, dismissAll, recruit, movement, applyMemberOrder, formationTarget, followBody, followLeader, syncLoot, prepareRaid, handleMovement, canAttack, canTaunt, handleCommand };
