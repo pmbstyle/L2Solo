@@ -223,12 +223,14 @@ function formationTarget(session) {
         locY: Math.round(commander.fetchLocY() + x * Math.sin(angle) + y * Math.cos(angle)), locZ: commander.fetchLocZ() };
 }
 
-// The body a command-party bot follows and rests with. The bot leader's party
-// is its own, but it walks beside the commander and sits when the commander sits,
-// as a main-party companion does; members follow their bot leader.
-function followBody(session) {
+// The body a companion follows, rests with and returns to. A command party's bot
+// leader leads its own party but walks beside the commander and sits when the
+// commander sits, as a main-party companion does; under a Hold order it keeps its
+// own post. Members follow their bot leader. partySession is the party leader the
+// caller holds (a town visit holds it in its return snapshot).
+function followBody(session, partySession = session.followPlayerSession) {
     const group = groupFor(session);
-    return group && session === group.owner && current(group) ? group.commander : session.followPlayerSession;
+    return group && session === group.owner && !session.botStay && current(group) ? group.commander : partySession;
 }
 
 function followLeader(session, bot) {

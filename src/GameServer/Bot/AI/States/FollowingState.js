@@ -987,7 +987,6 @@ const FollowingState = {
     tickPartyContext(ctx) {
         const { session, bot, playerSession } = ctx;
         const role = BotRoles.inferRole(bot);
-        // A command-party leader's party is its own; the body it keeps range to and rests with is the commander.
         const leader = invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session).actor;
         const distance = point(bot).distance(point(leader));
         const leaderSeated = leader.state?.fetchSeated?.() === true;
@@ -1079,7 +1078,7 @@ const FollowingState = {
         const leaderTargetId = partyRaid?.phase === 'combat'
             ? Number(partyRaid.targetId || partyRaid.bossId)
             : (pulling.enabled ? undefined : configuredLeaderTargetId);
-        Object.assign(ctx, { role, distance, leaderSeated, restFormationDistance, partySettings, partyRaid, pulling, personalSupportThreat, rawThreatOnlyTargetsTravellingPuller, partyThreat, currentPartyAggroMonsters, leaderTargetId });
+        Object.assign(ctx, { role, leader, distance, leaderSeated, restFormationDistance, partySettings, partyRaid, pulling, personalSupportThreat, rawThreatOnlyTargetsTravellingPuller, partyThreat, currentPartyAggroMonsters, leaderTargetId });
         return false;
     },
 
@@ -1272,7 +1271,7 @@ const FollowingState = {
 
     // Vitals, return after support, resting with the leader, low HP/MP recovery.
     tickRest(ctx) {
-        const { session, bot, BotAI, playerSession, player, distance, leaderSeated, restFormationDistance, pulling, partyThreat, leaderTargetId, personalSupportThreat } = ctx;
+        const { session, bot, BotAI, playerSession, player, leader, distance, leaderSeated, restFormationDistance, pulling, partyThreat, leaderTargetId, personalSupportThreat } = ctx;
         const botVitals = {
             hpRatio: ratio(bot.fetchHp(), bot.fetchMaxHp()),
             mpRatio: ratio(bot.fetchMp(), bot.fetchMaxMp())
@@ -1293,7 +1292,7 @@ const FollowingState = {
             session.currentTargetId = undefined;
             bot.unselect();
             if (distance > FOLLOW_RUN_DISTANCE) {
-                moveToFollowTarget(session, bot, player);
+                moveToFollowTarget(session, bot, leader);
                 recordRoleDecision(session, bot, 'follow_leader', 'return_after_support');
                 return true;
             }
@@ -1306,8 +1305,8 @@ const FollowingState = {
             if (distance > FOLLOW_RUN_DISTANCE && restFormationDistance > FOLLOW_FORMATION_TOLERANCE) {
                 standUp(session, bot);
                 recordRoleDecision(session, bot, 'rest_with_leader', 'move_near_sitting_leader');
-                if (!shouldKeepCurrentFollowMove(session, bot, player, distance)) {
-                    moveToFollowTarget(session, bot, player);
+                if (!shouldKeepCurrentFollowMove(session, bot, leader, distance)) {
+                    moveToFollowTarget(session, bot, leader);
                 }
                 return true;
             }

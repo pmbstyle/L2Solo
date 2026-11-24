@@ -317,8 +317,25 @@ function restWithCommander() {
     const Following = invoke('GameServer/Bot/AI/States/FollowingState');
     const ai = { say() {}, executeCombat() {}, wakeup() {} }, generics = { skillExec() {}, teleportTo() {} };
 
+    const Resting = invoke('GameServer/Bot/AI/States/RestingState');
+
+    group.movement = 'hold';
+    for (const session of group.members) Object.assign(session, { botStay: true, stayLocation: { locX: 0, locY: 0, locZ: 0 } });
+    Object.assign(commander.actor, { x: 3000, seated: true });
     leader.plan = 'resting';
-    invoke('GameServer/Bot/AI/States/RestingState').tick(leader, leader.actor, generics, ai);
+    Resting.tick(leader, leader.actor, generics, ai);
+    assert.equal(leader.plan, 'resting', 'a held command leader does not leave its post to sit by the commander');
+    Following.tick(leader, leader.actor, generics, ai);
+    for (let tick = 0; tick < 2; tick++) Following.tick(member, member.actor, generics, ai);
+    assert.deepEqual([leader.actor.moves.length, member.actor.moves.length], [0, 0], 'a held command party stays at its post');
+    group.movement = 'follow';
+    for (const session of group.members) Object.assign(session, { botStay: false, stayLocation: null, plan: 'following' });
+    Object.assign(commander.actor, { x: 100, seated: false });
+    Object.assign(leader.actor, { seated: true });
+    Object.assign(member.actor, { seated: true });
+
+    leader.plan = 'resting';
+    Resting.tick(leader, leader.actor, generics, ai);
     assert.equal(leader.plan, 'following', 'a rested command leader ends its rest when the commander stands beside it');
     assert.equal(leader.actor.seated, false);
 

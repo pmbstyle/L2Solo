@@ -148,7 +148,6 @@ module.exports = {
                 return;
             }
 
-            // A command-party leader's party is its own; the body it rests with is the commander.
             const leader = invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session).actor;
             const distance = point(bot).distance(point(leader));
             if (invoke('GameServer/Bot/AI/PlayerPartyRaid').tick(session, bot, Generics, BotAI)) return;
