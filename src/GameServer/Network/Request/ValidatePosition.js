@@ -2,9 +2,11 @@ const ReceivePacket = invoke('Packet/Receive');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const Response = invoke('GameServer/Network/Response');
 const GardenOfEvaBarriers = require('../../Geodata/GardenOfEvaBarriers');
 
 const FALL_HEIGHT = 333;
+const FALL_THROUGH_TOLERANCE = 100;
 const FALLING_VALIDATION_DELAY_MS = 10000;
 const IMMOBILE_XY_TOLERANCE = 16;
 const IMMOBILE_Z_TOLERANCE = 64;
@@ -38,7 +40,14 @@ function consume(session, data) {
         }
         return false;
     }
-    if (isFalling(session.actor, data)) return false;
+    if (isFalling(session.actor, data)) {
+        // C4 (Lisvus ValidatePosition): a client that fell through its own map mesh is put back on the geodata floor.
+        const floorZ = GeodataEngine.getHeight(data.locX, data.locY, data.locZ);
+        if (floorZ - data.locZ > FALL_THROUGH_TOLERANCE) {
+            session.dataSendToMe(Response.validateLocation(session.actor.fetchId(), { ...data, locZ: floorZ }));
+        }
+        return false;
+    }
     const actor = session.actor;
     if (GardenOfEvaBarriers.blocks(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ(),
         data.locX, data.locY, data.locZ)) {
@@ -67,6 +76,8 @@ function isFalling(actor, data, now = Date.now()) {
     if (damage > 0 && currentHp > 1) {
         actor.setHp?.(Math.max(1, currentHp - Math.min(damage, currentHp - 1)));
         actor.statusUpdateVitals?.(actor);
+        // C4 FALL_DAMAGE_S1 (296).
+        actor.session?.dataSendToMe?.(Response.systemMessage.typed(296, { number: Math.min(damage, currentHp - 1) }));
     }
     actor.fallingUntil = now + FALLING_VALIDATION_DELAY_MS;
     return false;
