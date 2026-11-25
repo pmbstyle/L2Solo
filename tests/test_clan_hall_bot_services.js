@@ -106,7 +106,10 @@ function hotActor(state) {
         fetchSeated: () => seated,
         setSeated: (v) => {
             seated = v;
-        }
+        },
+        fetchAnimated: () => false,
+        setAnimated() {},
+        fetchCasts: () => false
     };
     a.automation = { abortAll() {}, replenishVitals() {} };
     a.unselect = () => {};

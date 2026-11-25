@@ -277,6 +277,7 @@ class FakeState {
     fetchCasts() { return this.casts; }
     setCasts(value) { this.casts = value; }
     fetchAnimated() { return this.animated; }
+    setAnimated(value) { this.animated = value; }
     fetchPickinUp() { return false; }
     setCombats() {}
     isBlocked() { return this.hits || this.casts || this.animated || this.seated; }
@@ -3465,6 +3466,7 @@ try {
     assert.strictEqual(toolSession.plan, 'following', 'fully recovered companion should return to following');
 
     toolBot.setMp(50);
+    toolBot.state.setAnimated(false); // the 2.5 s stand-up has played: C4 refuses a sit during it
     const orderedRestResult = BotAgentTools.execute(toolSession, {
         action: 'rest',
         confidence: 0.9,
