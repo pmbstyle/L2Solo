@@ -89,7 +89,7 @@ assert.strictEqual(seatedDuringCast, false, 'a bot must remain standing while Ma
     };
     const advance = (ms) => {
         const end = now + ms;
-        while (true) {
+        for (;;) {
             const next = [...timers].filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
             if (!next) break;
             now = next[1].at;
