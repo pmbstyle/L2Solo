@@ -180,6 +180,43 @@ try {
     assert.deepEqual(tick(f), [], 'clan healing must approach its native aura radius before casting');
     assert.equal(f.provider.pendingSupportApproach.kind, 'emergency_heal');
 
+    // Chant of Life and Heart of Paagrio are one C4 stack (life_force_orc):
+    // a cast over a running member throws away its remaining ticks.
+    const overlord = (tankHp, running = null) => {
+        const o = fixture(51);
+        const skills = { chant: learn(o.provider.actor, 1229, 4), heart: learn(o.provider.actor, 1256, 3) };
+        o.provider.actor.fetchClanId = () => 10;
+        o.tank.actor.fetchClanId = () => 10;
+        o.tank.actor.hp = tankHp;
+        if (running) {
+            const hot = skills[running].fetchSemantic();
+            Effects.apply(o.tank.actor, { id: skills[running].fetchSelfId(), key: hot.effect,
+                level: skills[running].fetchLevel(), hot: hot.hot, stackFamily: hot.stackFamily,
+                stackOrder: hot.stackOrder, durationMs: 15000 });
+        }
+        return o;
+    };
+    f = overlord(30);
+    assert.deepEqual(tick(f), [{ id: f.tank.actor.id, selfId: 1256, ctrl: false }],
+        'an Overlord opens an emergency with Heart of Paagrio');
+    f = overlord(60, 'chant');
+    assert.deepEqual(tick(f), [], 'a running Chant of Life is let run outside an emergency');
+    f = overlord(30, 'chant');
+    assert.deepEqual(tick(f), [{ id: f.tank.actor.id, selfId: 1256, ctrl: false }],
+        'an emergency heal replaces a weaker running HoT');
+    f = overlord(30, 'heart');
+    assert.deepEqual(tick(f), [], 'Chant of Life is not cast into a stronger running Heart');
+    f = overlord(30, 'chant');
+    f.tank.actor.x = 600;
+    assert.deepEqual(tick(f), [], 'Heart of Paagrio approaches a distant tank in an emergency');
+    assert.equal(f.provider.pendingSupportApproach.kind, 'emergency_heal');
+    assert.equal(f.provider.pendingSupportApproach.skillId, 1256);
+    Following.tickPendingSupport({ session: f.provider, bot: f.provider.actor,
+        playerSession: f.leader, pulling: {}, partyThreat: null,
+        Generics: { skillExec() {} } });
+    assert.equal(f.provider.pendingSupportApproach?.skillId, 1256,
+        'an emergency approach over a running Chant is kept, not cancelled every tick');
+
     f = fixture(34);
     assert.deepEqual(tick(f), [], 'a buffer without a learned heal must never invent one');
     f = fixture(15);

@@ -93,6 +93,34 @@ assert.deepStrictEqual(
 assert.deepStrictEqual(EffectStore.list(physicalBuffs).map((entry) => entry.key), ['chant_of_battle'], 'the latest equal P.Atk buff should replace the previous source');
 assert.strictEqual(EffectStats.multiplier(physicalBuffs, 'pAtkMul'), 1.15, 'equivalent P.Atk buffs must not multiply together');
 
+// Prophet, chant, Paagrio and scroll buffs of one C4 stack type hold one slot:
+// the higher stack order wins, an equal one replaces, a weaker one does not land.
+const castOn = (actor, selfId, level) => {
+    const semantic = C4SkillRules.resolve({ selfId, level });
+    return EffectStore.apply(actor, effect(semantic.effect, selfId, 'buff', {
+        level, stackFamily: semantic.stackFamily, stackOrder: semantic.stackOrder, stats: semantic.stats
+    }));
+};
+const accuracy = {};
+[[1240, 3], [1309, 3], [1249, 3]].forEach(([selfId, level]) => castOn(accuracy, selfId, level));
+assert.strictEqual(EffectStore.list(accuracy).length, 1, 'Guidance, Chant of Eagle and Sight of Paagrio share one slot');
+assert.strictEqual(EffectStats.add(accuracy, 'pAccuracyCombatAdd'), 4, 'the three accuracy buffs give +4, not +12');
+const guided = {};
+castOn(guided, 1240, 3);
+assert.strictEqual(castOn(guided, 1309, 2), null, 'a weaker Chant of Eagle does not land on Guidance 3');
+assert.deepStrictEqual(EffectStore.list(guided).map((entry) => entry.key), ['guidance']);
+assert(castOn(guided, 2050, 1), 'Scroll of Guidance outranks Guidance 3');
+assert.deepStrictEqual(EffectStore.list(guided).map((entry) => entry.key), ['scroll_of_guidance']);
+assert.strictEqual(castOn(guided, 1240, 3), null, 'Guidance 3 does not land on the scroll');
+const critical = {};
+[[1242, 3], [1253, 3], [1364, 1]].forEach(([selfId, level]) => castOn(critical, selfId, level));
+assert.strictEqual(EffectStore.list(critical).length, 1, 'Death Whisper, Chant of Rage and Eye of Paagrio share one slot');
+assert.strictEqual(EffectStats.multiplier(critical, 'pCritDamageMul'), 1.5, 'crit damage x1.5, not x3.04');
+const orcSelf = {};
+castOn(orcSelf, 176, 3);
+castOn(orcSelf, 139, 3);
+assert.deepStrictEqual(EffectStore.list(orcSelf).map((entry) => entry.key), ['guts'], 'Frenzy and Guts share the C4 OrcBuff slot');
+
 const prophecyStack = {};
 const prophecyOfFire = C4SkillRules.resolve({ selfId: 1356, level: 1, name: 'Prophecy of Fire' });
 const chantOfVictory = C4SkillRules.resolve({ selfId: 1363, level: 1, name: 'Chant of Victory' });

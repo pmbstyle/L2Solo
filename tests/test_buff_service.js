@@ -86,6 +86,24 @@ async function persistState(current) {
         amount: 100, expectedSpotId: 'another-spot' });
     assert.strictEqual(wrongSpot.reason, 'spot_or_activity_changed');
 
+    // A bought buff lands by the store's stack rule: Death Whisper 2 (stack order
+    // 1.4) is not sold over a held Eye of Paagrio (1.5) of the same C4 type.
+    const eyeProviderId = await character('buff_service_eye_seller', 'EyeBuffSeller');
+    const eyeBuyerId = await character('buff_service_eye_buyer', 'EyeBuffBuyer');
+    const eyeProvider = state(eyeProviderId, 17);
+    const eyeBuyer = state(eyeBuyerId, 0);
+    const Offer = invoke('GameServer/Bot/Economy/ColdBuffOffer');
+    eyeBuyer.stats.coldCombat.effects = Offer.effectsFor([Cold.skillAdapter({ selfId: 1364, level: 1 })], Date.now());
+    const eyeOffer = Cold.coldOffer(eyeProvider, eyeBuyer);
+    assert(eyeOffer, 'the prophet still sells an Eye of Paagrio holder what he lacks');
+    assert(!eyeOffer.effects.some(effect => effect.key === 'death_whisper'),
+        'a weaker Death Whisper is not offered over Eye of Paagrio');
+    assert(eyeOffer.effects.length > 0, 'the other buffs of the offer are sold');
+    for (const current of [eyeProvider, eyeBuyer]) await persistState(current);
+    const eyeSale = await Database.purchaseColdBuffs({ payerId: eyeBuyerId, providerId: eyeProviderId, spotId: 'test-spot',
+        payerRevision: 0, providerRevision: 0, price: 100, mpCost: 10, effects: eyeOffer.effects, timestamp: Date.now() });
+    assert.strictEqual(eyeSale.ok, true, 'the rest of the offer is sold to the Eye holder');
+
     const tickProviderId = await character('buff_service_tick_seller', 'TickBuffSeller');
     const tickBuyerId = await character('buff_service_tick_buyer', 'TickBuffBuyer');
     const tickProvider = state(tickProviderId, 17);

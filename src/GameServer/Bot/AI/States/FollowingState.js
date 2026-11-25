@@ -525,7 +525,8 @@ function pendingSupportShouldYield(session, bot, leaderSession, pullerActor, par
     if (pendingHeal && !canHealParty(bot, leaderSession)) return true;
     if (pendingHeal && targetHpRatio >= 0.70) return true;
     if (pendingHeal && !BotSkillCapabilities.selectHealSkill(bot, {
-        target, group: pending.kind === 'group_heal', fallbackGroup
+        target, group: pending.kind === 'group_heal', fallbackGroup,
+        emergency: pending.kind === 'emergency_heal' || pending.kind === 'self_preservation'
     })) return true;
     if (pending.kind === 'restore_mp' && targetMpRatio >= 0.55) return true;
     if (partyThreat && pending.kind === 'restore_mp') return true;
@@ -1337,9 +1338,9 @@ const FollowingState = {
         return false;
     },
 
-    // Newbie buff refresh, town errands, town-visit rebuff, support loadout.
+    // Newbie buff refresh, town errands, town-visit rebuff.
     tickBuffsAndErrands(ctx) {
-        const { session, bot, BotAI, playerSession, player, role, pulling, partyThreat, currentPartyAggroMonsters, leaderTargetId, hotTownRebuffVisit } = ctx;
+        const { session, bot, BotAI, playerSession, player, role, partyThreat, currentPartyAggroMonsters, leaderTargetId, hotTownRebuffVisit } = ctx;
         let acted = false;
         let keepRoleDecision = false;
 
@@ -1422,10 +1423,6 @@ const FollowingState = {
             return true;
         }
 
-        if (!partyThreat && !leaderTargetId && !isBusy(bot)) {
-            BotSupportPlanner.reconcileLoadout(partySupportMembers(playerSession,pulling.puller),
-                PartyPulling.supportProviders(playerSession));
-        }
         Object.assign(ctx, { acted, keepRoleDecision });
         return false;
     },

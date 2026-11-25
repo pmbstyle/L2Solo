@@ -110,7 +110,22 @@ const STACK_FAMILY_BY_SKILL_ID = Object.freeze({
     4175: 'pAtkSpeedUp', 4213: 'pAtkSpeedUp', 4317: 'pAtk', 4322: 'SpeedUp',
     4327: 'pAtkSpeedUp', 4329: 'mAtkSpeedUp', 4331: 'mAtk', 4342: 'SpeedUp',
     4355: 'mAtkSpeedUp', 4356: 'mAtk', 4357: 'pAtkSpeedUp', 4391: 'SpeedUp',
-    4400: 'mAtkSpeedUp', 4401: 'mAtk', 4402: 'pAtkSpeedUp', 4644: 'pAtkSpeedUp'
+    4400: 'mAtkSpeedUp', 4401: 'mAtk', 4402: 'pAtkSpeedUp', 4644: 'pAtkSpeedUp',
+    // Lisvus stackType (datapack stats/skills) shared by prophet, chant, Paagrio
+    // and scroll buffs. C4 CancelLesserEffect: one slot per type, the higher
+    // stackOrder wins and an equal one replaces.
+    1240: 'accuracyUp', 1249: 'accuracyUp', 1309: 'accuracyUp', 2050: 'accuracyUp',
+    1242: 'cAtk', 1253: 'cAtk', 1364: 'cAtk', 2051: 'cAtk',
+    1077: 'rCrit', 1308: 'rCrit', 2052: 'rCrit',
+    1087: 'rEvas', 1252: 'rEvas', 1260: 'rEvas', 2055: 'rEvas',
+    1268: 'vampRage', 1310: 'vampRage',
+    1062: 'berserk', 1261: 'berserk',
+    1243: 'shieldProbUp', 1250: 'shieldProbUp',
+    303: 'max_mp_up', 1048: 'max_mp_up',
+    1354: 'resist_debuff_dispel', 1362: 'resist_debuff_dispel',
+    139: 'OrcBuff', 176: 'OrcBuff',
+    1073: 'max_breath_up', 2076: 'max_breath_up',
+    2231: 'valakas_item', 2232: 'valakas_item'
 });
 
 const STACK_ORDER_BY_SKILL_ID = Object.freeze({
@@ -136,7 +151,20 @@ const STACK_ORDER_BY_SKILL_ID = Object.freeze({
     4173: 99,
     4174: 99,
     4175: 99,
-    4213: 99
+    4213: 99,
+    // Lisvus stackOrder of the stack types above, per skill level where it rises.
+    1240: [2, 3, 4], 1249: [2, 3, 4], 1309: [2, 3, 4], 2050: 5,
+    1242: [1.3, 1.4, 1.5], 1253: [1.3, 1.4, 1.5], 1364: 1.5, 2051: 1.5,
+    1077: [0.2, 0.25, 0.3], 1308: [0.2, 0.25, 0.3], 2052: 0.3,
+    1087: [2, 3, 4], 1252: [2, 3, 4], 1260: [2, 3, 4], 2055: 8,
+    1268: [6, 7, 8, 9], 1310: [6, 7, 8, 9],
+    1062: 1, 1261: 1,
+    1243: [1.3, 1.4, 1.5, 1.6, 1.7, 1.8], 1250: [1.3, 1.4, 1.5],
+    303: [1.1, 1.15, 1.2, 1.25], 1048: [1.1, 1.15, 1.2, 1.25, 1.3, 1.35],
+    1354: 1, 1362: 1,
+    139: 1, 176: 1,
+    1073: [5, 7], 2076: 5,
+    2231: 1, 2232: 1
 });
 
 const CONTROL_STACK_FAMILY_BY_EFFECT = Object.freeze({
@@ -1325,7 +1353,9 @@ function resolve(skill = {}) {
         stackFamily: rule.stackFamily || sourcedStackFamily,
         stackOrder: resolveByLevel(rule.stackOrderByLevel, skill.level)
             ?? rule.stackOrder
-            ?? STACK_ORDER_BY_SKILL_ID[Number(skill.selfId)]
+            ?? (Array.isArray(STACK_ORDER_BY_SKILL_ID[id])
+                ? resolveByLevel(STACK_ORDER_BY_SKILL_ID[id], skill.level)
+                : STACK_ORDER_BY_SKILL_ID[id])
             ?? (CONTROL_STACK_FAMILY_BY_EFFECT[effect] ? 1 : null)
             ?? null,
         baneStackFamilies: rule.baneStackFamilies || null

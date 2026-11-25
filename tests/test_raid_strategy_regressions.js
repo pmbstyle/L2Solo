@@ -36,6 +36,25 @@ for (const [classId, id] of [[52, 1229], [51, 1256]]) {
             { skillExec() { throw Error('foreign clan cannot receive this heal'); } }, 6000), false);
     }
 }
+// Chant of Life and Heart of Paagrio are one C4 stack (life_force_orc): Heart
+// cast over a running Chant removes it and its remaining ticks.
+{
+    const orc = actor(1, 51), tank = actor(2, 33, 500);
+    const chant = new Skill({ selfId: 1229, level: 4, passive: false, mp: 103 });
+    orc.skills = [chant, new Skill({ selfId: 1256, level: 3, passive: false, mp: 164 })];
+    const hot = chant.fetchSemantic();
+    tank.effects.chant = { id: 1229, key: hot.effect, level: 4, type: 'buff', hot: hot.hot,
+        stackFamily: hot.stackFamily, stackOrder: hot.stackOrder, expiresAt: Date.now() + 15000 };
+    const support = (casts) => Tactics.support({ actor: orc, hotBackgroundPartyId: 'raid' }, orc,
+        { owner: {}, raid: true, members: [orc, tank].map(actor => ({ actor })), threats: [] },
+        { skillExec: (_s, _a, data) => casts.push(data) }, 1000);
+    const casts = [];
+    assert.equal(support(casts), false, 'a raid Overlord casts no Heart over a running Chant outside an emergency');
+    assert.deepEqual(casts, []);
+    tank.hp = 300;
+    assert(support(casts));
+    assert.equal(casts[0]?.selfId, 1256, 'a raid Overlord replaces a running Chant by Heart in an emergency');
+}
 const economical = { missingHp: 300, maxHp: 1000, power: 300, cost: 30, castMs: 1000 };
 const singer = actor(20, 21);
 singer.skills = [new Skill({ selfId: 264, level: 1, passive: false, mp: 20, buff: 120000 })];
@@ -146,6 +165,63 @@ assert.equal(ColdCombat.chooseHeal(caster.profile, [caster, injured], 1000, {}, 
 injured.vitals.hp = 0;
 ColdCombat.applyPartyHotTicks(injured, 12000);
 assert.equal(injured.vitals.hp, 0, 'periodic healing cannot resurrect a corpse');
+{
+    // A cold Overlord: Chant of Life (7 s, 103 MP) and Heart of Paagrio (2.5 s,
+    // 164 MP) share the life_force_orc stack.
+    const overlord = { state: { characterId: 11, clanId: 7 }, now: 20000, vitals: { hp: 1000, maxHp: 1000 },
+        profile: { skills: [{ selfId: 1229, level: 4, mp: 103, hitTime: 7000 },
+            { selfId: 1256, level: 3, mp: 164, hitTime: 2500 }], effects: [] } };
+    const member = { state: { characterId: 12, clanId: 7 }, profile: { effects: [] }, vitals: { hp: 650, maxHp: 1000 } };
+    const keys = fighter => fighter.profile.effects.map(effect => effect.key).sort();
+    const party = [overlord, member];
+    const opened = ColdCombat.chooseHeal(overlord.profile, party, 1000, {}, 20000, overlord);
+    assert.equal(opened?.skill.selfId, 1229, 'a cold Overlord tops off a small wound with Chant of Life');
+    ColdCombat.applyAllyHeal(overlord, party, opened);
+    assert.equal(ColdCombat.chooseHeal(overlord.profile, party, 1000, {}, 20500, overlord), null,
+        'a cold Overlord lets a running Chant of Life run outside an emergency');
+    member.vitals.hp = 300;
+    overlord.now = 20500;
+    const rescue = ColdCombat.chooseHeal(overlord.profile, party, 1000, {}, 20500, overlord);
+    assert.equal(rescue?.skill.selfId, 1256, 'an emergency takes Heart of Paagrio over a running Chant');
+    ColdCombat.applyAllyHeal(overlord, party, rescue);
+    assert.deepEqual(keys(member), ['heart_of_paagrio'], 'Heart replaces the running Chant on a cold member');
+    ColdCombat.applyPartyHotTicks(member, 21500);
+    assert.equal(member.vitals.hp, 339, 'only Heart ticks: 39 HP a second, not 62');
+    member.vitals.hp = 600;
+    const stranger = { state: { characterId: 13, clanId: 8 }, profile: { effects: [] }, vitals: { hp: 500, maxHp: 1000 } };
+    overlord.now = 21500;
+    const wide = ColdCombat.chooseHeal(overlord.profile, [...party, stranger], 1000, {}, 21500, overlord);
+    assert.equal(wide?.skill.selfId, 1229, 'a member outside the clan gets the party Chant');
+    ColdCombat.applyAllyHeal(overlord, [...party, stranger], wide);
+    assert.deepEqual(keys(member), ['heart_of_paagrio'], 'a party Chant leaves a stronger running Heart in place');
+    assert.deepEqual(keys(stranger), ['chant_of_life']);
+    // Long after the Heart ran out, a Chant lands on the member and ticks.
+    overlord.now = 60000;
+    ColdCombat.applyPartyHotTicks(member, 60000);
+    member.vitals.hp = 650;
+    const later = ColdCombat.chooseHeal(overlord.profile, party, 1000, {}, 60000, overlord);
+    assert.equal(later?.skill.selfId, 1229, 'a cold Overlord tops off again once the Heart ran out');
+    ColdCombat.applyAllyHeal(overlord, party, later);
+    assert(keys(member).includes('chant_of_life'), 'a Chant lands over an expired Heart');
+    const beforeTick = member.vitals.hp;
+    ColdCombat.applyPartyHotTicks(member, 61000);
+    assert.equal(member.vitals.hp - beforeTick, 23, 'the landed Chant ticks 23 HP a second');
+}
+{
+    // A buff lands over an expired stronger row of its stack, not over a live one.
+    const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
+    const full = path.join(__dirname, '../src/GameServer/Bot/Population/BackgroundResolver.js');
+    const copy = new Module(full, module);
+    copy.filename = full;
+    copy.paths = Module._nodeModulePaths(path.dirname(full));
+    copy._compile(`${fs.readFileSync(full, 'utf8')}\nmodule.exports.__replaceColdBuff = replaceColdBuff;`, full);
+    const row = (key, order, expiresAt) => ({ key, stackFamily: 'fam', stackOrder: order, level: order, expiresAt });
+    const replace = copy.exports.__replaceColdBuff;
+    const over = replace([row('strong', 5, 1000)], row('weak', 1, 9000), 5000);
+    assert.deepEqual(over.map(effect => effect.key), ['strong', 'weak'], 'a weaker buff lands over an expired stronger one');
+    const held = replace([row('strong', 5, 9000)], row('weak', 1, 9500), 5000);
+    assert.deepEqual(held.map(effect => effect.key), ['strong'], 'a weaker buff does not land over a live stronger one');
+}
 
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Estimate = invoke('GameServer/Clan/ClanRaidEstimate');

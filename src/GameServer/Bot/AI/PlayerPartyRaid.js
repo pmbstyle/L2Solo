@@ -129,10 +129,12 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     if (Roles.inferRole(bot) === 'healer' && !Awareness.underDirectNpcAttack(session) && Restrictions.canMove(bot)) {
         const wounded = [...near].sort((a, b) => ratio(a.actor) - ratio(b.actor))
             .find(member => ratio(member.actor) < 0.7);
+        const emergency = wounded && invoke('GameServer/Bot/AI/PartyHealPolicy')
+            .emergency(wounded.actor.fetchMaxHp() - wounded.actor.fetchHp(), wounded.actor.fetchMaxHp());
         const heal = wounded && invoke('GameServer/Bot/AI/BotSkillCapabilities').healSkills(bot)
             .filter(skill => Tactics.usable(bot, skill))
             .filter(skill => skill.fetchTargetKind() !== 'ally' || Tactics.alliedForHeal(bot, wounded.actor))
-            .filter(skill => !skill.fetchSemantic?.()?.hot || !invoke('GameServer/Bot/AI/BotSkillIntent').equivalentActive(wounded.actor, skill))
+            .filter(skill => !skill.fetchSemantic?.()?.hot || !invoke('GameServer/Bot/AI/BotSkillIntent').equivalentActive(wounded.actor, skill, { emergency }))
             .sort((a, b) => Number(b.fetchPower?.() || 0) - Number(a.fetchPower?.() || 0))[0];
         const healRange = heal && (heal.fetchTargetKind() === 'friendly' ? Number(heal.fetchDistance())
             : Number(heal.fetchSemantic?.()?.radius || heal.fetchDistance() || 900));

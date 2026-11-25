@@ -641,24 +641,6 @@ function desiredLoadout(members,providers,context=cachedEncounterContext(members
     });
 }
 
-const loadoutMaintenance = new WeakMap();
-function reconcileLoadout(members,providers) {
-    const owner=partyActionCacheOwner(members),now=Date.now();
-    if(!owner || now-Number(loadoutMaintenance.get(owner)||0)<1000) return [];
-    if(members.some(({actor})=>actor?.state?.fetchCasts?.()
-        || Number(actor?.session?.pendingSupportCast?.expiresAt||0)>now)) return [];
-    loadoutMaintenance.set(owner,now);
-    const loadout=desiredLoadout(members,providers),removed=[];
-    for(const [actor,wanted] of loadout.selected) {
-        const discarded=EffectStore.list(actor).filter(e=>e.type==='buff' && e.dispellable!==false && !e.toggle
-            && loadout.managedByActor.get(actor).has(BuffLoadout.family(e.key,e.stackFamily)) && !wanted.has(BuffLoadout.normalize(e.key)));
-        for(const effect of discarded) if(EffectStore.remove(actor,effect.key)) removed.push({actorId:actor.fetchId(),effect:effect.key});
-        if(discarded.length) invoke('GameServer/Effects/EffectTicker').refreshEffects(actor.session,actor);
-    }
-    if(removed.length) invalidatePartyActionCache();
-    return removed;
-}
-
 function queueSupportCast(session, action) {
     if (!session || !action?.provider || !action?.target || !action?.skill) return false;
     session.pendingSupportCast = {
@@ -811,14 +793,15 @@ function cancelSupportCast(session, provider) {
 
 function missingRecoveryFamilies(target) {
     const active = new Set(EffectStore.list(target).filter(effect => effect.type === 'buff')
-        .map(effect => BuffLoadout.family(effect.key)));
+        .map(effect => BuffLoadout.family(effect.key, effect.stackFamily)));
     return BuffLoadout.raidRecoveryFamilies(target).filter(family => !active.has(family));
 }
 
 function actionAllowed(action, options = {}) {
     if (options.musicOnly && !isPartyMusic(action.skill)) return false;
     if (!options.raidRecovery) return true;
-    const family = BuffLoadout.family(action.skill.fetchSemantic?.()?.effect);
+    const semantic = action.skill.fetchSemantic?.();
+    const family = BuffLoadout.family(semantic?.effect, semantic?.stackFamily);
     return missingRecoveryFamilies(action.target).includes(family)
         && Intent.inRange(action.provider, action.target, action.skill);
 }
@@ -921,7 +904,6 @@ module.exports = {
     MIN_SUPPORT_MP_RATIO,
     supportSkills,
     desiredLoadout,
-    reconcileLoadout,
     isUsefulForTarget,
     situationalBuffUseful,
     partyAuraCanReach,
