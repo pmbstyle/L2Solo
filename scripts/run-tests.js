@@ -841,6 +841,7 @@ const tests = [
     'tests/test_potion_npc_price.js',
     'tests/test_solo_gate_fight_model.js',
     'tests/test_player_combat_stance.js',
+    'tests/test_posture_lock.js',
     'tests/test_effect_restrictions.js',
     'tests/test_effect_store_c4_slots.js',
     'tests/test_effect_ticker.js',

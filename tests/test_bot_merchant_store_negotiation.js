@@ -99,7 +99,9 @@ async function main() {
             primaryDrive: 'wealth',
             traits: { caution: 0.8, ambition: 0.6, assertiveness: 0.7 }
         },
-        dataSendToOthers() {}
+        packets: [],
+        dataSendToOthers(packet) { this.packets.push(packet); },
+        dataSendToMeAndOthers(packet) { this.packets.push(packet); }
     };
     const player = { accountId: 'merchant_test_player', actor: playerActor(73001, 'BuyerTest') };
     const viewerPackets = [];
@@ -164,7 +166,11 @@ async function main() {
         assert.strictEqual(withdrawal.withdrawn, true, 'an invited merchant must leave its store');
         assert.strictEqual(actor.fetchPrivateStoreType(), 0, 'party transition must clear the client private-store flag');
         assert.strictEqual(actor.fetchPrivateStore(), null, 'party transition must remove the stale store object too');
-        assert.strictEqual(actor.state.fetchSeated(), false, 'the bot must stand before joining its player');
+        // The withdrawal keeps the merchant seated: the party join stands it.
+        // A stand here would leave it standing at its reopened store when the
+        // join fails, as a sit is refused while the stand-up plays (C4).
+        assert.strictEqual(actor.state.fetchSeated(), true, 'the withdrawn merchant stays seated until the join stands it');
+        assert(!bot.packets.some(packet => packet[0] === 'sitAndStand'), 'the withdrawal broadcasts no stand');
         assert.strictEqual(bot.plan, 'hunting');
         assert(invoke('GameServer/Bot/Situations').woken({ woken: 0, ...(bot.coldLifeState?.stats || bot.decisionStats) }, 'build'),
             'closing the own store wakes its town decision');
@@ -177,7 +183,8 @@ async function main() {
         assert.strictEqual(actor.fetchPrivateStore(), withdrawal.rollback.store, 'the same settled live store must be reopened');
         assert.strictEqual(actor.fetchPrivateStore().repricing, false);
         assert.strictEqual(actor.fetchPrivateStoreType(), 1);
-        assert.strictEqual(actor.state.fetchSeated(), true);
+        assert.strictEqual(actor.state.fetchSeated(), true, 'the merchant is seated at its reopened store');
+        assert(!bot.packets.some(packet => packet[0] === 'sitAndStand'), 'a failed join sends no stand or sit');
     } finally {
         World.user = originalWorldUser;
         LifeState.upsertState = originalUpsert;
