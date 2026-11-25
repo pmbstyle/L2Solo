@@ -12,14 +12,15 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const ColdClassPolicy = invoke('GameServer/Bot/Population/ColdClassPolicy');
 
 // A healer at the edge the rule reads (the hot actor's API): one heal of
-// `power` HP for `mp` MP, cast in about a second.
-function healer({ hp, maxHp = 1000, mp = 500, maxMp = 500, power = 300, cost = 30, seatedHp = 0.01, seatedMp = 0.01, classId = 0 }) {
+// `power` HP for `mp` MP, cast in about a second, ready in `readyInMs`.
+function healer({ hp, maxHp = 1000, mp = 500, maxMp = 500, power = 300, cost = 30, seatedHp = 0.01, seatedMp = 0.01, classId = 0, readyInMs = 0 }) {
     const skill = { fetchSelfId: () => 1011, fetchPassive: () => false, fetchSpell: () => true, fetchHitTime: () => 1000,
         fetchPower: () => power, fetchConsumedMp: () => cost, fetchReuseTime: () => 0, fetchTargetKind: () => 'friendly',
         fetchSemantic: () => ({ skillType: Rules.HEAL, target: 'friendly' }) };
     return { fetchHp: () => hp, fetchMaxHp: () => maxHp, fetchMp: () => mp, fetchMaxMp: () => maxMp, fetchClassId: () => classId,
         fetchLevel: () => 40, fetchCastSpd: () => 333, fetchAtkSpd: () => 300, fetchSeatedHpPerMs: () => seatedHp,
-        fetchSeatedMpPerMs: () => seatedMp, canUseSkill: () => true, skillset: { skills: [skill] } };
+        fetchSeatedMpPerMs: () => seatedMp, skillReadyInMs: () => readyInMs, canUseSkill: () => readyInMs <= 0,
+        skillset: { skills: [skill] } };
 }
 
 // In a fight: no heal while the bot outlives the mob at the fight's pace.
@@ -36,6 +37,24 @@ assert.equal(Heal.inFight(healer({ hp: 100 }), { mobHp: 1000, dealtPerMs: 1, tak
 assert.ok(Heal.betweenFights(healer({ hp: 500, seatedHp: 0.01 })), '300 HP in about a second beats 10 HP a second seated');
 assert.equal(Heal.betweenFights(healer({ hp: 800 })), null, 'missing 200: a 300 HP heal waits');
 assert.equal(Heal.betweenFights(healer({ hp: 500, seatedHp: 1 })), null, 'sitting at 1000 HP a second beats the heal');
+
+// A heal on its reuse replaces a rest, never a fight, and its wait is priced:
+// between fights the bot does not wait for it; where it would sit down it
+// waits on its feet while the heal, wait included, beats sitting.
+assert.equal(Heal.betweenFights(healer({ hp: 500, readyInMs: 4000 })), null, 'between fights a heal on its reuse is not waited for');
+assert.ok(Heal.betweenFights(healer({ hp: 500, seatedHp: 0.03 })), 'ready, the heal beats 30 HP a second seated');
+assert.equal(Heal.betweenFights(healer({ hp: 500, seatedHp: 0.03, readyInMs: 10000 }), { wait: true }), null,
+    'a 10 s wait makes the same heal slower than sitting: the bot sits');
+assert.equal(Heal.betweenFights(healer({ hp: 500, seatedHp: 0.01, readyInMs: 10000 }), { wait: true })?.waitMs, 10000,
+    'against 10 HP a second seated the heal is waited for');
+// A level-5 Human Mystic (Self Heal: reuse 10 s, cast 5 s) at 30% HP, its
+// Self Heal back in 4 s, sitting at about 1 HP a second.
+const mystic = ColdCombatProfile.profileFor(HuntCycle.referenceState(10, 5), 0, { store: false });
+const wounded = ColdClassPolicy.actorFor(mystic, { hp: mystic.maxHp * 0.3, mp: mystic.maxMp, cooldowns: { 1216: 4000 }, time: 0 });
+assert.equal(Heal.betweenFights(wounded), null, 'between fights the mystic walks on');
+const coming = Heal.betweenFights(wounded, { wait: true });
+assert.equal(coming?.skill.fetchSelfId(), 1216, 'where it would sit, the mystic waits for its Self Heal');
+assert.equal(coming.waitMs, 4000, 'the wait is the reuse left');
 
 // A silenced bot casts nothing, in a fight or between fights: a heal would be
 // refused at the cast, so the turn goes to its weapon and the walk goes on.
@@ -58,7 +77,7 @@ assert.deepEqual(casts, [], 'no refused cast is sent');
 const bishop = HuntCycle.referenceState(16, 40);
 const profile = ColdCombatProfile.profileFor(bishop, 0, { store: false });
 const actor = ColdClassPolicy.actorFor(profile, { hp: profile.maxHp * 0.4, mp: profile.maxMp, cooldowns: {}, time: 0 });
-const skill = Heal.betweenFights(actor);
+const skill = Heal.betweenFights(actor)?.skill;
 assert.ok(skill, 'a cold Bishop at 40% HP heals between fights');
 assert.ok(Heal.healAmount(actor, skill, skill.fetchSemantic(), true) <= profile.maxHp * 0.6, 'its heal does not overheal');
 

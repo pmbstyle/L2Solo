@@ -416,7 +416,9 @@ function castColdPetHeal(profile, summon, vitals, cooldowns, skill, at, shooter 
 // (PetHealRule), then its own where they beat sitting (solo only,
 // SoloSelfHeal.betweenFights): vitals and cooldowns change in place.
 // options.shooter: the shots (castColdPetHeal); options.solo false: the pet
-// only. Returns { casts, petCasts, ms }: casts its own heals.
+// only; options.wait (at a rest): its own heals on their reuse are waited
+// for, on its feet. Returns { casts, petCasts, ms }: casts its own heals, ms
+// with the waits. Each pass casts at most the HP it misses.
 function coldHealBetweenFights(profile, vitals, cooldowns, at, summon = null, options = {}) {
     let casts = 0, petCasts = 0, ms = 0;
     // The pet first, with the heals ready now: one on its reuse waits for
@@ -430,8 +432,10 @@ function coldHealBetweenFights(profile, vitals, cooldowns, at, summon = null, op
     if (options.solo === false) return { casts, petCasts, ms };
     for (;;) {
         const actor = ColdClassPolicy.actorFor(profile, { hp: vitals.hp, mp: vitals.mp, cooldowns, time: at + ms });
-        const skill = SoloSelfHeal.betweenFights(actor);
-        if (!skill) return { casts, petCasts, ms };
+        const pick = SoloSelfHeal.betweenFights(actor, { wait: options.wait === true });
+        if (!pick) return { casts, petCasts, ms };
+        ms += pick.waitMs;
+        const skill = pick.skill;
         vitals.hp = Math.min(profile.maxHp, vitals.hp + SoloSelfHeal.healAmount(actor, skill, skill.fetchSemantic?.() || {}, true));
         vitals.mp = Math.max(0, vitals.mp - skill.fetchConsumedMp());
         cooldowns[skill.fetchSelfId()] = at + ms + Math.max(0, Number(skill.fetchReuseTime?.()) || 0);
@@ -2854,7 +2858,8 @@ const BackgroundResolver = {
         let shotActions = 0;
         let skillUses = 0;
         let heals = 0;
-        // Of the heals, those cast between fights (SoloSelfHeal.betweenFights).
+        // Of the heals, those cast between fights (SoloSelfHeal.betweenFights),
+        // those cast instead of a rest included.
         let gapHeals = 0;
         // The pet's heals (PetHealRule), in fights and between them: apart from the bot's own.
         let petHeals = 0;
@@ -2987,6 +2992,19 @@ const BackgroundResolver = {
                 patch.stats.lastReason = result.reason;
                 noPrey = result.reason === NO_PREY;
                 if (result.needsRest) {
+                    // A heal, ready or on its reuse, that beats the rest is
+                    // cast instead, on its feet; readiness is then read again.
+                    const cooldowns = { ...(patch.stats.coldCombat?.cooldowns || {}) };
+                    const healed = coldHealBetweenFights(roundProfile, patch.vitals, cooldowns, clock.at, null, { wait: true });
+                    if (healed.casts) {
+                        patch.stats.coldCombat = { ...(patch.stats.coldCombat
+                            || ColdCombatProfile.seedSnapshot(fightState, clock.at)), cooldowns };
+                        wear(ColdClock.advance(clock, body(), healed.ms, 'standing', roundRates));
+                        heals += healed.casts;
+                        gapHeals += healed.casts;
+                        skillUses += healed.casts;
+                        continue;
+                    }
                     const drinkMs = drinkToRest(roundProfile, true, coldPetView(roundProfile, patch.stats.coldCombat?.summon, patch.vitals,
                         patch.stats.coldCombat?.cooldowns, clock.at));
                     events.push({ type: 'rest', weight: 2,
@@ -3112,7 +3130,20 @@ const BackgroundResolver = {
             // a flight (coldDangerMoment: it rests after it, as a hot flight's
             // recovery lock) or the slice bound below ends it. The rest is decided
             // at the HP the fight left: a bottle's heal runs on while the hot bot sits down.
-            const resting = result.fled || (!patch.stats.pveEncounter && needsRest(fightState, patch.vitals, { pet: petView }));
+            let resting = result.fled || (!patch.stats.pveEncounter && needsRest(fightState, patch.vitals, { pet: petView }));
+            // A heal, ready or on its reuse, that beats the rest is cast
+            // instead, on its feet; MP still low, it sits (a flight's rest stays).
+            if (resting && !result.fled && fightProfile) {
+                const healed = coldHealBetweenFights(fightProfile, patch.vitals, patch.stats.coldCombat.cooldowns,
+                    clock.at, null, { wait: true });
+                if (healed.casts) {
+                    wear(ColdClock.advance(clock, body(), healed.ms, 'standing', roundRates));
+                    heals += healed.casts;
+                    gapHeals += healed.casts;
+                    skillUses += healed.casts;
+                    resting = needsRest(fightState, patch.vitals, { pet: petView });
+                }
+            }
             const drinkMs = result.won || resting ? drinkToRest(fightProfile || roundProfile, resting, petView) : 0;
             if (resting) {
                 // cold_fight:pet:rest: a rest its pet sent it to (the live read).

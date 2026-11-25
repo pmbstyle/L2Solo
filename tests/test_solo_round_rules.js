@@ -103,6 +103,21 @@ try {
         { hp: profile.maxHp * 0.6, mp, cooldowns: {}, time: 0 }));
     assert(heal(profile.maxMp), 'at full MP the heal beats sitting');
     assert.equal(heal(profile.maxMp * 0.15), null, 'with its bar near empty the heal costs more rest than it saves');
+
+    // A wounded level-5 Human Mystic (Self Heal: reuse 10 s, cast 5 s) at 30%
+    // HP with full MP, its Self Heal back in 4 s: where it would sit before
+    // its next fight it waits for the heal on its feet and heals, no rest.
+    Cold.npcForSpot = () => ({ level: 5, maxHp: 1, pAtk: 1, pAtkRnd: 0, pDef: 1, mDef: 1, accur: 1,
+        evasion: 0, critical: 0, atkSpd: 253 });
+    const mystic = bot(10, 5);
+    mystic.vitals.hp = Math.floor(mystic.vitals.maxHp * 0.3);
+    // The round runs the minute before T: the heal is back 4 s into it.
+    mystic.stats.coldCombat = { ...Cold.seedSnapshot(mystic, T), cooldowns: { 1216: T - 60000 + 4000 } };
+    const healing = round(mystic, field(30));
+    assert(healing.debug.heals >= 2, `the mystic heals through its reuse wait (${healing.debug.heals} heals)`);
+    assert.notDeepEqual([healing.patch.activity, healing.patch.stats.lastReason], ['resting', 'solo_recovery_needed'],
+        'it does not sit before its next fight');
+    assert.equal(healing.debug.seatedMs, 0, 'its round holds no rest');
 } finally {
     Cold.npcForSpot = originalNpc;
 }
