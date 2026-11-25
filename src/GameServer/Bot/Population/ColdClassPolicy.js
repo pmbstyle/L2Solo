@@ -83,7 +83,8 @@ function adapter(profile) {
         fetchHp:()=>state.hp,fetchMaxHp:()=>profile.maxHp,
         fetchMp:()=>state.mp,fetchMaxMp:()=>profile.maxMp,
         fetchCharges:()=>state.charges,
-        canUseSkill:skill=>Number(state.cooldowns[skill.fetchSelfId()]||0)<=state.time,
+        skillReadyInMs:skill=>Math.max(0,Number(state.cooldowns[skill.fetchSelfId()]||0)-state.time),
+        canUseSkill:skill=>actor.skillReadyInMs(skill)<=0,
         skillset:{skills,fetchSkills:()=>skills,fetchSkill:id=>skills.find(s=>s.fetchSelfId()===id)},
         backpack:{fetchTotalWeaponKind:()=>profile.equipment?.weaponKind||'',
             fetchEquippedArmors:()=>profile.equipment?.shieldPDef>0?[{fetchKind:()=> 'Armor.Shield'}]:[]}

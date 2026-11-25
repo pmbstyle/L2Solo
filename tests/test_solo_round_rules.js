@@ -103,6 +103,24 @@ try {
         { hp: profile.maxHp * 0.6, mp, cooldowns: {}, time: 0 }));
     assert(heal(profile.maxMp), 'at full MP the heal beats sitting');
     assert.equal(heal(profile.maxMp * 0.15), null, 'with its bar near empty the heal costs more rest than it saves');
+
+    // A wounded level-5 Human Mystic (Self Heal: reuse 10 s, cast 5 s) at 30%
+    // HP with full MP, its Self Heal back in 4 s: where it would sit before
+    // its next fight it waits for the heal on its feet and heals, no rest;
+    // healed to 56%, it fights the next mob, as the hot bot does, not waiting
+    // for its heal again.
+    Cold.npcForSpot = () => ({ level: 5, maxHp: 1, pAtk: 1, pAtkRnd: 0, pDef: 1, mDef: 1, accur: 1,
+        evasion: 0, critical: 0, atkSpd: 253 });
+    const mystic = bot(10, 5);
+    mystic.vitals.hp = Math.floor(mystic.vitals.maxHp * 0.3);
+    // The round runs the 15 s before T: the heal is back 4 s into it.
+    mystic.stats.coldCombat = { ...Cold.seedSnapshot(mystic, T), cooldowns: { 1216: T - 15000 + 4000 } };
+    const healing = round(mystic, field(30), 15000);
+    assert(healing.debug.heals >= 1, `the mystic heals through its reuse wait (${healing.debug.heals} heals)`);
+    assert(healing.debug.wins >= 1, 'after its heal it fights the next mob');
+    assert.notDeepEqual([healing.patch.activity, healing.patch.stats.lastReason], ['resting', 'solo_recovery_needed'],
+        'it does not sit before its next fight');
+    assert.equal(healing.debug.seatedMs, 0, 'its round holds no rest');
 } finally {
     Cold.npcForSpot = originalNpc;
 }
@@ -131,4 +149,17 @@ assert.equal(Resolver.soloWalkMs(4, 100, 6000 * 6000, 700), 8000, 'a reach of 70
 assert.equal(Resolver.soloWalkMs(400, 100, 6000 * 6000, 700), 0, 'a dense spot inside the reach: no walk');
 const archer = Cold.profileFor(HuntCycle.referenceState(22, 30), T), dagger = Cold.profileFor(HuntCycle.referenceState(7, 30), T);
 assert(Cold.attackReach(archer) > 3 * Cold.attackReach(dagger), 'a bow reaches far beyond a dagger');
+// The spot table's gap healing is the heals ready after a won fight, as the
+// round casts them (the waited heal is the rest door's, not a per-gap rate).
+{
+    const HuntModel = require('../scripts/hunt-tables/HuntModel');
+    for (const [classId, level] of [[42, 45], [10, 5], [15, 25]]) {
+        const profile = Cold.profileFor(HuntCycle.referenceState(classId, level), T, { store: false });
+        const vitals = { hp: 1, mp: profile.maxMp };
+        const { ms } = Resolver.coldHealBetweenFights(profile, vitals, {}, 0, null, {});
+        const ready = ms > 0 ? (vitals.hp - 1) / (ms / 1000) : 0;
+        assert(Math.abs(HuntModel.gapHealRate(profile) - ready) < 1e-9,
+            `class ${classId} L${level}: the gap heal rate is the ready pass's ${ready.toFixed(1)} HP/s`);
+    }
+}
 console.log('Solo round rules checks passed');

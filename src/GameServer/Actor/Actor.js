@@ -111,8 +111,13 @@ class Actor extends ActorModel {
         );
     }
 
+    // The ms until the skill's reuse ends, 0 when it is ready.
+    skillReadyInMs(skill, now = Date.now()) {
+        return Math.max(0, (this.skillReuseUntil.get(skill.fetchSelfId()) || 0) - now);
+    }
+
     canUseSkill(skill, now = Date.now()) {
-        return (this.skillReuseUntil.get(skill.fetchSelfId()) || 0) <= now;
+        return this.skillReadyInMs(skill, now) <= 0;
     }
 
     markSkillReuse(skill, now = Date.now()) {
