@@ -9,6 +9,8 @@ const Ticker=invoke('GameServer/Effects/EffectTicker');
 const World=invoke('GameServer/World/World');
 const {registerSessions}=require('./helpers/worldSessions');
 const Bots=invoke('GameServer/Bot/BotManager');
+const FollowingState=invoke('GameServer/Bot/AI/States/FollowingState');
+const Admin=invoke('GameServer/World/Generics/NpcBypasses/AdminFullBuff');
 const originalRefresh=Ticker.refreshEffects;
 Ticker.refreshEffects=()=>{};
 
@@ -30,6 +32,37 @@ function member(classId,skills=[],shield=false) {
             fetchItems:()=>shield?[{fetchEquipped:()=>true,fetchSlot:()=>8}]:[]}};
     const session={actor,plan:'following'};actor.session=session;return {actor,session};
 }
+// Cast the party's support rotation to its end, landing each buff through the store.
+function rotate(rows,providers,limit=100) {
+    let casts=0;
+    for(;casts<limit;casts++) {
+        const action=Planner.nextPartyAction(rows,providers);if(!action)break;
+        const s=action.skill.fetchSemantic(),targets=action.skill.fetchTargetKind()==='party'?rows.map(r=>r.actor):[action.target];
+        for(const a of targets) Effects.apply(a,{...s,key:s.effect,id:action.skill.fetchSelfId(),level:action.skill.fetchLevel(),type:'buff',durationMs:action.skill.fetchBuffTime()});
+    }
+    return casts;
+}
+// A companion standing idle by its leader: FollowingState reads more of the actor than the
+// planner does; every other accessor answers 0/false (no target, not seated, not moving).
+function idle(row) {
+    Object.assign(row.actor,{select(){},unselect(){},moveTo(){}});
+    const stub=target=>new Proxy(target,{get:(t,k)=>k in t||!/^(fetch|is|set)[A-Z]/.test(String(k))?t[k]:()=>0});
+    row.actor.state=stub(row.actor.state);row.actor.backpack=stub(row.actor.backpack);
+    row.actor=stub(row.actor);row.session.actor=row.actor;row.actor.session=row.session;
+    Object.assign(row.session,{accountId:`bot_${row.actor.id}`,dataSendToMe(){},dataSendToOthers(){},dataSendToMeAndOthers(){}});
+    return row;
+}
+function companionIdleTicks(companion,ticks) {
+    const clock=Date.now;let at=clock();
+    try {
+        Date.now=()=>at;
+        for(let i=0;i<ticks;i++) {
+            at+=1000;
+            FollowingState.tick(companion.session,companion.actor,{skillExec(){}},{say(){},executeCombat(){},executePvPCombat(){}});
+        }
+    } finally {Date.now=clock;}
+}
+const buffKeys=actor=>Effects.list(actor).filter(Effects.includedInBuffCount).map(e=>e.key).sort();
 try {
     const leader=member(6,[],true),healer=member(43,[skill(1059,3),skill(1268,3)]),
         prophet=member(17,[1040,1045,1048,1032,1044,1036,1182,1189,1191,1204,1243,1077,1240,1242,1068,1086,1085,1078].map(id=>skill(id))),
@@ -77,28 +110,27 @@ try {
     assert.strictEqual(Effects.list(prophet.actor).filter(Effects.includedInBuffCount).length,20);
     assert.strictEqual(Effects.packetEffects(prophet.actor).length,20,'passives do not enter effect packets');
     assert.strictEqual(Stats.add(prophet.actor,'maxHpAdd'),270,'the armor bonus still contributes to stats');
-    const removed=Planner.reconcileLoadout(rows,providers);
-    assert(removed.length>0,'old low-priority buffs must release real slots');
-    assert(Effects.list(prophet.actor).some(e=>e.type==='item_passive'),'cleanup cannot remove set bonuses');
-    let casts=0;
-    for(;casts<180;casts++) {
-        const action=Planner.nextPartyAction(rows,providers);if(!action)break;
-        const s=action.skill.fetchSemantic(),targets=action.skill.fetchTargetKind()==='party'?rows.map(r=>r.actor):[action.target];
-        for(const a of targets) Effects.apply(a,{...s,key:s.effect,id:action.skill.fetchSelfId(),level:action.skill.fetchLevel(),type:'buff',durationMs:action.skill.fetchBuffTime()});
-    }
-    assert(casts<180,'the rotation must terminate instead of endlessly replacing buffs');
-    assert(casts>0);
+    const firstCasts=rotate(rows,providers,180);
+    assert(firstCasts<180,'the rotation must terminate instead of endlessly replacing buffs');
     assert.strictEqual(Planner.hasPendingAction(rows,providers),false,'finished buffing releases the pull');
-    for(const r of rows) {
-        const effects=Effects.list(r.actor);
-        assert(effects.filter(Effects.includedInBuffCount).length<=20);
-        assert(effects.some(e=>e.key==='dance_of_fury'),`after ${casts} casts, ${r.actor.fetchClassId()}: ${effects.map(e=>e.key)}`);
-        assert(effects.some(e=>e.key==='song_of_hunter'));
-    }
-    assert.strictEqual(Planner.needsSkill(leader.actor,skill(1040)),false,'ordinary Shield coexists with Song of Earth');
-    const clock=Date.now,refreshAt=clock()+91000;
-    let refreshes=0;
+    assert(Effects.list(prophet.actor).some(e=>e.type==='item_passive'),'buffing cannot remove set bonuses');
+    for(const r of rows) assert(Effects.list(r.actor).filter(Effects.includedInBuffCount).length<=20);
+    // The overfull legacy buffs end by expiry, never by the planner; then the
+    // rotation lands the party music.
+    const clock=Date.now,afterLegacy=clock()+1200001,refreshAt=afterLegacy+91000;
+    let casts=0,refreshes=0;
     try {
+        Date.now=()=>afterLegacy;
+        casts=rotate(rows,providers,180);
+        assert(casts>0 && casts<180,'the rotation must terminate instead of endlessly replacing buffs');
+        assert.strictEqual(Planner.hasPendingAction(rows,providers),false,'finished buffing releases the pull');
+        for(const r of rows) {
+            const effects=Effects.list(r.actor);
+            assert(effects.filter(Effects.includedInBuffCount).length<=20);
+            assert(effects.some(e=>e.key==='dance_of_fury'),`after ${casts} casts, ${r.actor.fetchClassId()}: ${effects.map(e=>e.key)}`);
+            assert(effects.some(e=>e.key==='song_of_hunter'));
+        }
+        assert.strictEqual(Planner.needsSkill(leader.actor,skill(1040)),false,'ordinary Shield coexists with Song of Earth');
         Date.now=()=>refreshAt;
         for(;refreshes<100;refreshes++) {
             const action=Planner.nextPartyAction(rows,providers);if(!action)break;
@@ -121,8 +153,8 @@ try {
     for(let i=0;i<19;i++)Effects.apply(protectedTarget.actor,{key:`external_${i}`,id:8000+i,type:'buff',durationMs:1200000});
     const externalPlan=Planner.desiredLoadout(externalRows,[singer.actor],{});
     assert.strictEqual(externalPlan.chosen.length,0,'a party aura must not evict external effects on another member');
-    Planner.reconcileLoadout(externalRows,[prophet.actor,singer.actor]);
-    assert.strictEqual(Effects.list(protectedTarget.actor).length,20,'protected effects survive cleanup');
+    rotate(externalRows,[prophet.actor,singer.actor]);
+    assert.strictEqual(Effects.list(protectedTarget.actor).length,20,'protected effects survive party buffing');
 
     const weak=member(17,[skill(1068,1)]),strong=member(52,[skill(1007,3)]),fighter=member(6),caster=member(43);
     const strengthPlan=Planner.desiredLoadout([fighter,caster,weak,strong],[weak.actor,strong.actor],{});
@@ -130,14 +162,14 @@ try {
     const away=member(6),nearSinger=member(21,[skill(264)]);
     away.actor.fetchLocX=()=>3000;
     Effects.apply(away.actor,{key:'song_of_earth',id:264,level:1,type:'buff',stats:{pDefMul:1.25},durationMs:120000});
-    Planner.reconcileLoadout([away,nearSinger],[nearSinger.actor]);
+    rotate([away,nearSinger],[nearSinger.actor]);
     assert(Effects.list(away.actor).some(e=>e.key==='song_of_earth'),'leaving aura range must not strip an existing song');
     const outsider=member(6),overlord=member(51,[skill(1005),skill(1032)]);
     Effects.apply(outsider.actor,{key:'invigor',id:1032,level:1,type:'buff',durationMs:1200000});
     const Attack=invoke('GameServer/Actor/Attack'),resolve=Attack.prototype.resolveSkillTargets;
     try {
         Attack.prototype.resolveSkillTargets=()=>[overlord.actor,outsider.actor];
-        Planner.reconcileLoadout([overlord],[overlord.actor]);
+        rotate([overlord],[overlord.actor]);
         assert(Effects.list(outsider.actor).some(e=>e.key==='invigor'),'clan aura recipients outside the party retain ownership of their buffs');
     } finally {Attack.prototype.resolveSkillTargets=resolve;}
 
@@ -186,8 +218,6 @@ try {
             assert.deepStrictEqual([...afterCast.selected.get(actor)].sort(),[...initial.selected.get(actor)].sort(),
                 'landing music on a summon must not change the desired party loadout');
         }
-        assert.deepStrictEqual(Planner.reconcileLoadout(musicRows,musicProviders),[],
-            'the next maintenance tick must retain freshly cast music on every recipient');
         for(const actor of musicActors) {
             assert(Effects.packetEffects(actor).some(e=>e.id===267 && e.duration===119));
             assert(Effects.packetEffects(actor).some(e=>e.id===274 && e.duration===119));
@@ -216,8 +246,6 @@ try {
             assert(action.skill.fetchSemantic().isDance,'only music is due before its two-minute expiry');
             castNative(action);
             musicNow+=1000;
-            assert.deepStrictEqual(Planner.reconcileLoadout(musicRows,musicProviders),[],
-                'rebuffing must retain music on people, summons and pets');
         }
         assert.strictEqual(musicRefreshes,2,'each song/dance refreshes once without an eviction loop');
         assert(musicActors.every(actor=>Effects.packetEffects(actor).some(e=>e.id===267 && e.duration>110)));
@@ -277,7 +305,6 @@ try {
             const recipients=action.skill.fetchTargetKind()==='party'?raidRows.map(r=>r.actor):[action.target];
             for(const recipient of recipients)Effects.apply(recipient,{...semantic,key:semantic.effect,
                 id:action.skill.fetchSelfId(),level:action.skill.fetchLevel(),type:'buff',durationMs:action.skill.fetchBuffTime()});
-            Planner.reconcileLoadout(raidRows,raidProviders);
         }
         assert(raidCasts<15,'mass buffs must converge with fewer casts than two single-target buffs per member');
         assert(healerCasts>0,'the healer still supplies useful unique buffs');
@@ -306,7 +333,6 @@ try {
             for(const recipient of recipients)Effects.apply(recipient,{...semantic,key:semantic.effect,
                 id:action.skill.fetchSelfId(),level:action.skill.fetchLevel(),type:'buff',durationMs:action.skill.fetchBuffTime()});
             familyNow+=1000;
-            Planner.reconcileLoadout(familyRows,familyProviders);
         }
         assert(familyCasts>0 && familyCasts<40,'shared native families must converge');
         assert.strictEqual(Planner.hasPendingAction(familyRows,familyProviders),false);
@@ -317,8 +343,70 @@ try {
             }
         }
         familyNow+=1000;
-        assert.deepStrictEqual(Planner.reconcileLoadout(familyRows,familyProviders),[],'stable families survive maintenance');
         assert.strictEqual(Planner.nextPartyAction(familyRows,familyProviders),null,'no immediate family rebuff loop');
     } finally {Date.now=familyClock;}
+
+    // A buff ends by expiry, dispel, death, same-type replacement or the
+    // 21st-buff eviction (C4), never because a party member plans another.
+    const warcryerChants=()=>[1002,1006,1007,1009,1251,1252,1253,1308,1309,1310].map(id=>skill(id,2));
+    const oldNpcs=World.npc,oldNpcRadius=World.fetchNpcsInRadius,oldBotSessions=Bots.sessions,oldTargets=Attack.prototype.resolveSkillTargets;
+    try {
+        World.npc={grid:{},spawns:[]};World.fetchNpcsInRadius=()=>[];
+        const admin=idle(member(2)),warcryer=idle(member(52,warcryerChants()));
+        admin.session.accountId='admin_player';
+        Object.assign(warcryer.session,{partyCompanion:true,followPlayerSession:admin.session});
+        registerSessions([admin.session,warcryer.session]);Bots.sessions=[warcryer.session];
+        Admin.applyProfile(admin.session,admin.actor,'melee',{refresh:false,scheduleExpiry:false});
+        const adminBuffs=buffKeys(admin.actor);
+        assert.strictEqual(adminBuffs.length,20);
+        companionIdleTicks(warcryer,3);
+        assert.deepStrictEqual(buffKeys(admin.actor),adminBuffs,'companion idle ticks keep all 20 admin buffs on the player');
+
+        // The player stands outside the Warcryer's chant radius but inside the
+        // Overlord's reach; the party keeps Chant of Shielding, so does he.
+        const at=(row,x)=>{row.actor.fetchLocX=()=>x;return idle(row);};
+        const player=at(member(2),0),fighter=at(member(2),1500),wc=at(member(52,[skill(1009,3)]),1500),
+            ol=at(member(51,[skill(1005,3)]),700),r6=[player,fighter,wc,ol];
+        player.session.accountId='r6_player';
+        [fighter,wc,ol].forEach(r=>Object.assign(r.session,{partyCompanion:true,followPlayerSession:player.session}));
+        registerSessions(r6.map(r=>r.session));Bots.sessions=[fighter,wc,ol].map(r=>r.session);
+        const shielding=skill(1009,3).fetchSemantic();
+        for(const r of r6) Effects.apply(r.actor,{...shielding,key:shielding.effect,id:1009,level:3,type:'buff',durationMs:1200000});
+        Attack.prototype.resolveSkillTargets=()=>[ol.actor,player.actor];
+        companionIdleTicks(ol,2);companionIdleTicks(wc,2);
+        for(const r of r6) assert(Effects.list(r.actor).some(e=>e.key==='chant_of_shielding'),
+            'every member keeps Chant of Shielding, the player outside the chant radius included');
+    } finally {
+        World.npc=oldNpcs;World.fetchNpcsInRadius=oldNpcRadius;Bots.sessions=oldBotSessions;Attack.prototype.resolveSkillTargets=oldTargets;
+    }
+
+    // An admin-buffed player loses only the buffs C4 evicts when a chant of a
+    // new stack type lands; weaker chants of his types do not land on him.
+    const buffed=member(2),chanter=member(52,warcryerChants()),partner=member(2),chantRows=[buffed,chanter,partner];
+    buffed.leader=true;
+    [chanter,partner].forEach(r=>Object.assign(r.session,{partyCompanion:true,followPlayerSession:buffed.session}));
+    Admin.applyProfile(buffed.session,buffed.actor,'melee',{refresh:false,scheduleExpiry:false});
+    const beforeChants=buffKeys(buffed.actor);
+    assert(rotate(chantRows,[chanter.actor])<100,'the chant rotation terminates');
+    const afterChants=buffKeys(buffed.actor);
+    const lost=beforeChants.filter(k=>!afterChants.includes(k)),gained=afterChants.filter(k=>!beforeChants.includes(k));
+    for(const key of ['guidance','death_whisper','vampiric_rage'])
+        assert(afterChants.includes(key),`the player keeps the stronger ${key}: lost ${lost}, gained ${gained}`);
+    for(const key of ['chant_of_eagle','chant_of_rage','chant_of_vampire'])
+        assert(!afterChants.includes(key),`a weaker ${key} does not land beside or over the prophet buff`);
+    assert.strictEqual(lost.length,gained.length,`one buff leaves per chant landed: lost ${lost}, gained ${gained}`);
+    assert.strictEqual(afterChants.length,20);
+
+    // The planner's benefit names agree with the store's stack types.
+    for(const [key,id] of Object.entries({chant_of_battle:1007,power_of_paagrio:1003,chant_of_shielding:1009,
+        chant_of_flame:1002,chant_of_fire:1006,chant_of_fury:1251,chant_of_rage:1253,chant_of_eagle:1309,
+        chant_of_vampire:1310,chant_of_predator:1308,chant_of_evasion:1252,soul_of_paagrio:1365,
+        wisdom_of_paagrio:1004,eye_of_paagrio:1364,vision_of_paagrio:1249,protection_of_paagrio:1250,
+        blessing_of_paagrio:1005,glory_of_paagrio:1008,tact_of_paagrio:1260,rage_of_paagrio:1261,
+        body_of_avatar:1311,prophecy_of_water:1355,prophecy_of_fire:1356,prophecy_of_wind:1357,chant_of_victory:1363})) {
+        const semantic=Rules.resolve({selfId:id,level:1});
+        assert.strictEqual(semantic.effect,key);
+        assert.strictEqual(Loadout.family(key),Loadout.family(key,semantic.stackFamily),`${key}: benefit name follows its stack type`);
+    }
     console.log(`Party buff loadout: mixed roles, equipment, encounter protection, stable allocation, passive slots and ${casts} casts converged`);
 } finally {Ticker.refreshEffects=originalRefresh;}

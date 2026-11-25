@@ -15,13 +15,14 @@ DataCache.init();
 // function as the raid preparation, when the earliest buff is about to expire.
 const timestamp = 1_750_000_000_000;
 const BUFF_MS = 1_200_000;
-const member = (characterId, classId, role) => {
+const member = (characterId, classId, role, level = 40, knows = () => true) => {
     const base = {
-        characterId, name: `Hunt${characterId}`, level: 40, activity: 'hunting',
+        characterId, name: `Hunt${characterId}`, level, activity: 'hunting',
         vitals: { hp: 2000, maxHp: 2000, mp: 1500, maxMp: 1500 },
         stats: { classId }, inventory: {}, party: { role }
     };
-    const snapshot = ColdCombatProfile.legacySnapshot(base, ColdCombatProfile.skillRecordsFromTree(classId, 40), timestamp);
+    const snapshot = ColdCombatProfile.legacySnapshot(base, ColdCombatProfile.skillRecordsFromTree(classId, level)
+        .filter((record) => knows(Number(record.selfId))), timestamp);
     return { ...base, stats: { classId, coldCombat: { ...snapshot, effects: [] } } };
 };
 const spot = {
@@ -60,6 +61,29 @@ const plain = BackgroundResolver.castHuntPartyBuffs(fighters, timestamp);
 assert.strictEqual(plain.buffCasts, 0);
 assert.strictEqual(plain.members, fighters, 'a party without a buffer keeps its members');
 assert(BackgroundResolver.castHuntPartyBuffs(members, timestamp).buffCasts > 0, 'a party with a buffer still casts');
+
+// A member holding a stronger buff of a C4 stack type keeps it: the weaker
+// Chant of Eagle 2 (a level-60 Warcryer) does not replace Guidance 3, nor Death
+// Whisper 2 (a level-50 Prophet) Eye of Paagrio.
+const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const holding = (state, selfId, level) => {
+    const semantic = C4SkillRules.resolve({ selfId, level });
+    const effect = { key: semantic.effect, id: selfId, level, name: semantic.effect, type: 'buff', durationMs: BUFF_MS,
+        expiresAt: timestamp + BUFF_MS, stackFamily: semantic.stackFamily, stackOrder: semantic.stackOrder, stats: semantic.stats };
+    return { ...state, stats: { ...state.stats, coldCombat: { ...state.stats.coldCombat, effects: [effect] } } };
+};
+const guided = [member(7, 52, 'buffer', 60, (id) => id === 1309), holding(member(8, 0, 'dps', 60), 1240, 3), member(9, 0, 'dps', 60)];
+const chanted = hunt(guided, timestamp);
+assert(chanted.debug.partyBuffCasts > 0, 'the Warcryer casts Chant of Eagle');
+assert(effects(chanted, 2).some((effect) => effect.key === 'chant_of_eagle'), 'a member without Guidance gets Chant of Eagle');
+assert.deepStrictEqual(effects(chanted, 1).filter((effect) => ['guidance', 'chant_of_eagle'].includes(effect.key)).map((effect) => effect.key),
+    ['guidance'], 'Guidance 3 stays: a weaker Chant of Eagle does not replace it');
+const eyed = [member(10, 17, 'buffer', 50, (id) => id === 1242), holding(member(11, 0, 'dps', 50), 1364, 1), member(12, 0, 'dps', 50)];
+const prophesied = hunt(eyed, timestamp);
+assert(effects(prophesied, 2).some((effect) => effect.key === 'death_whisper' && effect.level === 2),
+    'a member without Eye of Paagrio gets Death Whisper 2');
+assert.deepStrictEqual(effects(prophesied, 1).filter((effect) => ['eye_of_paagrio', 'death_whisper'].includes(effect.key))
+    .map((effect) => effect.key), ['eye_of_paagrio'], 'Eye of Paagrio stays: Death Whisper 2 is neither cast on him nor replaces it');
 
 const originalCounters = PopulationMetrics.counters;
 const originalSummary = PopulationMetrics.lastSummaryCounters;
