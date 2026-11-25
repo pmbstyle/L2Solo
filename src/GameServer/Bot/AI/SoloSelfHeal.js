@@ -7,7 +7,9 @@
 //   the heal outgains what the bot loses during its cast;
 // - between fights, when the heal gives HP faster than sitting does (its cast
 //   plus the seated rest that wins its MP back, at its MP price), and the bot
-//   misses at least what it heals.
+//   misses at least what it heals: a heal ready now between fights; where the
+//   bot would sit down to rest, a heal on its reuse too, its wait counted, and
+//   the bot waits for it on its feet.
 // It reads the hot actor's API: a hot bot, or a cold profile through
 // ColdClassPolicy.actorFor. Party and PvP heals stay the author's
 // (BotSkillCapabilities, BotPvpTactics, the cold chooseHeal).
@@ -66,15 +68,15 @@ function candidates(actor, periodic) {
 }
 
 // The heals the bot can cast on itself now (candidates by its HP, MP and
-// reuse); none while it may not cast: a silenced bot fights on with its
-// weapon and walks on between fights.
-function heals(actor, periodic) {
+// reuse; wait: those on their reuse too); none while it may not cast: a
+// silenced bot fights on with its weapon and walks on between fights.
+function heals(actor, periodic, wait = false) {
     const list = candidates(actor, periodic);
     if (!list.length || PetHealRule.castBlocked(actor)) return [];
     const hp = Number(actor.fetchHp?.()) || 0, maxHp = Math.max(1, Number(actor.fetchMaxHp?.()) || 1);
     const mp = Number(actor.fetchMp?.()) || 0;
     return list.filter((heal) => (heal.limit === undefined || hp / maxHp * 100 <= heal.limit)
-        && heal.mp <= mp && actor.canUseSkill?.(heal.skill) !== false);
+        && heal.mp <= mp && (wait || actor.canUseSkill?.(heal.skill) !== false));
 }
 
 // In a fight: pace { dealtPerMs (to the mob), takenPerMs (by the bot) }, mobHp.
@@ -93,19 +95,25 @@ function inFight(actor, { mobHp, dealtPerMs, takenPerMs }) {
     return best?.skill || null;
 }
 
-// Between fights: the heal to cast instead of sitting, or null.
-function betweenFights(actor) {
+// The heal to cast instead of sitting: { skill, waitMs } or null. Between
+// fights only a heal ready now counts (waitMs 0): the next fight does not
+// wait for one. wait (the bot would sit down to rest): a heal on its reuse is
+// a heal coming, priced with its wait, and the bot stands while it waits (our
+// choice: no sit and stand per heal); the regeneration of that wait is not
+// counted, so the rule leans to sitting, never to a wait that loses.
+function betweenFights(actor, { wait = false } = {}) {
     const missing = Math.max(0, Number(actor.fetchMaxHp?.()) - (Number(actor.fetchHp?.()) || 0));
     const sitting = Utility.seatedHpPerMs(actor);
     if (!(missing > 0)) return null;
     const restMsPerMp = Utility.restMsPerMp(actor);
-    let best = null, bestRate = sitting;
-    for (const heal of heals(actor, true)) {
+    let best = null, bestRate = sitting, bestWaitMs = 0;
+    for (const heal of heals(actor, true, wait)) {
         if (heal.amount > missing) continue;
-        const rate = heal.amount / (heal.castMs + heal.mp * restMsPerMp);
-        if (rate > bestRate) { best = heal; bestRate = rate; }
+        const waitMs = wait ? Math.max(0, Number(actor.skillReadyInMs(heal.skill)) || 0) : 0;
+        const rate = heal.amount / (waitMs + heal.castMs + heal.mp * restMsPerMp);
+        if (rate > bestRate) { best = heal; bestRate = rate; bestWaitMs = waitMs; }
     }
-    return best?.skill || null;
+    return best ? { skill: best.skill, waitMs: bestWaitMs } : null;
 }
 
 // The pace of a fight from its start: start { at, hp, mobHp, healed }.
@@ -131,8 +139,19 @@ function tryInFight(session, bot, npc, Generics) {
 
 function tryBetweenFights(session, bot, Generics) {
     if (bot.state?.fetchCasts?.()) return false;
-    const skill = betweenFights(bot);
-    return skill ? castOnSelf(session, bot, skill, Generics, 'solo_self_heal_between_fights') : false;
+    const pick = betweenFights(bot);
+    return pick ? castOnSelf(session, bot, pick.skill, Generics, 'solo_self_heal_between_fights') : false;
+}
+
+// Hot: at a rest door, before the bot sits down. A heal, ready or on its
+// reuse, that beats the rest keeps it on its feet (the between-fights turn
+// casts it once ready; its own cast in flight is such a heal); true then.
+function healsInsteadOfRest(session, bot) {
+    const pick = betweenFights(bot, { wait: true });
+    if (!pick) return false;
+    session.lastCombatDecision = { action: 'wait_heal', reason: 'solo_self_heal_instead_of_rest',
+        skillId: pick.skill.fetchSelfId(), waitMs: pick.waitMs, at: Date.now() };
+    return true;
 }
 
 function castOnSelf(session, bot, skill, Generics, reason) {
@@ -143,4 +162,4 @@ function castOnSelf(session, bot, skill, Generics, reason) {
     return true;
 }
 
-module.exports = { selfHeal, inFight, betweenFights, pace, healAmount, tryInFight, tryBetweenFights };
+module.exports = { selfHeal, inFight, betweenFights, pace, healAmount, tryInFight, tryBetweenFights, healsInsteadOfRest };

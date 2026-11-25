@@ -512,6 +512,8 @@ function beginVoluntaryRecovery(session, bot, BotAI, readiness = null) {
     session.restWhole = false;
     session.restWhole = !!readiness && RestingState.rested(session, bot);
     if (session.currentTargetId) clearTarget(session, bot, session.currentTargetId);
+    // A heal, ready or coming, that beats the rest is cast instead, on its feet (SoloSelfHeal).
+    if (isSoloHunter(session) && SoloSelfHeal.healsInsteadOfRest(session, bot)) return;
     TownNpcApproach.reset(session);
     session.lastTargetEvaluation = undefined;
     session.lastCombatDecision = undefined;
