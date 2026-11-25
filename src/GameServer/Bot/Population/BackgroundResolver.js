@@ -16,6 +16,7 @@ const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 const PetTankRule = invoke('GameServer/Bot/AI/PetTankRule');
 const DangerRule = invoke('GameServer/Bot/AI/DangerRule');
 const PartyHealPolicy = invoke('GameServer/Bot/AI/PartyHealPolicy');
+const BotSkillIntent = invoke('GameServer/Bot/AI/BotSkillIntent');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
@@ -759,10 +760,13 @@ function coldBuffEffect(skill, timestamp) {
     };
 }
 
-// Lands a cast buff on a cold effect list by the store's stack rule: a stronger
-// buff of the stack type keeps the slot, an equal or weaker one is replaced.
-function replaceColdBuff(effects, nextEffect) {
-    const displaced = EffectStore.displacedBy(effects, nextEffect);
+// Lands a cast buff or heal over time on a cold effect list by the store's
+// stack rule: a stronger member of the stack type in force at the landing time
+// `at` keeps the slot, an equal or weaker one is replaced (cold lists keep
+// expired rows, which hold nothing).
+function replaceColdBuff(effects, nextEffect, at) {
+    const displaced = EffectStore.displacedBy((effects || []).filter((effect) => !effect?.expiresAt
+        || Number(effect.expiresAt) > at), nextEffect);
     if (!displaced) return effects;
     return [...(effects || []).filter((effect) => !displaced.includes(effect) && effect?.key !== nextEffect.key), nextEffect];
 }
@@ -899,7 +903,7 @@ function castPartyBuffs(fighters, timestamp, options = {}) {
         const effect = coldBuffEffect(action.skill, timestamp + durationMs);
         action.recipients.forEach((actor) => {
             const target = actor.fighter;
-            refreshFighterProfile(target, replaceColdBuff(target.profile.effects, effect), timestamp + durationMs);
+            refreshFighterProfile(target, replaceColdBuff(target.profile.effects, effect, timestamp + durationMs), timestamp + durationMs);
         });
         provider.vitals.mp = Math.max(0, provider.vitals.mp - cost);
         provider.cooldowns[action.skill.fetchSelfId()] = timestamp + durationMs
@@ -2048,6 +2052,8 @@ function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
     const injured = allies.filter((ally) => ally.vitals.hp > 0 && ally.vitals.hp / Math.max(1, ally.vitals.maxHp) < PartyHealPolicy.HEAL_BELOW)
         .sort((a, b) => (a.vitals.hp / a.vitals.maxHp) - (b.vitals.hp / b.vitals.maxHp))[0];
     if (!injured) return null;
+    const emergency = PartyHealPolicy.emergency(injured.vitals.maxHp - injured.vitals.hp, injured.vitals.maxHp);
+    const running = (injured.profile.effects || []).filter((effect) => Number(effect.expiresAt) > time);
     const skill = (profile.skills || []).filter((candidate) => {
         if (candidate.passive || Number(candidate.mp || 0) > mp || Number(cooldowns[candidate.selfId] || 0) > time) return false;
         const semantic = C4SkillRules.resolveCached(candidate);
@@ -2055,7 +2061,7 @@ function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
             && ['self', 'party', 'ally', 'friendly'].includes(semantic.target)
             && (semantic.target !== 'ally' || caster === injured || Number(caster?.state.clanId) > 0
                 && Number(caster.state.clanId) === Number(injured.state.clanId))
-            && (!semantic.hot || !(injured.profile.effects || []).some(e => e.key === semantic.effect && Number(e.expiresAt) > time))
+            && (!semantic.hot || !BotSkillIntent.equivalentIn(running, semantic, candidate.selfId, candidate.level, emergency))
             && (semantic.target !== 'self' || caster?.vitals.hp > 0 && caster.vitals.hp < caster.vitals.maxHp * 0.7);
     }).sort((a, b) => {
         const score = skill => {
@@ -2085,12 +2091,15 @@ function applyAllyHeal(caster, allies, heal, shot = null) {
     const helped = [];
     for (const ally of targets.filter(f => f.vitals.hp > 0)) {
         if (semantic.hot) {
+            // A heal over time lands by the store's stack rule, as hot: a
+            // stronger running member of its family refuses it, the rest give way.
             const at = Number(caster.now || Date.now());
             const effect = { id: heal.skill.selfId, level: heal.skill.level, key: semantic.effect,
                 type: 'buff', casterId: caster.state.characterId, createdAt: at,
                 expiresAt: at + semantic.hot.count * semantic.hot.intervalMs,
+                stackFamily: semantic.stackFamily || null, stackOrder: semantic.stackOrder ?? null,
                 hot: { ...semantic.hot, nextAt: at + semantic.hot.intervalMs } };
-            ally.profile.effects = replaceMusicEffect(ally.profile.effects, effect);
+            ally.profile.effects = replaceColdBuff(ally.profile.effects, effect, at);
             continue;
         }
         const before = ally.vitals.hp;

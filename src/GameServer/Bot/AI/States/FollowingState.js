@@ -539,7 +539,8 @@ function pendingSupportShouldYield(session, bot, leaderSession, pullerActor, par
     if (pendingHeal && !canHealParty(bot, leaderSession)) return true;
     if (pendingHeal && targetHpRatio >= 0.70) return true;
     if (pendingHeal && !BotSkillCapabilities.selectHealSkill(bot, {
-        target, group: pending.kind === 'group_heal', fallbackGroup
+        target, group: pending.kind === 'group_heal', fallbackGroup,
+        emergency: pending.kind === 'emergency_heal' || pending.kind === 'self_preservation'
     })) return true;
     if (pending.kind === 'restore_mp' && targetMpRatio >= 0.55) return true;
     if (partyThreat && pending.kind === 'restore_mp') return true;

@@ -84,9 +84,10 @@ function support(session, bot, context, Generics, now) {
             return wounded.filter(actor => Threats.distance(bot, actor) <= radius
                 && (kind !== 'ally' || alliedForHeal(bot, actor)));
         };
+        const emergency = PartyHeal.emergency(target.fetchMaxHp() - target.fetchHp(), target.fetchMaxHp());
         const skills = Capabilities.healSkills(bot).filter(skill => usable(bot, skill))
             .filter(skill => recipientsFor(skill).includes(target))
-            .filter(skill => !skill.fetchSemantic?.()?.hot || !Intent.equivalentActive(target, skill));
+            .filter(skill => !skill.fetchSemantic?.()?.hot || !Intent.equivalentActive(target, skill, { emergency }));
         const chosen = [...skills].sort((a, b) => {
             const preferred = skill => {
                 const semantic = skill.fetchSemantic?.() || {};

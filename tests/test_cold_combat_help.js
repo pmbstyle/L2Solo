@@ -32,7 +32,7 @@ const resolve = (members, more = {}) => Party.resolve({ party, members, spot, el
     timestamp: at, episodeId: 'help-episode', assessRelationship: memory.assess.bind(memory), ...more });
 const input = JSON.stringify([injured, healer]);
 const selfCaster = { state: healer, vitals: { hp: 100, maxHp: 100 }, profile: { skills: [{ selfId: 45, level: 1, power: 100, mp: 1 }] } };
-const selfTarget = { state: injured, vitals: { hp: 20, maxHp: 100 } };
+const selfTarget = { state: injured, vitals: { hp: 20, maxHp: 100 }, profile: { effects: [] } };
 assert.strictEqual(Resolver.combat.chooseHeal(selfCaster.profile, [selfTarget, selfCaster], 100, {}, at, selfCaster), null,
     'healthy casters cannot treat an injured ally as the recipient of a self-only heal');
 selfCaster.vitals.hp = 30;
