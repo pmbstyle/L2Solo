@@ -51,7 +51,7 @@ function actor(id, classId = 1) {
             fetchHits: () => !!a.hitting, setHits(v) { a.hitting = v; },
             fetchCasts: () => !!a.casting, setCasts(v) { a.casting = v; },
             fetchTowards: () => !!a.moving, fetchSeated: () => !!a.seated, setSeated(v) { a.seated = v; },
-            fetchCombats: () => !!a.combats }
+            fetchCombats: () => !!a.combats, fetchAnimated: () => false, setAnimated() {} }
     };
     return a;
 }

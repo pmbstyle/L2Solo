@@ -41,7 +41,7 @@ function owner(items, maximum = 20000) {
         backpack: new Backpack({ items: [], paperdoll: {} }),
         state: { seated: true, fetchSeated() { return this.seated; }, setSeated(value) { this.seated = value; },
             fetchTowards: () => false, fetchHits: () => false, fetchCasts() { return !!this.casting; },
-            setCasts(value) { this.casting = value; } },
+            setCasts(value) { this.casting = value; }, fetchAnimated: () => false, setAnimated() {} },
         automation: { abortAll() {} }, unselect() {}, moves: [], moveTo(move) { this.moves.push(move); } };
     actor.backpack.items = items;
     const leader = { actor: { fetchId: () => 971002, fetchIsOnline: () => true,

@@ -26,7 +26,8 @@ function build({ potions = 0, mobHp = 10, mobPAtk = 1, economy = true } = {}) {
         fetchKarma: () => 0, fetchIsOnline: () => true,
         state: {
             fetchDead: () => false, fetchCasts: () => false, fetchHits: () => false, fetchTowards: () => false,
-            fetchSeated: () => seated, setSeated: (value) => { seated = value; }
+            fetchSeated: () => seated, setSeated: (value) => { seated = value; },
+            fetchAnimated: () => false, setAnimated() {}
         },
         canUseSkill: () => true,
         backpack: {
@@ -46,7 +47,7 @@ function build({ potions = 0, mobHp = 10, mobPAtk = 1, economy = true } = {}) {
     };
     const session = {
         accountId: 'bot_resting_moment', actor: bot, plan: 'resting', recoveryLocked: true,
-        incomingThreatId: mob.fetchId(), incomingThreatAt: Date.now(), dataSendToOthers() {}
+        incomingThreatId: mob.fetchId(), incomingThreatAt: Date.now(), dataSendToOthers() {}, dataSendToMeAndOthers() {}
     };
     // The decision the body received (DecisionEvents.receive: decided);
     // without one the price of death is unknown.
