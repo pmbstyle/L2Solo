@@ -641,24 +641,6 @@ function desiredLoadout(members,providers,context=cachedEncounterContext(members
     });
 }
 
-const loadoutMaintenance = new WeakMap();
-function reconcileLoadout(members,providers) {
-    const owner=partyActionCacheOwner(members),now=Date.now();
-    if(!owner || now-Number(loadoutMaintenance.get(owner)||0)<1000) return [];
-    if(members.some(({actor})=>actor?.state?.fetchCasts?.()
-        || Number(actor?.session?.pendingSupportCast?.expiresAt||0)>now)) return [];
-    loadoutMaintenance.set(owner,now);
-    const loadout=desiredLoadout(members,providers),removed=[];
-    for(const [actor,wanted] of loadout.selected) {
-        const discarded=EffectStore.list(actor).filter(e=>e.type==='buff' && e.dispellable!==false && !e.toggle
-            && loadout.managedByActor.get(actor).has(BuffLoadout.family(e.key,e.stackFamily)) && !wanted.has(BuffLoadout.normalize(e.key)));
-        for(const effect of discarded) if(EffectStore.remove(actor,effect.key)) removed.push({actorId:actor.fetchId(),effect:effect.key});
-        if(discarded.length) invoke('GameServer/Effects/EffectTicker').refreshEffects(actor.session,actor);
-    }
-    if(removed.length) invalidatePartyActionCache();
-    return removed;
-}
-
 function queueSupportCast(session, action) {
     if (!session || !action?.provider || !action?.target || !action?.skill) return false;
     session.pendingSupportCast = {
@@ -921,7 +903,6 @@ module.exports = {
     MIN_SUPPORT_MP_RATIO,
     supportSkills,
     desiredLoadout,
-    reconcileLoadout,
     isUsefulForTarget,
     situationalBuffUseful,
     partyAuraCanReach,

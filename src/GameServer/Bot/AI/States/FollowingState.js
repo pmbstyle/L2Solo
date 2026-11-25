@@ -1350,9 +1350,9 @@ const FollowingState = {
         return false;
     },
 
-    // Newbie buff refresh, town errands, town-visit rebuff, support loadout.
+    // Newbie buff refresh, town errands, town-visit rebuff.
     tickBuffsAndErrands(ctx) {
-        const { session, bot, BotAI, playerSession, player, role, pulling, partyThreat, currentPartyAggroMonsters, leaderTargetId, hotTownRebuffVisit } = ctx;
+        const { session, bot, BotAI, playerSession, player, role, partyThreat, currentPartyAggroMonsters, leaderTargetId, hotTownRebuffVisit } = ctx;
         let acted = false;
         let keepRoleDecision = false;
 
@@ -1435,10 +1435,6 @@ const FollowingState = {
             return true;
         }
 
-        if (!partyThreat && !leaderTargetId && !isBusy(bot)) {
-            BotSupportPlanner.reconcileLoadout(partySupportMembers(playerSession,pulling.puller),
-                PartyPulling.supportProviders(playerSession));
-        }
         Object.assign(ctx, { acted, keepRoleDecision });
         return false;
     },
