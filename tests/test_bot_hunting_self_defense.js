@@ -315,7 +315,7 @@ function woundedMystic(id, { readyInMs, casting = false, hp = 30, mp = 100 }) {
         fetchSeatedHpPerMs: () => 0.0005, fetchSeatedMpPerMs: () => 0.001, skillset: { skills: [selfHeal] },
         skillReadyInMs: () => readyInMs, canUseSkill: () => readyInMs <= 0 });
     bot.state = { ...state(), fetchCasts: () => casting, fetchSeated: () => seated, setSeated(value) { seated = value; } };
-    const session = { accountId: `bot_mystic_${id}`, actor: bot, plan: 'hunting', dataSendToOthers() {} };
+    const session = { accountId: `bot_mystic_${id}`, actor: bot, plan: 'hunting', dataSendToOthers() {}, dataSendToMeAndOthers() {} };
     const execs = [];
     World.user = { sessions: [session] };
     tickHunting(session, bot, { skillExec: (_s, _b, data) => execs.push(data) }, { say() {}, executeCombat() {} });

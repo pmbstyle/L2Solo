@@ -292,7 +292,7 @@ function restWithCommander() {
             automation: { abortAll() {}, replenishVitals() {}, stopReplenish() {} },
             attack: { abortCast() {}, clearTimers() {}, resetQueuedEvent() {} },
             state: { fetchDead: () => false, setDead() {}, fetchHits: () => false, setHits() {}, fetchCasts: () => false,
-                setCasts() {}, fetchTowards: () => false, fetchSeated: () => a.seated, setSeated(v) { a.seated = v; },
+                setCasts() {}, fetchTowards: () => false, fetchSeated: () => a.seated, setSeated(v) { a.seated = v; }, fetchAnimated: () => a.animated === true, setAnimated(v) { a.animated = v; },
                 fetchCombats: () => false } };
         const session = { actor: a, accountId: id >= 9000 ? 'player_9001' : `bot_clan_${id}`, plan: 'following',
             aiActive: true, dataSendToOthers() {}, dataSendToMeAndOthers() {}, dataSendToMe() {} };
