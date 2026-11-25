@@ -149,4 +149,17 @@ assert.equal(Resolver.soloWalkMs(4, 100, 6000 * 6000, 700), 8000, 'a reach of 70
 assert.equal(Resolver.soloWalkMs(400, 100, 6000 * 6000, 700), 0, 'a dense spot inside the reach: no walk');
 const archer = Cold.profileFor(HuntCycle.referenceState(22, 30), T), dagger = Cold.profileFor(HuntCycle.referenceState(7, 30), T);
 assert(Cold.attackReach(archer) > 3 * Cold.attackReach(dagger), 'a bow reaches far beyond a dagger');
+// The spot table's gap healing is the heals ready after a won fight, as the
+// round casts them (the waited heal is the rest door's, not a per-gap rate).
+{
+    const HuntModel = require('../scripts/hunt-tables/HuntModel');
+    for (const [classId, level] of [[42, 45], [10, 5], [15, 25]]) {
+        const profile = Cold.profileFor(HuntCycle.referenceState(classId, level), T, { store: false });
+        const vitals = { hp: 1, mp: profile.maxMp };
+        const { ms } = Resolver.coldHealBetweenFights(profile, vitals, {}, 0, null, {});
+        const ready = ms > 0 ? (vitals.hp - 1) / (ms / 1000) : 0;
+        assert(Math.abs(HuntModel.gapHealRate(profile) - ready) < 1e-9,
+            `class ${classId} L${level}: the gap heal rate is the ready pass's ${ready.toFixed(1)} HP/s`);
+    }
+}
 console.log('Solo round rules checks passed');
