@@ -66,10 +66,10 @@ assert(BackgroundResolver.castHuntPartyBuffs(members, timestamp).buffCasts > 0, 
 // Chant of Eagle 2 (a level-60 Warcryer) does not replace Guidance 3, nor Death
 // Whisper 2 (a level-50 Prophet) Eye of Paagrio.
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
-const holding = (state, selfId, level) => {
+const holding = (state, selfId, level, left = BUFF_MS) => {
     const semantic = C4SkillRules.resolve({ selfId, level });
     const effect = { key: semantic.effect, id: selfId, level, name: semantic.effect, type: 'buff', durationMs: BUFF_MS,
-        expiresAt: timestamp + BUFF_MS, stackFamily: semantic.stackFamily, stackOrder: semantic.stackOrder, stats: semantic.stats };
+        expiresAt: timestamp + left, stackFamily: semantic.stackFamily, stackOrder: semantic.stackOrder, stats: semantic.stats };
     return { ...state, stats: { ...state.stats, coldCombat: { ...state.stats.coldCombat, effects: [effect] } } };
 };
 const guided = [member(7, 52, 'buffer', 60, (id) => id === 1309), holding(member(8, 0, 'dps', 60), 1240, 3), member(9, 0, 'dps', 60)];
@@ -78,6 +78,12 @@ assert(chanted.debug.partyBuffCasts > 0, 'the Warcryer casts Chant of Eagle');
 assert(effects(chanted, 2).some((effect) => effect.key === 'chant_of_eagle'), 'a member without Guidance gets Chant of Eagle');
 assert.deepStrictEqual(effects(chanted, 1).filter((effect) => ['guidance', 'chant_of_eagle'].includes(effect.key)).map((effect) => effect.key),
     ['guidance'], 'Guidance 3 stays: a weaker Chant of Eagle does not replace it');
+// A stronger buff of the type in its last minute still holds: the weaker Chant of Eagle
+// is not cast over it (no MP, no cast counted).
+const expiring = [holding(member(13, 52, 'buffer', 60, (id) => id === 1309), 1240, 3, 60000), holding(member(14, 0, 'dps', 60), 1240, 3, 60000)];
+const lastMinute = BackgroundResolver.castHuntPartyBuffs(expiring, timestamp);
+assert.strictEqual(lastMinute.buffCasts, 0, 'no weaker Chant of Eagle is cast over Guidance 3 with 60 s left');
+assert.strictEqual(lastMinute.members[0].vitals.mp, expiring[0].vitals.mp, 'the Warcryer spends no MP on it');
 const eyed = [member(10, 17, 'buffer', 50, (id) => id === 1242), holding(member(11, 0, 'dps', 50), 1364, 1), member(12, 0, 'dps', 50)];
 const prophesied = hunt(eyed, timestamp);
 assert(effects(prophesied, 2).some((effect) => effect.key === 'death_whisper' && effect.level === 2),

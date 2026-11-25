@@ -3,6 +3,7 @@ const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Loadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 const Policy = invoke('GameServer/Bot/Economy/BuffServicePolicy');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 const MAX_OFFER_BYTES = 512, MAX_PROVIDERS = 16;
 
 function available(state) {
@@ -56,8 +57,15 @@ function choose(provider, recipient, timestamp, skills) {
         .forEach(skill => {
             const semantic = skill.fetchSemantic();
             const family = Loadout.family(semantic.effect, semantic.stackFamily);
-            if (active.some(effect => Loadout.family(effect.key, effect.stackFamily) === family
-                && Number(effect.level || 0) >= skill.fetchLevel())) return;
+            // A buff of a C4 stack type is held when the store would refuse it or an equal
+            // one is there (the sale lands by the same rule); other buffs by family and level.
+            const held = semantic.stackFamily
+                ? EffectStore.displacedBy(active, effectsFor([skill], timestamp)[0]) === null
+                    || active.some(effect => effect.stackFamily === semantic.stackFamily
+                        && Number(effect.stackOrder ?? effect.level ?? 0) >= Number(semantic.stackOrder ?? skill.fetchLevel()))
+                : active.some(effect => Loadout.family(effect.key, effect.stackFamily) === family
+                    && Number(effect.level || 0) >= skill.fetchLevel());
+            if (held) return;
             const previous = byFamily.get(family);
             if (!previous || previous.fetchLevel() < skill.fetchLevel()) byFamily.set(family, skill);
         });

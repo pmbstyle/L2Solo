@@ -95,13 +95,14 @@ async function persistState(current) {
     const Offer = invoke('GameServer/Bot/Economy/ColdBuffOffer');
     eyeBuyer.stats.coldCombat.effects = Offer.effectsFor([Cold.skillAdapter({ selfId: 1364, level: 1 })], Date.now());
     const eyeOffer = Cold.coldOffer(eyeProvider, eyeBuyer);
-    const deathWhisper = eyeOffer?.effects.find(effect => effect.key === 'death_whisper');
-    assert.strictEqual(deathWhisper?.level, 2, 'the level-55 prophet offers Death Whisper 2');
+    assert(eyeOffer, 'the prophet still sells an Eye of Paagrio holder what he lacks');
+    assert(!eyeOffer.effects.some(effect => effect.key === 'death_whisper'),
+        'a weaker Death Whisper is not offered over Eye of Paagrio');
+    assert(eyeOffer.effects.length > 0, 'the other buffs of the offer are sold');
     for (const current of [eyeProvider, eyeBuyer]) await persistState(current);
-    const overEye = await Database.purchaseColdBuffs({ payerId: eyeBuyerId, providerId: eyeProviderId, spotId: 'test-spot',
-        payerRevision: 0, providerRevision: 0, price: 100, mpCost: 10, effects: [deathWhisper], timestamp: Date.now() });
-    assert.strictEqual(overEye.ok, false, 'a weaker Death Whisper is not sold over Eye of Paagrio');
-    assert.strictEqual(overEye.reason, 'already_buffed');
+    const eyeSale = await Database.purchaseColdBuffs({ payerId: eyeBuyerId, providerId: eyeProviderId, spotId: 'test-spot',
+        payerRevision: 0, providerRevision: 0, price: 100, mpCost: 10, effects: eyeOffer.effects, timestamp: Date.now() });
+    assert.strictEqual(eyeSale.ok, true, 'the rest of the offer is sold to the Eye holder');
 
     const tickProviderId = await character('buff_service_tick_seller', 'TickBuffSeller');
     const tickBuyerId = await character('buff_service_tick_buyer', 'TickBuffBuyer');

@@ -231,8 +231,7 @@ try {
             }
         }
         for(const summon of summons) {
-            assert(!afterCast.managedByActor.get(summon).has('shield'),'single-target buffs on a pet stay protected');
-            assert(Effects.list(summon).some(e=>e.key==='shield'),'maintenance preserves the pet owner\'s ordinary buff');
+            assert(Effects.list(summon).some(e=>e.key==='shield'),'a pet keeps its single-target shield after the music rotation');
         }
         for(let i=0;i<10;i++) {
             const action=Planner.nextPartyAction(musicRows,musicProviders);if(!action)break;

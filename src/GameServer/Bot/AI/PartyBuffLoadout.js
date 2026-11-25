@@ -86,8 +86,7 @@ function build(members, providers, context, api) {
             aura:api.recipients(members,provider,skill)})));
     const skillFamily=skill=>family(skill.fetchSemantic().effect,skill.fetchSemantic().stackFamily);
     const effectFamily=effect=>family(effect.key,effect.stackFamily);
-    const managed=new Set(skills.map(({skill})=>skillFamily(skill)));
-    const used=new Map(), limits=new Map(), selected=new Map(), selectedFamilies=new Map(), managedByActor=new Map();
+    const used=new Map(), limits=new Map(), selected=new Map(), selectedFamilies=new Map();
     const init=actor=>{
         if(used.has(actor))return;
         // Party summons share the aura loadout, but keep ownership of their
@@ -96,7 +95,6 @@ function build(members, providers, context, api) {
         const actorManaged=new Set(partyActors.has(actor) ? skills
             .filter(({skill,aura})=>api.isAura(skill) ? aura.includes(actor) : actors.includes(actor))
             .map(({skill})=>skillFamily(skill)) : []);
-        managedByActor.set(actor,actorManaged);
         const effects=api.effects(actor);
         const protectedEffects=effects.filter(e=>Effects.includedInBuffCount(e)
             && (!actorManaged.has(effectFamily(e)) || e.dispellable===false || e.type!=='buff'));
@@ -141,7 +139,7 @@ function build(members, providers, context, api) {
         chosen.push(c);
         for(const a of c.recipients){used.set(a,used.get(a)+1);selected.get(a).add(c.key);selectedFamilies.get(a).add(c.group);}
     }
-    return {chosen,selected,managed,managedByActor};
+    return {chosen,selected};
 }
 
 module.exports={build,useful,family,normalize,raidRecoveryFamilies};

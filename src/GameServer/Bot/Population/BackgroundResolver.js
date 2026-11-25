@@ -851,7 +851,8 @@ function coldBuffPlan(fighters, timestamp, { self = false } = {}) {
 
 // Does effects hold the buff of skill (an adapter) at its strength or above,
 // with more than its recast share left? A buff of the skill's stack type holds
-// it at an equal or higher stack order (the landing refuses a weaker one).
+// it at an equal order with its recast share left, and at a higher order always
+// (the landing refuses a weaker one).
 function buffHeld(effects, skill, timestamp) {
     const semantic = skill.fetchSemantic();
     const family = PartyBuffLoadout.family(PartyBuffLoadout.normalize(semantic.effect), semantic.stackFamily);
@@ -859,13 +860,14 @@ function buffHeld(effects, skill, timestamp) {
     const order = Number(semantic.stackOrder ?? level);
     const durationMs = Math.max(60000, Number(semantic.durationMs ?? skill.fetchBuffTime()) || 1200000);
     const threshold = Math.min(BUFF_RECAST_MAX_MS, Math.floor(durationMs * BUFF_RECAST_SHARE));
+    const longLeft = (effect) => !effect?.expiresAt || Number(effect.expiresAt) - timestamp > threshold;
     return (effects || []).some((effect) => (
-        (semantic.stackFamily && effect?.stackFamily === semantic.stackFamily
-            ? Number(effect.stackOrder ?? effect.level ?? 0) >= order
+        semantic.stackFamily && effect?.stackFamily === semantic.stackFamily
+            ? Number(effect.stackOrder ?? effect.level ?? 0) > order
+                || (Number(effect.stackOrder ?? effect.level ?? 0) >= order && longLeft(effect))
             : (Number(effect?.id || 0) === Number(skill.fetchSelfId())
                 || PartyBuffLoadout.family(effect?.key, effect?.stackFamily) === family)
-                && Number(effect?.level || 0) >= level)
-        && (!effect?.expiresAt || Number(effect.expiresAt) - timestamp > threshold)
+                && Number(effect?.level || 0) >= level && longLeft(effect)
     ));
 }
 
