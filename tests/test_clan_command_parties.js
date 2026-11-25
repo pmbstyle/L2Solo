@@ -269,8 +269,87 @@ async function main() {
 
     assert(released.every(s => !s.partyCompanion && !s.followPlayerSession && !s.clanCommandParty));
     assert(messages.length > 0);
+    restWithCommander();
     console.log('Clan command parties: native recruitment, three groups, nine-member limit, local support scopes, global loot settings, leadership, movement and disconnect passed');
 }
+// The bot leader of a command party ends its rest when the commander stands and
+// walks to him; its members, seated beside it, stand and follow it.
+function restWithCommander() {
+    function walker(id, classId, x) {
+        const a = { x, y: 0, seated: true, destId: null, moves: [],
+            fetchId: () => id, fetchSelfId: () => id, fetchName: () => `ClanBot${id}`, fetchClassId: () => classId,
+            fetchLevel: () => 40, fetchIsOnline: () => true, fetchClanId: () => 77, fetchHead: () => 0,
+            fetchLocX: () => a.x, fetchLocY: () => a.y, fetchLocZ: () => 0,
+            fetchHp: () => 1000, fetchMaxHp: () => 1000, fetchMp: () => 1000, fetchMaxMp: () => 1000,
+            fetchCp: () => 100, fetchMaxCp: () => 100, fetchPDef: () => 100, fetchKarma: () => 0, fetchPvpFlag: () => 0,
+            fetchDestId: () => a.destId, fetchAttackable: () => false, fetchIsRaidBoss: () => false,
+            isDead: () => false, canUseSkill: () => true, setHp() {}, setMp() {}, refreshVitalsRegeneration() {},
+            select({ id: target }) { a.destId = target; }, unselect() { a.destId = null; }, clearDestId() { a.destId = null; },
+            moveTo(data) { a.moves.push(data); },
+            backpack: { fetchTotalWeaponKind: () => 'Weapon.Sword', fetchEquippedArmors: () => [], fetchItems: () => [],
+                fetchTotalLoad: () => 0, fetchMaxLoad: () => 1000 },
+            skillset: { fetchSkill: () => null, fetchSkills: () => [], get skills() { return []; } },
+            automation: { abortAll() {}, replenishVitals() {}, stopReplenish() {} },
+            attack: { abortCast() {}, clearTimers() {}, resetQueuedEvent() {} },
+            state: { fetchDead: () => false, setDead() {}, fetchHits: () => false, setHits() {}, fetchCasts: () => false,
+                setCasts() {}, fetchTowards: () => false, fetchSeated: () => a.seated, setSeated(v) { a.seated = v; },
+                fetchCombats: () => false } };
+        const session = { actor: a, accountId: id >= 9000 ? 'player_9001' : `bot_clan_${id}`, plan: 'following',
+            aiActive: true, dataSendToOthers() {}, dataSendToMeAndOthers() {}, dataSendToMe() {} };
+        a.session = session;
+        return session;
+    }
+    const commander = walker(9001, 0, 100);
+    commander.actor.seated = false;
+    const leader = walker(701, 5, 0), member = walker(702, 12, 0);
+    const group = { active: true, number: 1, commander, commanderActor: commander.actor, owner: leader,
+        leaderAssigned: true, movement: 'follow', members: new Set([leader, member]) };
+    commander.commandParties = new Map([[1, group]]);
+    for (const session of group.members) Object.assign(session, { partyCompanion: true, followPlayerSession: leader, clanCommandParty: group });
+    const { registerSessions } = require('./helpers/worldSessions');
+    registerSessions([commander, leader, member]);
+    patch(Manager, 'sessions', [leader, member]);
+    patch(World, 'npc', { spawns: [] });
+    patch(World, 'fetchNpcsInRadius', () => []);
+    const transit = invoke('GameServer/Bot/AI/CompanionTownTransit');
+    patch(transit, 'tick', () => ({ handled: false }));
+    patch(transit, 'sameTown', () => false);
+    const Following = invoke('GameServer/Bot/AI/States/FollowingState');
+    const ai = { say() {}, executeCombat() {}, wakeup() {} }, generics = { skillExec() {}, teleportTo() {} };
+
+    const Resting = invoke('GameServer/Bot/AI/States/RestingState');
+
+    group.movement = 'hold';
+    for (const session of group.members) Object.assign(session, { botStay: true, stayLocation: { locX: 0, locY: 0, locZ: 0 } });
+    Object.assign(commander.actor, { x: 3000, seated: true });
+    leader.plan = 'resting';
+    Resting.tick(leader, leader.actor, generics, ai);
+    assert.equal(leader.plan, 'resting', 'a held command leader does not leave its post to sit by the commander');
+    Following.tick(leader, leader.actor, generics, ai);
+    for (let tick = 0; tick < 2; tick++) Following.tick(member, member.actor, generics, ai);
+    assert.deepEqual([leader.actor.moves.length, member.actor.moves.length], [0, 0], 'a held command party stays at its post');
+    group.movement = 'follow';
+    for (const session of group.members) Object.assign(session, { botStay: false, stayLocation: null, plan: 'following' });
+    Object.assign(commander.actor, { x: 100, seated: false });
+    Object.assign(leader.actor, { seated: true });
+    Object.assign(member.actor, { seated: true });
+
+    leader.plan = 'resting';
+    Resting.tick(leader, leader.actor, generics, ai);
+    assert.equal(leader.plan, 'following', 'a rested command leader ends its rest when the commander stands beside it');
+    assert.equal(leader.actor.seated, false);
+
+    commander.actor.x = 3000;
+    Following.tick(leader, leader.actor, generics, ai);
+    assert.equal(leader.actor.moves.length, 1, 'the command leader walks to the commander');
+    Object.assign(leader.actor, { x: leader.actor.moves[0].to.locX, y: leader.actor.moves[0].to.locY });
+    for (let tick = 0; tick < 2 && !member.actor.moves.length; tick++) {
+        Following.tick(member, member.actor, generics, ai);
+        assert.equal(member.actor.seated, false, 'a member does not sit again beside a walking leader');
+    }
+    assert.equal(member.actor.moves.length > 0, true, 'a member seated beside the leader follows it within two ticks');
+}
+
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
     for (const session of Manager.sessions) { session.partyCompanion = false; session.followPlayerSession = null; }
     restores.reverse().forEach(restore => restore());

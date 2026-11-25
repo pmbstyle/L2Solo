@@ -148,7 +148,8 @@ module.exports = {
                 return;
             }
 
-            const distance = point(bot).distance(point(player));
+            const leader = invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session).actor;
+            const distance = point(bot).distance(point(leader));
             if (invoke('GameServer/Bot/AI/PlayerPartyRaid').tick(session, bot, Generics, BotAI)) return;
             const partyRaid = BotRaidSafety.syncPlayerPartyRaid(playerSession);
             if (partyRaid?.phase === 'opening') {
@@ -181,7 +182,7 @@ module.exports = {
             const combatTargetId = !threatIsHeldPull && threat?.actor?.fetchId?.()
                 ? threat.actor.fetchId()
                 : (!leaderTargetIsHeldPull ? leaderTargetId : undefined);
-            const leaderSeated = player.state?.fetchSeated?.() === true;
+            const leaderSeated = leader.state?.fetchSeated?.() === true;
             const recovered = rested(session, bot);
 
             // When the whole party rests, regroup first. FollowingState checks
@@ -191,7 +192,7 @@ module.exports = {
             const shouldRegroupForPartyRest = !session.explicitRestOrder &&
                 leaderSeated &&
                 distance > 250 &&
-                distanceToPartyFormation(session, bot, player) > PARTY_REST_FORMATION_TOLERANCE;
+                distanceToPartyFormation(session, bot, leader) > PARTY_REST_FORMATION_TOLERANCE;
             const shouldFollowLeader = shouldRegroupForPartyRest || (recovered && (
                 distance > REST_FOLLOW_WAKE_DISTANCE || !leaderSeated
             ));
@@ -262,7 +263,7 @@ module.exports = {
         }
 
         const restingWithLeader = session.partyCompanion === true
-            && session.followPlayerSession?.actor?.state?.fetchSeated?.() === true;
+            && invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session)?.actor?.state?.fetchSeated?.() === true;
         if (rested(session, bot) && !restingWithLeader) {
             session.recoveryLocked = false;
             session.restWhole = false;
