@@ -203,8 +203,8 @@ function matchupOf(bot) {
 }
 
 // HP per second a bot's heals between fights give back (BackgroundResolver
-// coldHealBetweenFights from 1 HP, where the bot would sit: the waits for
-// their reuse counted), 0 for a bot without them.
+// coldHealBetweenFights from 1 HP, where the bot would sit: the heals ready
+// and one waited for on its reuse), 0 for a bot without them.
 function gapHealRate(profile) {
     const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
     const vitals = { hp: 1, mp: profile.maxMp };

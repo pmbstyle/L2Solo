@@ -55,6 +55,11 @@ assert.equal(Heal.betweenFights(wounded), null, 'between fights the mystic walks
 const coming = Heal.betweenFights(wounded, { wait: true });
 assert.equal(coming?.skill.fetchSelfId(), 1216, 'where it would sit, the mystic waits for its Self Heal');
 assert.equal(coming.waitMs, 4000, 'the wait is the reuse left');
+// At 50% HP and 15% MP the mystic sits for MP anyway, and that rest brings
+// its HP back too: no heal, ready or on its reuse.
+const drained = (cooldowns) => ColdClassPolicy.actorFor(mystic, { hp: mystic.maxHp * 0.5, mp: mystic.maxMp * 0.15, cooldowns, time: 0 });
+assert.equal(Heal.betweenFights(drained({ 1216: 9000 }), { wait: true }), null, 'at 15% MP the mystic does not wait for its heal');
+assert.equal(Heal.betweenFights(drained({}), { wait: true }), null, 'at 15% MP the mystic does not cast its ready heal');
 
 // A silenced bot casts nothing, in a fight or between fights: a heal would be
 // refused at the cast, so the turn goes to its weapon and the walk goes on.

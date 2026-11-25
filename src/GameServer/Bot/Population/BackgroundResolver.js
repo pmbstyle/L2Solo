@@ -416,8 +416,8 @@ function castColdPetHeal(profile, summon, vitals, cooldowns, skill, at, shooter 
 // (PetHealRule), then its own where they beat sitting (solo only,
 // SoloSelfHeal.betweenFights): vitals and cooldowns change in place.
 // options.shooter: the shots (castColdPetHeal); options.solo false: the pet
-// only; options.wait (at a rest): its own heals on their reuse are waited
-// for, on its feet. Returns { casts, petCasts, ms }: casts its own heals, ms
+// only; options.wait (at a rest): one of its own heals on its reuse is waited
+// for, on its feet, and ends the pass. Returns { casts, petCasts, ms }: casts its own heals, ms
 // with the waits. Each pass casts at most the HP it misses.
 function coldHealBetweenFights(profile, vitals, cooldowns, at, summon = null, options = {}) {
     let casts = 0, petCasts = 0, ms = 0;
@@ -441,6 +441,9 @@ function coldHealBetweenFights(profile, vitals, cooldowns, at, summon = null, op
         cooldowns[skill.fetchSelfId()] = at + ms + Math.max(0, Number(skill.fetchReuseTime?.()) || 0);
         ms += actionDelayMs(profile, skill.coldRecord);
         casts += 1;
+        // A heal waited for ends the pass, as the hot bot casts it once back
+        // and its rest door reads HP and MP again.
+        if (pick.waitMs > 0) return { casts, petCasts, ms };
     }
 }
 
@@ -2420,12 +2423,12 @@ function getReady(state, patch, profile, timestamp) {
             return { ...out, acted: true, summonUses: fighter.summonUses, ms: Number(fighter.readyAt) || 0 };
         }
         // The soonest summon: each waits for its MP (a rest to whole MP) and its reuse.
-        const cooldowns = combat?.cooldowns || {};
         const mp = Number(patch.vitals.mp) || 0;
+        const actor = ColdClassPolicy.actorFor(profile, { hp: patch.vitals.hp, mp, cooldowns: combat?.cooldowns || {}, time: timestamp });
         let mpRest = null;
         out.restMs = Math.min(...skills.map(skill => Math.max(
             Number(skill.mp || 0) > mp ? (mpRest ??= estimateRestMs(state, patch.vitals, { requireMana: true })) : 0,
-            Math.max(0, Number(cooldowns[skill.selfId] || 0) - timestamp))));
+            actor.skillReadyInMs(actor.skillset.fetchSkill(skill.selfId)))));
         return out;
     }
     if (!living) return out;
@@ -2439,9 +2442,9 @@ function getReady(state, patch, profile, timestamp) {
     if (!RestPolicy.petRested(petView)) out.restMs = petRestMs(profile, summon, patch.vitals, timestamp);
     else if (petView?.healable && PetHealRule.wantsHeal(summon.hp, summon.maxHp)) {
         // A heal it owns on its reuse: it sits until the reuse ends.
-        const heal = PetHealRule.choose(ColdClassPolicy.actorFor(profile, { hp: patch.vitals.hp, mp: patch.vitals.mp, cooldowns, time: timestamp }),
-            { anyReuse: true })?.coldRecord;
-        out.restMs = heal ? Math.max(0, Number(cooldowns[heal.selfId] || 0) - timestamp) : 0;
+        const actor = ColdClassPolicy.actorFor(profile, { hp: patch.vitals.hp, mp: patch.vitals.mp, cooldowns, time: timestamp });
+        const heal = PetHealRule.choose(actor, { anyReuse: true });
+        out.restMs = heal ? actor.skillReadyInMs(heal) : 0;
     }
     return out;
 }

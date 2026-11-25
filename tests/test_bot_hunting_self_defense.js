@@ -302,13 +302,13 @@ assert.strictEqual(exhaustedSession.lastPvpDecision, undefined, 'recovery should
 // with MP, its heal on its reuse: it waits on its feet for the heal, which
 // beats sitting, instead of sitting to a full bar; its heal in flight is not
 // cut short by a seat; a ready heal is cast on itself.
-function woundedMystic(id, { readyInMs, casting = false }) {
+function woundedMystic(id, { readyInMs, casting = false, hp = 30, mp = 100 }) {
     const bot = actor(id);
     let seated = false;
     const selfHeal = { fetchSelfId: () => 1216, fetchPassive: () => false, fetchSpell: () => true, fetchHitTime: () => 5000,
         fetchPower: () => 40, fetchConsumedMp: () => 10, fetchReuseTime: () => 10000, fetchTargetKind: () => 'self',
         fetchSemantic: () => ({ skillType: invoke('GameServer/Skills/C4SkillRules').HEAL, target: 'self' }) };
-    Object.assign(bot, { fetchClassId: () => 10, fetchHp: () => 30, fetchCastSpd: () => 333, fetchAtkSpd: () => 300,
+    Object.assign(bot, { fetchClassId: () => 10, fetchHp: () => hp, fetchMp: () => mp, fetchCastSpd: () => 333, fetchAtkSpd: () => 300,
         fetchSeatedHpPerMs: () => 0.0005, fetchSeatedMpPerMs: () => 0.001, skillset: { skills: [selfHeal] },
         skillReadyInMs: () => readyInMs, canUseSkill: () => readyInMs <= 0 });
     bot.state = { ...state(), fetchCasts: () => casting, fetchSeated: () => seated, setSeated(value) { seated = value; } };
@@ -327,6 +327,14 @@ assert.strictEqual(midCast.seated, false, 'a mystic casting its heal is not seat
 const ready = woundedMystic(2000032, { readyInMs: 0 });
 assert.deepStrictEqual(ready.execs.map(data => [data.id, data.selfId]), [[2000032, 1216]], 'a ready heal is cast on itself');
 assert.strictEqual(ready.seated, false);
+// Its MP under the rest line after the heal (15 of 100, the heal 10), the
+// mystic sits for MP, and that rest brings its HP back too: it neither waits
+// for its heal nor casts it.
+for (const [id, readyInMs] of [[2000033, 4000], [2000034, 0]]) {
+    const lowMana = woundedMystic(id, { readyInMs, hp: 50, mp: 15 });
+    assert.strictEqual(lowMana.session.plan, 'resting', `at 15% MP, its heal ${readyInMs ? 'on its reuse' : 'ready'}, the mystic sits`);
+    assert.deepStrictEqual(lowMana.execs, [], 'it casts no heal before that rest');
+}
 
 const lowManaDps = actor(2000015);
 lowManaDps.fetchMp = () => 10;

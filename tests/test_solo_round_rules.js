@@ -106,15 +106,18 @@ try {
 
     // A wounded level-5 Human Mystic (Self Heal: reuse 10 s, cast 5 s) at 30%
     // HP with full MP, its Self Heal back in 4 s: where it would sit before
-    // its next fight it waits for the heal on its feet and heals, no rest.
+    // its next fight it waits for the heal on its feet and heals, no rest;
+    // healed to 56%, it fights the next mob, as the hot bot does, not waiting
+    // for its heal again.
     Cold.npcForSpot = () => ({ level: 5, maxHp: 1, pAtk: 1, pAtkRnd: 0, pDef: 1, mDef: 1, accur: 1,
         evasion: 0, critical: 0, atkSpd: 253 });
     const mystic = bot(10, 5);
     mystic.vitals.hp = Math.floor(mystic.vitals.maxHp * 0.3);
-    // The round runs the minute before T: the heal is back 4 s into it.
-    mystic.stats.coldCombat = { ...Cold.seedSnapshot(mystic, T), cooldowns: { 1216: T - 60000 + 4000 } };
-    const healing = round(mystic, field(30));
-    assert(healing.debug.heals >= 2, `the mystic heals through its reuse wait (${healing.debug.heals} heals)`);
+    // The round runs the 15 s before T: the heal is back 4 s into it.
+    mystic.stats.coldCombat = { ...Cold.seedSnapshot(mystic, T), cooldowns: { 1216: T - 15000 + 4000 } };
+    const healing = round(mystic, field(30), 15000);
+    assert(healing.debug.heals >= 1, `the mystic heals through its reuse wait (${healing.debug.heals} heals)`);
+    assert(healing.debug.wins >= 1, 'after its heal it fights the next mob');
     assert.notDeepEqual([healing.patch.activity, healing.patch.stats.lastReason], ['resting', 'solo_recovery_needed'],
         'it does not sit before its next fight');
     assert.equal(healing.debug.seatedMs, 0, 'its round holds no rest');

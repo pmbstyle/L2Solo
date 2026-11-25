@@ -16,6 +16,7 @@
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const Formulas = invoke('GameServer/Formulas');
 const Utility = invoke('GameServer/Bot/AI/BotCombatUtility');
+const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 
 const INSTANT = new Set([C4SkillRules.HEAL, C4SkillRules.HEAL_PERCENT, C4SkillRules.HEAL_STATIC, C4SkillRules.HEAL_HOT]);
@@ -100,15 +101,18 @@ function inFight(actor, { mobHp, dealtPerMs, takenPerMs }) {
 // wait for one. wait (the bot would sit down to rest): a heal on its reuse is
 // a heal coming, priced with its wait, and the bot stands while it waits (our
 // choice: no sit and stand per heal); the regeneration of that wait is not
-// counted, so the rule leans to sitting, never to a wait that loses.
+// counted, so the rule leans to sitting, never to a wait that loses. A heal
+// that leaves its MP under the rest line (RestPolicy) is not cast: the bot
+// sits for MP anyway and that rest brings its HP back too.
 function betweenFights(actor, { wait = false } = {}) {
     const missing = Math.max(0, Number(actor.fetchMaxHp?.()) - (Number(actor.fetchHp?.()) || 0));
     const sitting = Utility.seatedHpPerMs(actor);
     if (!(missing > 0)) return null;
     const restMsPerMp = Utility.restMsPerMp(actor);
+    const mp = Number(actor.fetchMp?.()) || 0, mpLine = RestPolicy.THRESHOLDS.solo.mp * (Number(actor.fetchMaxMp?.()) || 0);
     let best = null, bestRate = sitting, bestWaitMs = 0;
     for (const heal of heals(actor, true, wait)) {
-        if (heal.amount > missing) continue;
+        if (heal.amount > missing || (mp - heal.mp < mpLine && RestPolicy.sitsForMana(actor))) continue;
         const waitMs = wait ? Math.max(0, Number(actor.skillReadyInMs(heal.skill)) || 0) : 0;
         const rate = heal.amount / (waitMs + heal.castMs + heal.mp * restMsPerMp);
         if (rate > bestRate) { best = heal; bestRate = rate; bestWaitMs = waitMs; }
