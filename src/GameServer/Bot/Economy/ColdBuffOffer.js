@@ -55,8 +55,8 @@ function choose(provider, recipient, timestamp, skills) {
         .filter(skill => Loadout.useful(recipient, skill))
         .forEach(skill => {
             const semantic = skill.fetchSemantic();
-            const family = Loadout.family(semantic.effect);
-            if (active.some(effect => Loadout.family(effect.key) === family
+            const family = Loadout.family(semantic.effect, semantic.stackFamily);
+            if (active.some(effect => Loadout.family(effect.key, effect.stackFamily) === family
                 && Number(effect.level || 0) >= skill.fetchLevel())) return;
             const previous = byFamily.get(family);
             if (!previous || previous.fetchLevel() < skill.fetchLevel()) byFamily.set(family, skill);
@@ -81,7 +81,7 @@ function effectsFor(selected, timestamp) {
         const key = Loadout.normalize(semantic.effect);
         return { key, id: skill.fetchSelfId(), level: skill.fetchLevel(), name: semantic.effect,
             type: 'buff', durationMs, expiresAt: timestamp + durationMs,
-            stackFamily: semantic.stackFamily || Loadout.family(key),
+            stackFamily: semantic.stackFamily || null,
             stackOrder: semantic.stackOrder ?? null, stats: { ...(semantic.stats || {}) } };
     });
 }

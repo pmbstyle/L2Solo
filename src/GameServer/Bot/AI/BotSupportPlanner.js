@@ -793,14 +793,15 @@ function cancelSupportCast(session, provider) {
 
 function missingRecoveryFamilies(target) {
     const active = new Set(EffectStore.list(target).filter(effect => effect.type === 'buff')
-        .map(effect => BuffLoadout.family(effect.key)));
+        .map(effect => BuffLoadout.family(effect.key, effect.stackFamily)));
     return BuffLoadout.raidRecoveryFamilies(target).filter(family => !active.has(family));
 }
 
 function actionAllowed(action, options = {}) {
     if (options.musicOnly && !isPartyMusic(action.skill)) return false;
     if (!options.raidRecovery) return true;
-    const family = BuffLoadout.family(action.skill.fetchSemantic?.()?.effect);
+    const semantic = action.skill.fetchSemantic?.();
+    const family = BuffLoadout.family(semantic?.effect, semantic?.stackFamily);
     return missingRecoveryFamilies(action.target).includes(family)
         && Intent.inRange(action.provider, action.target, action.skill);
 }

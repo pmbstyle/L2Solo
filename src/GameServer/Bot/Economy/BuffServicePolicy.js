@@ -84,7 +84,8 @@ function hotSkills(provider, recipient) {
         .filter((skill) => Planner.canPlanSupportAction(recipient, provider, skill, [{ actor: recipient, leader: true }]));
     const byFamily = new Map();
     known.forEach((skill) => {
-        const family = Loadout.family(skill.fetchSemantic().effect);
+        const semantic = skill.fetchSemantic();
+        const family = Loadout.family(semantic.effect, semantic.stackFamily);
         const previous = byFamily.get(family);
         if (!previous || Number(skill.fetchLevel?.() || 0) > Number(previous.fetchLevel?.() || 0)) byFamily.set(family, skill);
     });

@@ -35,6 +35,8 @@ const stubs = new Map([
             && effect?.toggle !== true
             && !['hp_recover', 'life_force_orc'].includes(effect?.stackFamily),
         list: () => [],
+        // The stack rule is pure: cold buff landings call the real one.
+        displacedBy: (effects, next) => originalInvoke('GameServer/Effects/EffectStore').displacedBy(effects, next),
         // A cold actor carries no live effects: nothing impairs it (PetHealRule.choose).
         impairments: () => ({ disabled: false, afraid: false, confused: false, rooted: false, silenced: false,
             physicalMuted: false, magicMuted: false })

@@ -6,8 +6,9 @@ const aliases = {
     chant_of_battle:'might', power_of_paagrio:'might', soul_shield:'shield', chant_of_shielding:'shield',
     chant_of_flame:'acumen', chant_of_fire:'magic_barrier', chant_of_fury:'haste',
     chant_of_rage:'death_whisper', chant_of_eagle:'guidance', chant_of_vampire:'vampiric_rage',
-    chant_of_predator:'focus', chant_of_evasion:'agility', soul_of_paagrio:'blessed_soul',
-    wisdom_of_paagrio:'acumen', eye_of_paagrio:'guidance',
+    chant_of_predator:'focus', chant_of_evasion:'agility', soul_of_paagrio:'empower',
+    wisdom_of_paagrio:'acumen', eye_of_paagrio:'death_whisper', vision_of_paagrio:'guidance',
+    protection_of_paagrio:'bless_shield',
     blessing_of_paagrio:'shield', glory_of_paagrio:'magic_barrier', tact_of_paagrio:'agility',
     rage_of_paagrio:'berserker_spirit', body_of_avatar:'blessed_body',
     prophecy_of_water:'prophecy', prophecy_of_fire:'prophecy', prophecy_of_wind:'prophecy',
@@ -19,7 +20,9 @@ const aliases = {
 const stackFamilies = {
     pAtk:'might', pDef:'shield', SpeedUp:'wind_walk', pAtkSpeedUp:'haste',
     mAtkSpeedUp:'acumen', mAtk:'empower', MagicDefUp:'magic_barrier',
-    MaxHPUp:'blessed_body', CoV:'prophecy'
+    MaxHPUp:'blessed_body', CoV:'prophecy', accuracyUp:'guidance', cAtk:'death_whisper',
+    rCrit:'focus', vampRage:'vampiric_rage', rEvas:'agility', berserk:'berserker_spirit',
+    shieldProbUp:'bless_shield', max_mp_up:'blessed_soul'
 };
 const priorities = {
     wind_walk:100, shield:95, magic_barrier:90, blessed_body:90,

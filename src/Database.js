@@ -5339,10 +5339,15 @@ const Database = {
                 return { ok: false, reason: 'skill_changed' };
             }
             const currentEffects = (buyerStats.coldCombat?.effects || []).filter(effect => Number(effect.expiresAt || 0) > timestamp);
-            if (effects.some(next => currentEffects.some(effect =>
-                String(effect.stackFamily || effect.key) === String(next.stackFamily || next.key)
+            // A bought buff lands by the store's stack rule: one a stronger buff of its
+            // stack type refuses, or one the buyer holds fresh, is not sold.
+            const EffectStore = invoke('GameServer/Effects/EffectStore');
+            if (effects.some(next => {
+                const displaced = EffectStore.displacedBy(currentEffects, next);
+                return !displaced || displaced.some(effect => effect.key === next.key
                     && Number(effect.level || 0) >= Number(next.level || 0)
-                    && Number(effect.expiresAt || 0) - timestamp > 120000))) {
+                    && Number(effect.expiresAt || 0) - timestamp > 120000);
+            })) {
                 return { ok: false, reason: 'already_buffed' };
             }
             const payerBalance = afkTradeAdenaRowsUnsafe(payer).reduce((sum, row) => sum + Number(row.amount || 0), 0);
@@ -5351,9 +5356,11 @@ const Database = {
                 afkTradeDebitAdenaUnsafe(payer, fee);
                 afkTradeCreditAdenaUnsafe(provider, fee);
             }
-            const nextEffects = currentEffects.filter(effect => !effects.some(next =>
-                String(effect.stackFamily || effect.key) === String(next.stackFamily || next.key)));
-            nextEffects.push(...effects);
+            const nextEffects = effects.reduce((list, next) => {
+                const displaced = EffectStore.displacedBy(list, next);
+                if (!displaced) return list;
+                return [...list.filter(effect => !displaced.includes(effect) && effect.key !== next.key), next];
+            }, currentEffects);
             buyerStats.coldCombat = { ...(buyerStats.coldCombat || {}), effects: nextEffects };
             buyerStats.lastBuffServicePurchase = { providerId: provider, price: fee, count: effects.length, at: timestamp };
             sellerStats.lastBuffService = { buyerId: payer, price: fee, count: effects.length, at: timestamp };

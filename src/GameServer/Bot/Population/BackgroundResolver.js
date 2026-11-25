@@ -29,6 +29,7 @@ const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
 const EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
 const PartyBuffLoadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 const Karma = invoke('GameServer/Karma');
 const NpcHate = invoke('GameServer/Npc/NpcHate');
 const HitRules = invoke('GameServer/Combat/HitRules');
@@ -752,21 +753,18 @@ function coldBuffEffect(skill, timestamp) {
         type: 'buff',
         durationMs,
         expiresAt: timestamp + durationMs,
-        stackFamily: semantic.stackFamily || PartyBuffLoadout.family(key),
+        stackFamily: semantic.stackFamily || null,
         stackOrder: semantic.stackOrder ?? null,
         stats: { ...(semantic.stats || {}) }
     };
 }
 
+// Lands a cast buff on a cold effect list by the store's stack rule: a stronger
+// buff of the stack type keeps the slot, an equal or weaker one is replaced.
 function replaceColdBuff(effects, nextEffect) {
-    const family = PartyBuffLoadout.family(nextEffect.key);
-    return [
-        ...(effects || []).filter((effect) => (
-            PartyBuffLoadout.family(effect?.key) !== family
-            && (!nextEffect.stackFamily || effect?.stackFamily !== nextEffect.stackFamily)
-        )),
-        nextEffect
-    ];
+    const displaced = EffectStore.displacedBy(effects, nextEffect);
+    if (!displaced) return effects;
+    return [...(effects || []).filter((effect) => !displaced.includes(effect) && effect?.key !== nextEffect.key), nextEffect];
 }
 
 function raidPreparationFighters(members, timestamp) {
@@ -851,18 +849,22 @@ function coldBuffPlan(fighters, timestamp, { self = false } = {}) {
     return chosen.filter((action) => action.beneficiaries.some((actor) => !buffHeld(actor.fighter.profile.effects, action.skill, timestamp)));
 }
 
-// Does effects hold the buff of skill (an adapter) at this level or above,
-// with more than its recast share left?
+// Does effects hold the buff of skill (an adapter) at its strength or above,
+// with more than its recast share left? A buff of the skill's stack type holds
+// it at an equal or higher stack order (the landing refuses a weaker one).
 function buffHeld(effects, skill, timestamp) {
     const semantic = skill.fetchSemantic();
-    const family = PartyBuffLoadout.family(PartyBuffLoadout.normalize(semantic.effect));
+    const family = PartyBuffLoadout.family(PartyBuffLoadout.normalize(semantic.effect), semantic.stackFamily);
     const level = Number(skill.fetchLevel() || 1);
+    const order = Number(semantic.stackOrder ?? level);
     const durationMs = Math.max(60000, Number(semantic.durationMs ?? skill.fetchBuffTime()) || 1200000);
     const threshold = Math.min(BUFF_RECAST_MAX_MS, Math.floor(durationMs * BUFF_RECAST_SHARE));
     return (effects || []).some((effect) => (
-        (Number(effect?.id || 0) === Number(skill.fetchSelfId())
-            || PartyBuffLoadout.family(effect?.key) === family)
-        && Number(effect?.level || 0) >= level
+        (semantic.stackFamily && effect?.stackFamily === semantic.stackFamily
+            ? Number(effect.stackOrder ?? effect.level ?? 0) >= order
+            : (Number(effect?.id || 0) === Number(skill.fetchSelfId())
+                || PartyBuffLoadout.family(effect?.key, effect?.stackFamily) === family)
+                && Number(effect?.level || 0) >= level)
         && (!effect?.expiresAt || Number(effect.expiresAt) - timestamp > threshold)
     ));
 }
