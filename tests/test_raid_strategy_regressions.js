@@ -195,6 +195,32 @@ assert.equal(injured.vitals.hp, 0, 'periodic healing cannot resurrect a corpse')
     ColdCombat.applyAllyHeal(overlord, [...party, stranger], wide);
     assert.deepEqual(keys(member), ['heart_of_paagrio'], 'a party Chant leaves a stronger running Heart in place');
     assert.deepEqual(keys(stranger), ['chant_of_life']);
+    // Long after the Heart ran out, a Chant lands on the member and ticks.
+    overlord.now = 60000;
+    ColdCombat.applyPartyHotTicks(member, 60000);
+    member.vitals.hp = 650;
+    const later = ColdCombat.chooseHeal(overlord.profile, party, 1000, {}, 60000, overlord);
+    assert.equal(later?.skill.selfId, 1229, 'a cold Overlord tops off again once the Heart ran out');
+    ColdCombat.applyAllyHeal(overlord, party, later);
+    assert(keys(member).includes('chant_of_life'), 'a Chant lands over an expired Heart');
+    const beforeTick = member.vitals.hp;
+    ColdCombat.applyPartyHotTicks(member, 61000);
+    assert.equal(member.vitals.hp - beforeTick, 23, 'the landed Chant ticks 23 HP a second');
+}
+{
+    // A buff lands over an expired stronger row of its stack, not over a live one.
+    const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
+    const full = path.join(__dirname, '../src/GameServer/Bot/Population/BackgroundResolver.js');
+    const copy = new Module(full, module);
+    copy.filename = full;
+    copy.paths = Module._nodeModulePaths(path.dirname(full));
+    copy._compile(`${fs.readFileSync(full, 'utf8')}\nmodule.exports.__replaceColdBuff = replaceColdBuff;`, full);
+    const row = (key, order, expiresAt) => ({ key, stackFamily: 'fam', stackOrder: order, level: order, expiresAt });
+    const replace = copy.exports.__replaceColdBuff;
+    const over = replace([row('strong', 5, 1000)], row('weak', 1, 9000), 5000);
+    assert.deepEqual(over.map(effect => effect.key), ['strong', 'weak'], 'a weaker buff lands over an expired stronger one');
+    const held = replace([row('strong', 5, 9000)], row('weak', 1, 9500), 5000);
+    assert.deepEqual(held.map(effect => effect.key), ['strong'], 'a weaker buff does not land over a live stronger one');
 }
 
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
