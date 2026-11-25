@@ -157,7 +157,8 @@ function wait(ms) {
         setSeated(value) { this.seated = value; },
         fetchAnimated: () => false,
         setAnimated() {},
-        fetchCasts: () => false
+        fetchCasts: () => false,
+        fetchHits: () => false
     };
     const chameleonRest = toggleSkill(296, 'Rest of Chameleon', 1);
     ToggleSkills.handleRequest({ ...session(restingSummoner), dataSendToMeAndOthers() {} }, restingSummoner, chameleonRest);

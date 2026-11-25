@@ -144,6 +144,23 @@ try {
     }, [], { conversationTurn: { turnId: 'posture-rest' } });
     assert.strictEqual(castingBot.state.fetchSeated(), false, 'a casting bot ordered to rest stays standing');
     assert.deepStrictEqual(waitTypes(castingBot), [], 'a refused sit broadcasts no ChangeWaitType');
+
+    // Relax pressed during the stand-up is refused, as in C4: no MP spent, no
+    // toggle, the body stays standing; pressed once the lock ends it sits.
+    const relaxSkill = {
+        fetchSelfId: () => 226, fetchSelfLevel: () => 1, fetchLevel: () => 1, fetchName: () => 'Relax',
+        fetchSemantic: () => ({ operateType: 'toggle', effect: 'relax', mpInitialConsume: 2, stats: { relaxing: true } })
+    };
+    const relaxer = player(2100005);
+    relaxer.state.setSeated(true);
+    relaxer.fetchMp = () => relaxer.mp;
+    relaxer.setMp = value => { relaxer.mp = value; };
+    relaxer.mp = 50;
+    Generics.basicAction(relaxer.session, relaxer, { actionId: 0 });
+    invoke('GameServer/Skills/ToggleSkills').handleRequest(relaxer.session, relaxer, relaxSkill);
+    assert.strictEqual(relaxer.mp, 50, 'Relax during the stand-up spends no MP');
+    assert.strictEqual(relaxer.state.fetchSeated(), false, 'Relax during the stand-up does not sit the body');
+    assert.deepStrictEqual(Object.keys(relaxer.effects), [], 'Relax during the stand-up adds no toggle');
 } finally {
     saved.reverse().forEach(restore => restore());
 }

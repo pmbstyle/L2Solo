@@ -31,10 +31,15 @@ function settle(session, actor) {
     }
 }
 
+// A sit is refused while a stand-up plays or a cast is in flight.
+function canSit(actor) {
+    return !actor.state.fetchAnimated() && !actor.state.fetchCasts();
+}
+
 // Returns whether the posture changed.
 function posture(session, actor, seated) {
     if (actor.state.fetchSeated() === seated) return false;
-    if (seated && (actor.state.fetchAnimated() || actor.state.fetchCasts())) return false;
+    if (seated && !canSit(actor)) return false;
 
     actor.state.setSeated(seated);
     actor.state.setAnimated(true);
@@ -43,5 +48,7 @@ function posture(session, actor, seated) {
     actor.postureTimer = setTimeout(() => settle(session, actor), POSTURE_ANIMATION_MS);
     return true;
 }
+
+posture.canSit = canSit;
 
 module.exports = posture;

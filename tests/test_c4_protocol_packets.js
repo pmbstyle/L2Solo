@@ -225,7 +225,8 @@ assert.deepStrictEqual(capturedPrivateStoreSell, { packaged: false, rows: [{ obj
         // Packet order only: the 2.5 s posture lock is pinned by test_posture_lock.
         fetchAnimated: () => false,
         setAnimated() {},
-        fetchCasts: () => false
+        fetchCasts: () => false,
+        fetchHits: () => false
     });
     Object.assign(shopActor.backpack, {
         fetchItems: () => [stock],

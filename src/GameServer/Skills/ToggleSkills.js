@@ -46,6 +46,11 @@ function activate(session, actor, skill, key) {
         session.dataSendToMe?.(ServerResponse.actionFailed());
         return false;
     }
+    // A relaxing skill sits the body: refused, as in C4, while a stand-up plays or a cast is in flight.
+    if (semantic.stats?.relaxing && !actor.state?.fetchSeated?.() && !posture.canSit(actor)) {
+        session.dataSendToMe?.(ServerResponse.actionFailed());
+        return false;
+    }
     const initialMp = Math.max(0, Number(semantic.mpInitialConsume) || 0);
 
     if (initialMp > 0 && (Number(actor.fetchMp?.()) || 0) < initialMp) {
