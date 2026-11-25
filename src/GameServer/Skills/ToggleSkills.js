@@ -1,4 +1,5 @@
 const ConsoleText = invoke('GameServer/ConsoleText');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -61,8 +62,7 @@ function activate(session, actor, skill, key) {
     const toggleHpConsume = Math.max(0, Number(semantic.toggleHpConsume) || 0);
     if (semantic.stats?.relaxing) {
         if (!actor.state?.fetchSeated?.()) {
-            actor.state?.setSeated?.(true);
-            session?.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
+            posture(session, actor, true);
         }
     }
     if (semantic.stats?.silentMoving) actor.silentMoving = true;

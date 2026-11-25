@@ -1,7 +1,7 @@
 const ActorQueries = require('../../World/ActorSpatialQueries');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const BotPkLock = require('./BotPkLock');
-const ServerResponse = invoke('GameServer/Network/Response');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
@@ -122,14 +122,12 @@ function replyOutcome(session, text, targetSession = null, requestContext = null
 
 function sit(session, bot) {
     if (bot.state.fetchSeated()) return;
-    bot.state.setSeated(true);
-    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+    posture(session, bot, true);
 }
 
 function stand(session, bot) {
     if (!bot.state.fetchSeated()) return;
-    bot.state.setSeated(false);
-    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+    posture(session, bot, false);
 }
 
 function applyMoveToSpot(session, bot, spotId, player = null) {

@@ -1,11 +1,11 @@
 const FailureLog = require('../../../../FailureLog');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const ActorQueries = require('../../../World/ActorSpatialQueries');
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const NpcObjectIndex = require('../../../World/NpcObjectIndex');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
-const ServerResponse = invoke('GameServer/Network/Response');
 const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const Karma          = invoke('GameServer/Karma');
@@ -518,10 +518,7 @@ function beginVoluntaryRecovery(session, bot, BotAI, readiness = null) {
     session.lastPvpDecision = undefined;
     session.plan = 'resting';
     session.recoveryLocked = true;
-    if (!bot.state.fetchSeated()) {
-        bot.state.setSeated(true);
-        session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-    }
+    posture(session, bot, true);
     session.lastDecision = {
         action: 'recover_before_encounter',
         reason: readiness?.reason || 'low_resources',
@@ -741,10 +738,7 @@ function needsEmergencyRetreat(bot) {
 }
 
 function retreatFromThreat(session, bot, threat) {
-    if (bot.state.fetchSeated()) {
-        bot.state.setSeated(false);
-        session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-    }
+    posture(session, bot, false);
     clearTarget(session, bot, session.currentTargetId);
     session.plan = 'fleeing';
     session.recoveryLocked = true;
@@ -966,10 +960,7 @@ module.exports = {
                     BotAI.say(session, alarmPhrases[Math.floor(Math.random() * alarmPhrases.length)]);
                     
                     // Stand up if seated
-                    if (bot.state.fetchSeated()) {
-                        bot.state.setSeated(false);
-                        session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-                    }
+                    posture(session, bot, false);
 
                     BotRetreatPlanner.retreat(session, bot, spottedPk, {
                         distance: EMERGENCY_RETREAT_DISTANCE
@@ -1012,10 +1003,7 @@ module.exports = {
                 return;
             }
             assignTarget(session, bot, incomingMonster);
-            if (bot.state.fetchSeated()) {
-                bot.state.setSeated(false);
-                session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-            }
+            posture(session, bot, false);
             if (BotRangedCombatPositioning.reposition(session, bot, incomingMonster)) return;
             if (bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts()) return;
             BotAI.executeCombat(session, bot, incomingMonster, Generics);

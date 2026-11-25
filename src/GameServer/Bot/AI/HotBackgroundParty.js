@@ -1,4 +1,5 @@
 const FailureLog = require('../../../FailureLog');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const World = invoke('GameServer/World/World');
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
@@ -53,7 +54,6 @@ function partyLeader(session) {
 const loc = actor => ({ locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() });
 const ratio = (value, max) => Number(value || 0) / Math.max(1, Number(max || 0));
 
-const standForAction = RaidCombat.standForAction;
 
 const combatRaidBuffs = RaidCombat.combatRaidBuffs;
 
@@ -69,10 +69,7 @@ function prepareBuffs(session, owner, members, Generics, now, options = {}) {
     if (action?.provider === session.actor) {
         const bot = session.actor;
         Tactics.stop(session, bot);
-        if (bot.state.fetchSeated()) {
-            bot.state.setSeated(false);
-            session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
-        }
+        posture(session, bot, false);
         session.currentTargetId = action.target.fetchId();
         bot.select({ id: action.target.fetchId() });
         Support.queueSupportCast(session, action);
@@ -100,10 +97,7 @@ function holdForRaidRecovery(session, owner, members, now) {
     Tactics.stop(session, actor);
     session.currentTargetId = undefined;
     actor.unselect?.();
-    if (!actor.state.fetchSeated()) {
-        actor.state.setSeated(true);
-        session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(actor), actor);
-    }
+    posture(session, actor, true);
     actor.automation.replenishVitals(actor);
     session.lastDecision = { action: 'raid_recovery', partyId: session.hotBackgroundPartyId, at: now };
     return true;
@@ -517,10 +511,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         if (low) {
             Tactics.stop(session, bot);
             session.currentTargetId = undefined;
-            if (!bot.state.fetchSeated()) {
-                bot.state.setSeated(true);
-                session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
-            }
+            posture(session, bot, true);
             bot.automation.replenishVitals(bot);
             session.lastDecision = { action: 'party_recovery', partyId: party.partyId, at: now };
             return true;
@@ -574,7 +565,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         }
     }
     owner.backgroundHuntTarget = target;
-    if (!raidObjective) standForAction(session, bot);
+    if (!raidObjective) posture(session, bot, false);
     if (Tactics.support(session, bot, { owner: groupOwner, members: nearGroup, threats: [], raid: raidObjective }, Generics, now)) return true;
     // A summoner keeps its pet alive between fights, as alone (PetHealRule).
     if (!target && !bot.state?.fetchCasts?.() && SummonerTactics.healPetBetweenFights(session, bot, Generics)) return true;
@@ -600,7 +591,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         }
     }
     if (!target) {
-        standForAction(session, bot);
+        posture(session, bot, false);
         if (session.currentTargetId) {
             Tactics.stop(session, bot);
             bot.unselect?.();
@@ -641,7 +632,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         combatBuffs: (member, _owner, _near, generics, at) => combatRaidBuffs(member, groupOwner, group, generics, at)
     }, now);
     const combatTarget = target;
-    standForAction(session, bot);
+    posture(session, bot, false);
     if (session.currentTargetId !== combatTarget.fetchId()) {
         Tactics.stop(session, bot);
         session.currentTargetId = combatTarget.fetchId();

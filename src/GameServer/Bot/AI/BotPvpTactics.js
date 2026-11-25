@@ -1,4 +1,5 @@
 const Capabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const ClassTactics = invoke('GameServer/Bot/AI/PartyClassTactics');
 const Restrictions = invoke('GameServer/Effects/EffectRestrictions');
 const Effects = invoke('GameServer/Effects/EffectStore');
@@ -50,8 +51,7 @@ function cast(session, actor, target, skill, Generics, reason, hostile = false) 
     // queued swing can break Sleep or replace a friendly target mid-cast.
     stop(session, actor);
     if (actor.state?.fetchSeated?.()) {
-        actor.state.setSeated(false);
-        session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(actor), actor);
+        posture(session, actor, false);
     }
     session.lastCombatDecision = { action: hostile ? 'pvp_control' : 'pvp_support', reason,
         skillId: skill.fetchSelfId(), targetId: target.fetchId(), at: Date.now() };

@@ -1,4 +1,5 @@
 const Service = invoke('GameServer/Clan/ClanAllianceService');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const Navigation = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const Travel = invoke('GameServer/Bot/AI/BotSpotTravel');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
@@ -117,8 +118,7 @@ function tick(session, bot, Generics, ai) {
         if (session.spotRelocation) Travel.cancel(session, bot, 'clan_quest_defense');
         session.currentTargetId = threat.fetchId();
         if (bot.state.fetchSeated?.()) {
-            bot.state.setSeated(false);
-            session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
+            posture(session, bot, false);
         }
         ai.executeCombat(session, bot, threat, Generics, { basicAttackOnly: !!threat.allianceChestToken });
         return true;
@@ -139,15 +139,13 @@ function tick(session, bot, Generics, ai) {
         session.clanAllianceRecovering = true;
         bot.automation?.abortAll?.(bot);
         if (!bot.state.fetchSeated?.()) {
-            bot.state.setSeated(true);
-            session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
+            posture(session, bot, true);
         }
         return true;
     }
     session.clanAllianceRecovering = false;
     if (bot.state.fetchSeated?.()) {
-        bot.state.setSeated(false);
-        session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
+        posture(session, bot, false);
     }
     if (state.stage === 'loyalty' && !member.pledged) {
         Service.report(session, 'altar', 'I am heading to the altar for the loyalty offering.');
@@ -202,8 +200,7 @@ function tick(session, bot, Generics, ai) {
     if (!target || target.isDead?.()) return true;
     if (!Service.near(bot, target, 1500)) { move(session, target, 'hunt'); return true; }
     if (bot.state.fetchSeated?.()) {
-        bot.state.setSeated(false);
-        session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
+        posture(session, bot, false);
     }
     session.currentTargetId = target.fetchId();
     session.lastDecision = { action: 'clan_quest_hunt', targetId: target.fetchId(), itemId: member.itemId, at: Date.now() };

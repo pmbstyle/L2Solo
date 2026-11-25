@@ -1,4 +1,5 @@
 const refreshPartyMemberships = require('../World/PartyMembershipPublication');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const BoardRules = require('./BoardRules');
 const { BoardIndex, offerFields, rowOf, recordOf } = require('./BoardIndex');
@@ -673,8 +674,7 @@ async function stop(session) {
         session.afkTradeDraft = null;
         session.actor.setPrivateStoreType?.(0);
         session.actor.setPrivateStore?.(null);
-        session.actor.state?.setSeated?.(false);
-        session.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(session.actor), session.actor);
+        posture(session, session.actor, false);
         session.dataSendToOthers?.(ServerResponse.charInfo(session.actor), session.actor);
         commandMessage(session, result.closed ? 'AFK trade stopped. Reserved assets returned.' : 'You do not have an active AFK trade.');
     }
@@ -893,9 +893,8 @@ async function activate(session, store) {
         session.afkTradeDraft = null;
         actor.setPrivateStoreType(0);
         actor.setPrivateStore(null);
-        actor.state?.setSeated?.(false);
         syncOnlineInventory(actor.fetchId(), created.ownerInventory);
-        session.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
+        posture(session, actor, false);
         session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
         spawnProjection(created.shop);
         // A deal needs someone in the town: bots who

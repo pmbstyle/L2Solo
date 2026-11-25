@@ -1,4 +1,5 @@
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const Risk = invoke('GameServer/Bot/AI/BotPvpRisk');
 const Tactics = invoke('GameServer/Bot/AI/BotPvpTactics');
 const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
@@ -113,8 +114,7 @@ function tick(session, bot, Generics, BotAI, { now = Date.now(), rng = Math.rand
         criticalChecked: encounter.criticalChecked, at: now };
     if (!Restrictions.canUseBasicAction(bot)) return true;
     if (bot.state?.fetchSeated?.()) {
-        bot.state.setSeated(false);
-        session.dataSendToOthers?.(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
+        posture(session, bot, false);
     }
     // This is checked during native attacks and movement as well, not only
     // between swings. PvP lifts the farming encounter count, never reuse or
