@@ -221,7 +221,11 @@ assert.deepStrictEqual(capturedPrivateStoreSell, { packaged: false, rows: [{ obj
     });
     Object.assign(shopActor.state, {
         fetchSeated: () => seated,
-        setSeated: (value) => { seated = value; }
+        setSeated: (value) => { seated = value; },
+        // Packet order only: the 2.5 s posture lock is pinned by test_posture_lock.
+        fetchAnimated: () => false,
+        setAnimated() {},
+        fetchCasts: () => false
     });
     Object.assign(shopActor.backpack, {
         fetchItems: () => [stock],
@@ -252,7 +256,7 @@ assert.deepStrictEqual(capturedPrivateStoreSell, { packaged: false, rows: [{ obj
             GameOpcodes.table[manageOpcode](owner, Buffer.from([manageOpcode]));
             assert.strictEqual(storeType, type + 1);
             assert.strictEqual(seated, false);
-            assert.strictEqual(ownStoreType(ownerPackets[1]), type + 1, 'opening setup synchronizes the owner store mode');
+            assert.strictEqual(ownStoreType(ownerPackets[0]), type + 1, 'opening setup synchronizes the owner store mode');
             assert(!observerPackets.some(packet => packet[0] === 0x04), 'private UserInfo never reaches observers');
             ownerPackets.length = observerPackets.length = 0;
             GameOpcodes.table[titleOpcode](owner, new SendPacket(titleOpcode).writeS(title).fetchBuffer());

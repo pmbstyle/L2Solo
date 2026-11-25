@@ -10,12 +10,12 @@
 // character cannot act for 2.5 s after it sits or stands; the action asked
 // meanwhile is kept (one slot, the latest wins) and runs when the stand-up
 // ends (StandUpTask runs the AI's next intention, L2PlayerAI saves a move
-// asked during REST). A sit is refused while a stand-up still plays; a stand
-// asked during a sit-down starts at once and its own 2.5 s count from then.
+// asked during REST). A sit is refused while a stand-up still plays or a
+// cast is in flight (sitDown checks the cast); a stand asked during a
+// sit-down starts at once and its own 2.5 s count from then.
 // Our choice: a skill pressed during the stand-up is kept and cast at its end
 // too (Lisvus refuses it in useMagic).
 
-const ServerResponse = invoke('GameServer/Network/Response');
 const FailureLog = invoke('FailureLog');
 
 const POSTURE_ANIMATION_MS = 2500;
@@ -34,11 +34,11 @@ function settle(session, actor) {
 // Returns whether the posture changed.
 function posture(session, actor, seated) {
     if (actor.state.fetchSeated() === seated) return false;
-    if (seated && actor.state.fetchAnimated()) return false;
+    if (seated && (actor.state.fetchAnimated() || actor.state.fetchCasts())) return false;
 
     actor.state.setSeated(seated);
     actor.state.setAnimated(true);
-    session.dataSendToMeAndOthers(ServerResponse.sitAndStand(actor), actor);
+    session.dataSendToMeAndOthers(invoke('GameServer/Network/Response').sitAndStand(actor), actor);
     clearTimeout(actor.postureTimer);
     actor.postureTimer = setTimeout(() => settle(session, actor), POSTURE_ANIMATION_MS);
     return true;

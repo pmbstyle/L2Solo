@@ -120,16 +120,6 @@ function replyOutcome(session, text, targetSession = null, requestContext = null
     };
 }
 
-function sit(session, bot) {
-    if (bot.state.fetchSeated()) return;
-    posture(session, bot, true);
-}
-
-function stand(session, bot) {
-    if (!bot.state.fetchSeated()) return;
-    posture(session, bot, false);
-}
-
 function applyMoveToSpot(session, bot, spotId, player = null) {
     if (session.partyCompanion === true && session.followPlayerSession) {
         return false;
@@ -243,7 +233,7 @@ function executeLegacy(session, decision, visiblePlayers, requestContext = null)
     }
     if (action === 'follow_player') {
         if (!targetSession) return { applied: false, reason: 'missing_target_player' };
-        stand(session, bot);
+        posture(session, bot, false);
         if (isPartyCompanionOf(session, targetSession)) {
             clearChatArrival(session, 'party_follow');
             session.plan = 'following';
@@ -278,7 +268,7 @@ function executeLegacy(session, decision, visiblePlayers, requestContext = null)
     }
     if (action === 'hunt') {
         clearChatArrival(session, 'hunt');
-        stand(session, bot);
+        posture(session, bot, false);
         if (session.partyCompanion === true && session.followPlayerSession) {
             session.plan = 'hunting';
             session.botStay = false;
@@ -302,7 +292,7 @@ function executeLegacy(session, decision, visiblePlayers, requestContext = null)
             !BotRoles.shouldRestForMana(bot);
         if (hpRatio >= 0.95 && (partyReady || mpRatio >= 0.95)) {
             delete session.explicitRestOrder;
-            stand(session, bot);
+            posture(session, bot, false);
             session.currentTargetId = undefined;
             if (session.partyCompanion === true && session.followPlayerSession) {
                 session.plan = 'following';
@@ -317,7 +307,7 @@ function executeLegacy(session, decision, visiblePlayers, requestContext = null)
         session.explicitRestOrder = true;
         session.currentTargetId = undefined;
         bot.unselect();
-        sit(session, bot);
+        posture(session, bot, true);
         const reply = replyOutcome(session, decision.reply, targetSession, requestContext);
         return { applied: true, reason: 'rest', ...reply };
     }
