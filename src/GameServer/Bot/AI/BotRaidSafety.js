@@ -4,7 +4,7 @@ const RAID_MINION_TEMPLATE_IDS = new Set(
         .map((entry) => Number(entry.minionId))
         .filter((id) => Number.isInteger(id) && id > 0)
 );
-const FailureLog = require('../../../FailureLog');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 
 const DEFAULT_RETREAT_DISTANCE = 1100;
@@ -454,13 +454,7 @@ function retreat(session, bot, threat, options = {}) {
     bot.automation?.abortAll?.(bot);
     invoke('GameServer/Bot/AI/BotPvpTactics').followSummon(session, bot);
 
-    if (wasSeated) {
-        bot.state?.setSeated?.(false);
-        try {
-            const ServerResponse = invoke('GameServer/Network/Response');
-            session.dataSendToOthers?.(ServerResponse.sitAndStand(bot), bot);
-        } catch (error) { FailureLog.note('ai.raid_stand', error); }
-    }
+    if (wasSeated) posture(session, bot, false);
 
     if (session.plan !== 'fleeing') {
         session.raidSafetyResumePlan = session.partyCompanion === true && session.followPlayerSession

@@ -95,6 +95,8 @@ const mocks = {
     'GameServer/Effects/EffectTicker': { applyDot() {}, scheduleExpiry() {}, refreshEffects() {}, clear() {} },
     'GameServer/Effects/EffectRestrictions': { stopMovement() {} },
     'GameServer/Network/Response': { itemsList() {}, sitAndStand() {}, skillStarted() {}, userInfo() {}, revive() {}, socialAction() {} },
+    // Posture's lock and broadcast are pinned by test_posture_lock; the quest AI's choice is pinned here.
+    'GameServer/Actor/Generics/Posture': (session, actor, seated) => { if (actor.state.fetchSeated() === seated) return false; actor.state.setSeated(seated); return true; },
     'GameServer/Actor/Generics/Die': (s, a) => { a.dead = true; service.onDeath(s); },
     'GameServer/Progression/DeathExperience': {
         clearPendingRestoration: () => Promise.resolve({ cleared: false }),

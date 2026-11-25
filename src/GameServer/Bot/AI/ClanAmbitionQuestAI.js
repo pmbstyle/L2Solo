@@ -1,4 +1,5 @@
 const Rules = require('../../Clan/ClanAmbitionRules');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const ClanRules = require('../../Clan/ClanRules');
 const NpcIndex = require('../../World/NpcObjectIndex');
 const Service = invoke('GameServer/Clan/ClanAmbitionService');
@@ -83,12 +84,6 @@ function request(session, work) {
     }).finally(() => { session.clanAmbitionPending = false; });
 }
 
-function setSeated(session, bot, seated) {
-    if (bot.state.fetchSeated() === seated) return;
-    bot.state.setSeated(seated);
-    session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
-}
-
 function release(session) {
     if (!session.clanAmbitionActive) return;
     session.clanAmbitionActive = false;
@@ -129,12 +124,12 @@ function tick(session, bot, Generics, ai) {
         || session.clanAmbitionRecovering && (hp < 0.85 || mana && mp < 0.8))) {
         session.clanAmbitionRecovering = true;
         session.currentTargetId = null;
-        setSeated(session, bot, true);
+        posture(session, bot, true);
         bot.automation.replenishVitals(bot);
         return true;
     }
     session.clanAmbitionRecovering = false;
-    setSeated(session, bot, false);
+    posture(session, bot, false);
     if (!threat && (session.spotRelocation || !fighting || Service.distance(bot, target) > 1200)) {
         if (!moves().move(session, target, String(target.fetchSelfId()), 'ambition')) return true;
     }

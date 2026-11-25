@@ -1,4 +1,5 @@
 const Runtime = require('./Runtime');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const Services = require('./Services');
 const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const TownNpcBodies = invoke('GameServer/Bot/AI/TownNpcBodies');
@@ -40,8 +41,7 @@ function finish(session, actor) {
     Approach.reset(session);
     Navigation.clear(session);
     if (actor.state?.fetchSeated?.()) {
-        actor.state.setSeated(false);
-        session.dataSendToOthers?.(invoke('GameServer/Network/Response').sitAndStand(actor), actor);
+        posture(session, actor, false);
     }
 }
 // The hall a dead hot bot restarts in, or null for a town restart.
@@ -131,8 +131,7 @@ function tick(session, actor, timestamp = Date.now()) {
     }
     if (!grouped && Runtime.Policy.inside(hall, actor) && Services.recovery(actor, hall, timestamp)) {
         if (!actor.state?.fetchSeated?.()) {
-            actor.state.setSeated(true);
-            session.dataSendToOthers?.(invoke('GameServer/Network/Response').sitAndStand(actor), actor);
+            posture(session, actor, true);
         }
         actor.automation?.replenishVitals?.(actor);
         return true;

@@ -2,6 +2,7 @@ const refreshPartyMemberships = require('../../World/PartyMembershipPublication'
 const { raiseDecision } = require('../AI/DecisionEvents');
 const World = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const PARTY_WITHDRAWAL_WAIT_MS = 10000;
 const PARTY_WITHDRAWAL_POLL_MS = 10;
 
@@ -37,16 +38,13 @@ function invalidateCustomerWindows(merchantActor) {
 function applyClosed(actor) {
     actor.setPrivateStoreType(0);
     actor.setPrivateStore?.({ storeType: 0, title: '', items: [] });
-    actor.state?.setSeated?.(false);
 }
 
 function notifyClosed(session, actor) {
-    session.dataSendToOthers?.(ServerResponse.sitAndStand(actor), actor);
     session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
 }
 
 function notifyOpened(session, actor, store) {
-    session.dataSendToOthers?.(ServerResponse.sitAndStand(actor), actor);
     session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
     session.dataSendToOthers?.(ServerResponse.privateStoreMsg(actor, store.title), actor);
 }
@@ -144,7 +142,7 @@ async function restoreAfterPartyFailure(session, withdrawal) {
         rollback.store.repricing = false;
         actor.setPrivateStore?.(rollback.store);
         actor.setPrivateStoreType?.(rollback.storeType || rollback.store.storeType || 0);
-        actor.state?.setSeated?.(rollback.seated);
+        posture(session, actor, rollback.seated);
         safelyNotify('party withdrawal rollback', () => notifyOpened(session, actor, rollback.store));
     }
     return { ok: true, state: null, restoreWarning: null };

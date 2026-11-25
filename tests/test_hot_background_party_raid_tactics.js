@@ -59,6 +59,8 @@ function actor(id, role, kind = null) {
             fetchTowards: () => false,
             fetchSeated: () => !!value.seated,
             setSeated(next) { value.seated = next; },
+            fetchAnimated: () => !!value.animated,
+            setAnimated(next) { value.animated = next; },
             fetchDead: () => false
         },
         automation: { abortAll() {}, replenishVitals() {} },
@@ -87,7 +89,8 @@ try {
         accountId: `bot_hot_raid_${member.fetchId()}`,
         fetchAccountId() { return this.accountId; },
         hotBackgroundPartyId: 'raid-party',
-        dataSendToOthers() {}
+        dataSendToOthers() {},
+        dataSendToMeAndOthers() {}
     }));
     const owner = sessions[0];
     const party = {

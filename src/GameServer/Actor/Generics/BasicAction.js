@@ -2,20 +2,15 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const SummonControl = invoke('GameServer/Npc/SummonControl');
 const ManufactureShop = invoke('GameServer/Crafting/ManufactureShop');
+const posture = require('./Posture');
 
 function sitAndStand(session, actor, data) {
-    if (actor.state.fetchHits() || actor.state.fetchCasts() || actor.state.fetchAnimated() || actor.state.inMotion()) {
+    if (actor.state.fetchHits() || actor.state.fetchCasts() || actor.state.inMotion()) {
         invoke(path.actor).queueRequest(session, actor, 'sit', data);
         return;
     }
 
-    actor.state.setAnimated(true);
-    actor.state.setSeated(!actor.state.fetchSeated());
-    session.dataSendToMeAndOthers(ServerResponse.sitAndStand(actor), actor);
-
-    setTimeout(() => {
-        actor.state.setAnimated(false);
-    }, 2500);
+    posture(session, actor, !actor.state.fetchSeated());
 }
 
 function walkAndRun(session, actor) {

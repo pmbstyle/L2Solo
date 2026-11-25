@@ -1,4 +1,5 @@
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const SkillRankIndex = require('../../Skills/SkillRankIndex');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const DataCache = invoke('GameServer/DataCache');
@@ -429,8 +430,7 @@ function tick(session, leaderSession, Generics) {
     if (background || combat.active) {
         invoke('GameServer/Bot/AI/BotPvpTactics').stop(session, session.actor);
         if (session.actor.state.fetchSeated?.()) {
-            session.actor.state.setSeated(false);
-            session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(session.actor), session.actor);
+            posture(session, session.actor, false);
         }
     }
     const newAttempt = leaderSession.partyRevivalAttempt = {

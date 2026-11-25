@@ -1,4 +1,5 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const ServerResponse = invoke('GameServer/Network/Response');
 const Database = invoke('Database');
@@ -94,8 +95,7 @@ function open(session, type = 'dwarven') {
     if (!actor || actor.isDead?.()) return false;
     shop(actor).type = recipeType;
     actor.setPrivateStoreType(MANUFACTURE_MANAGE);
-    actor.state?.setSeated?.(false);
-    session.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
+    posture(session, actor, false);
     broadcastState(session, actor);
     session.dataSendToMe(ServerResponse.recipeShopManageList(actor));
     return true;
@@ -118,8 +118,7 @@ function publish(session, entries) {
     if (!valid || entries.length === 0) return false;
     shop(actor).entries = entries.map((entry) => ({ recipeId: Number(entry.recipeId), price: Number(entry.price) }));
     actor.setPrivateStoreType(MANUFACTURE);
-    actor.state?.setSeated?.(true);
-    session.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
+    posture(session, actor, true);
     broadcastState(session, actor);
     session.dataSendToMeAndOthers?.(ServerResponse.recipeShopMsg(actor), actor);
     CraftWorkshopService.registerPlayer(session);

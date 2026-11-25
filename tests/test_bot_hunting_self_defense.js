@@ -14,13 +14,16 @@ const World = invoke('GameServer/World/World');
 const HuntingState = invoke('GameServer/Bot/AI/States/HuntingState');
 
 function state() {
+    let animated = false;
     return {
         fetchTowards: () => false,
         fetchHits: () => false,
         fetchCasts: () => false,
         fetchDead: () => false,
         fetchSeated: () => false,
-        setSeated() {}
+        setSeated() {},
+        fetchAnimated: () => animated,
+        setAnimated(value) { animated = value; }
     };
 }
 
@@ -116,7 +119,7 @@ const lowManaSession = {
     plan: 'hunting',
     incomingThreatId: threatNpc.fetchId(),
     incomingThreatAt: Date.now(),
-    dataSendToOthers() {}
+    dataSendToOthers() {}, dataSendToMeAndOthers() {}
 };
 let lowManaAttackId = null;
 World.user = { sessions: [lowManaSession] };
@@ -168,7 +171,7 @@ cornered.fetchCollectiveRunSpd = () => 124;
 const fastMob = { ...threatNpc, fetchId: () => 1141,
     fetchCollectiveRunSpd: () => 191, fetchDestId: () => cornered.fetchId() };
 const corneredSession = { accountId: 'bot_cornered', actor: cornered, plan: 'hunting',
-    incomingThreatId: fastMob.fetchId(), incomingThreatAt: Date.now(), dataSendToOthers() {} };
+    incomingThreatId: fastMob.fetchId(), incomingThreatAt: Date.now(), dataSendToOthers() {}, dataSendToMeAndOthers() {} };
 World.user = { sessions: [corneredSession] };
 World.npc = { spawns: [fastMob] };
 World.fetchNpcsInRadius = () => [fastMob];
@@ -210,7 +213,7 @@ const woundedSession = {
     plan: 'hunting',
     incomingThreatId: threatNpc.fetchId(),
     incomingThreatAt: Date.now(),
-    dataSendToOthers() {}
+    dataSendToOthers() {}, dataSendToMeAndOthers() {}
 };
 const retreatHazard = {
     fetchId: () => 1102,
@@ -285,7 +288,7 @@ const exhaustedSession = {
     lastTargetEvaluation: { targetId: threatNpc.fetchId(), score: 500 },
     lastCombatDecision: { action: 'cast_skill', skillId: 1097 },
     lastPvpDecision: { action: 'fight' },
-    dataSendToOthers() {}
+    dataSendToOthers() {}, dataSendToMeAndOthers() {}
 };
 World.user = { sessions: [exhaustedSession] };
 World.npc = { spawns: [] };
@@ -304,7 +307,7 @@ const lowManaDpsSession = {
     accountId: 'bot_low_mana_dps',
     actor: lowManaDps,
     plan: 'hunting',
-    dataSendToOthers() {}
+    dataSendToOthers() {}, dataSendToMeAndOthers() {}
 };
 const lowManaDpsChat = [];
 World.user = { sessions: [lowManaDpsSession] };
@@ -334,7 +337,7 @@ const openingAttackSession = {
     plan: 'hunting',
     currentTargetId: threatNpc.fetchId(),
     spotRelocation: { method: 'soe_gatekeeper', startedAt: Date.now() },
-    dataSendToOthers() {}
+    dataSendToOthers() {}, dataSendToMeAndOthers() {}
 };
 World.user = { sessions: [openingAttackSession] };
 World.npc = { spawns: [threatNpc] };
@@ -355,7 +358,7 @@ const betweenSwingsSession = {
     actor: betweenSwingsBot,
     plan: 'hunting',
     currentTargetId: threatNpc.fetchId(),
-    dataSendToOthers() {}
+    dataSendToOthers() {}, dataSendToMeAndOthers() {}
 };
 World.user = { sessions: [betweenSwingsSession] };
 World.npc = { spawns: [threatNpc] };
@@ -384,7 +387,7 @@ const oldAggroSession = {
     actor: oldAggroBot,
     plan: 'hunting',
     currentTargetId: oldAggroNpc.fetchId(),
-    dataSendToOthers() {}
+    dataSendToOthers() {}, dataSendToMeAndOthers() {}
 };
 World.user = { sessions: [oldAggroSession] };
 World.npc = { spawns: [oldAggroNpc] };
@@ -418,7 +421,7 @@ const reserveSession = {
     accountId: 'bot_encounter_reserve',
     actor: reserveBot,
     plan: 'hunting',
-    dataSendToOthers() {}
+    dataSendToOthers() {}, dataSendToMeAndOthers() {}
 };
 World.user = { sessions: [reserveSession] };
 World.npc = { spawns: [fullHealthNpc] };
@@ -454,7 +457,7 @@ assert.strictEqual(reserveSession.lastDecision.reason, 'no_reserve', 'the blocke
     // A fight its line does not carry (96.25 % HP): refused at the line, the bot rests to a full
     // bar, which the pull verdict that picked the fight admits: no stand, refuse and sit each tick.
     const harderNpc = { ...fullHealthNpc, fetchId: () => 1105, fetchPAtk: () => 15 };
-    const harderSession = { accountId: 'bot_encounter_reserve_harder', actor: reserveBot, plan: 'hunting', dataSendToOthers() {} };
+    const harderSession = { accountId: 'bot_encounter_reserve_harder', actor: reserveBot, plan: 'hunting', dataSendToOthers() {}, dataSendToMeAndOthers() {} };
     World.npc = { spawns: [harderNpc] };
     World.fetchNpcsInRadius = () => [harderNpc];
     hunt(harderSession);
@@ -487,7 +490,7 @@ const lowManaPullSession = {
     accountId: 'bot_encounter_mana_reserve',
     actor: lowManaMage,
     plan: 'hunting',
-    dataSendToOthers() {}
+    dataSendToOthers() {}, dataSendToMeAndOthers() {}
 };
 World.user = { sessions: [lowManaPullSession] };
 World.npc = { spawns: [fullHealthNpc] };
@@ -510,7 +513,7 @@ const companionSession = {
     plan: 'hunting',
     partyCompanion: true,
     followPlayerSession: { actor: actor(2000021) },
-    dataSendToOthers() {}
+    dataSendToOthers() {}, dataSendToMeAndOthers() {}
 };
 World.user = { sessions: [companionSession] };
 World.npc = { spawns: [fullHealthNpc] };
@@ -542,7 +545,7 @@ const archerSession = {
     actor: kitingArcher,
     plan: 'hunting',
     currentTargetId: closeArcherThreat.fetchId(),
-    dataSendToOthers() {}
+    dataSendToOthers() {}, dataSendToMeAndOthers() {}
 };
 World.user = { sessions: [archerSession] };
 World.npc = { spawns: [closeArcherThreat] };
@@ -634,6 +637,86 @@ async function targetLifecycleChecks() {
         assert.strictEqual(stalledSession.currentTargetId, 9999, 'stale target callbacks should not clear a newer target');
     } finally {
         Math.random = originalRandom;
+    }
+}
+
+// C4 stand-up (Lisvus L2PcInstance.standUp/StandUpTask): a seated solo bot
+// attacked while resting broadcasts its stand at once and swings only when the
+// 2.5 s stand-up ends, not in the same turn as the stand.
+{
+    const State = invoke('GameServer/Model/State');
+    const Attack = invoke('GameServer/Actor/Attack');
+    const Generics = invoke('GameServer/Actor/Generics');
+    const saved = [];
+    const timers = new Map();
+    const start = Date.now();
+    let now = start;
+    const patch = (object, key, value) => {
+        const old = object[key];
+        saved.push(() => { object[key] = old; });
+        object[key] = value;
+    };
+    const advance = (ms) => {
+        const end = now + ms;
+        for (;;) {
+            const next = [...timers].filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+            if (!next) break;
+            now = next[1].at;
+            timers.delete(next[0]);
+            next[1].fn();
+        }
+        now = end;
+    };
+    try {
+        patch(global, 'setTimeout', (fn, ms) => {
+            const id = { unref() {} };
+            timers.set(id, { fn, at: now + ms });
+            return id;
+        });
+        patch(global, 'clearTimeout', id => timers.delete(id));
+        patch(Date, 'now', () => now);
+        const swings = [];
+        patch(Generics, 'attackExec', (_session, _actor, data) => swings.push({ at: now - start, id: data.id }));
+        patch(Generics, 'stopAutomation', () => {});
+
+        const restingBot = actor(2000030);
+        restingBot.state = new State();
+        restingBot.state.setSeated(true);
+        restingBot.attack = new Attack();
+        restingBot.effects = {};
+        restingBot.isDead = () => false;
+        restingBot.isBlocked = () => restingBot.state.isBlocked();
+        const restingSession = {
+            accountId: 'bot_resting_stand_up',
+            actor: restingBot,
+            plan: 'resting',
+            incomingThreatId: threatNpc.fetchId(),
+            incomingThreatAt: now,
+            packets: [],
+            dataSendToOthers(packet) { this.packets.push(packet); },
+            dataSendToMeAndOthers(packet) { this.packets.push(packet); }
+        };
+        World.user = { sessions: [restingSession] };
+        World.npc = { spawns: [threatNpc] };
+        World.fetchNpcsInRadius = () => [];
+        invoke('GameServer/Bot/AI/States/RestingState').tick(restingSession, restingBot, Generics, {
+            say() {},
+            executeCombat(combatSession, combatBot, npc) {
+                Generics.attackRequest(combatSession, combatBot, { id: npc.fetchId() });
+            }
+        });
+
+        const waitTypes = restingSession.packets.filter(packet => packet[0] === 0x2f);
+        assert.strictEqual(waitTypes.length, 1, 'the resting bot broadcasts one stand-up');
+        assert.strictEqual(waitTypes[0].readInt32LE(5), 1, 'the broadcast posture is standing');
+        assert.strictEqual(restingSession.plan, 'hunting', 'a healthy resting bot fights back');
+        assert.deepStrictEqual(swings, [], 'no swing starts in the same turn as the stand-up');
+        advance(2499);
+        assert.deepStrictEqual(swings, [], 'no swing starts while the 2.5 s stand-up plays');
+        advance(1);
+        assert.deepStrictEqual(swings, [{ at: 2500, id: threatNpc.fetchId() }], 'the swing starts once when the stand-up ends');
+    } finally {
+        saved.reverse().forEach(restore => restore());
     }
 }
 

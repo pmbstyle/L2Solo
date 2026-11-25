@@ -18,13 +18,14 @@ function actor(id, x = 0, kind = null) {
         fetchLocX() { return this.x; }, fetchLocY: () => 0, fetchLocZ: () => 0,
         fetchHp() { return this.hp; }, fetchMaxHp: () => 100, fetchMp: () => 100, fetchMaxMp: () => 100,
         fetchLevel: () => 20, fetchIsOnline: () => true, isDead() { return this.hp <= 0; },
-        state: { seated: false, fetchSeated() { return this.seated; }, setSeated(v) { this.seated = v; } },
+        state: { seated: false, fetchSeated() { return this.seated; }, setSeated(v) { this.seated = v; },
+            animated: false, fetchAnimated() { return this.animated; }, setAnimated(v) { this.animated = v; }, fetchCasts: () => false },
         automation: { replenishVitals() {}, abortAll() {} }, select() {}, moveTo(coords) { this.moved = true; this.move = coords; } };
 }
 try {
     replace(Geo, 'canWalkStraight', () => true);
     const group = [1, 2, 3].map(id => ({ accountId: `bot_hot_party_${id}`, fetchAccountId() { return this.accountId; },
-        hotBackgroundPartyId: 'group', actor: actor(id), dataSendToOthers() {} }));
+        hotBackgroundPartyId: 'group', actor: actor(id), dataSendToOthers() {}, dataSendToMeAndOthers() {} }));
     const [leader, healer, follower] = group;
     const party = { partyId: 'group', leaderId: 1, memberIds: [1, 2, 3], status: 'hot', stats: { objective: { npcId: 20 } } };
     replace(Parties, 'find', () => party);

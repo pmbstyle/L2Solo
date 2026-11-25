@@ -2,7 +2,7 @@ const FailureLog = require('../../../../FailureLog');
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
-const ServerResponse = invoke('GameServer/Network/Response');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
@@ -329,20 +329,6 @@ function stopSupportMelee(bot) {
     bot.attack?.resetQueuedEvent?.();
     bot.state?.setHits?.(false);
     bot.automation?.abortAll?.(bot);
-}
-
-function standUp(session, bot) {
-    if (!bot.state.fetchSeated()) return false;
-    bot.state.setSeated(false);
-    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-    return true;
-}
-
-function sitDown(session, bot) {
-    if (bot.state.fetchSeated()) return false;
-    bot.state.setSeated(true);
-    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-    return true;
 }
 
 function roleDecisionSignature(decision) {
@@ -1153,7 +1139,7 @@ const FollowingState = {
         if (bot.state.fetchSeated() && (partyThreat || leaderTargetId || seatedTooFar)) {
             session.plan = 'following';
             session.currentTargetId = partyThreat?.actor?.fetchId?.() || leaderTargetId || undefined;
-            standUp(session, bot);
+            posture(session, bot, false);
             recordRoleDecision(
                 session,
                 bot,
@@ -1258,7 +1244,7 @@ const FollowingState = {
         if (playerLeader && (PartyCompanionService.regroupActive(playerLeader) || travel.inCombat(session, bot))) return false;
         const errand = InventoryCleanup.errand(session, bot, BotAI);
         if (!errand || !InventoryCleanup.canContinue(session, bot, errand.kind, errand.target)) return false;
-        if (bot.state.fetchSeated?.()) standUp(session, bot);
+        if (bot.state.fetchSeated?.()) posture(session, bot, false);
         beginCompanionTownErrand(session, bot, playerSession, errand);
         // A player's companion is already in town and can go straight to the NPC.
         if (!playerLeader) travel.request(session, bot, BotAI, 'Unloading inventory.', {
@@ -1303,7 +1289,7 @@ const FollowingState = {
             bot.unselect();
 
             if (distance > FOLLOW_RUN_DISTANCE && restFormationDistance > FOLLOW_FORMATION_TOLERANCE) {
-                standUp(session, bot);
+                posture(session, bot, false);
                 recordRoleDecision(session, bot, 'rest_with_leader', 'move_near_sitting_leader');
                 if (!shouldKeepCurrentFollowMove(session, bot, leader, distance)) {
                     moveToFollowTarget(session, bot, leader);
@@ -1312,13 +1298,13 @@ const FollowingState = {
             }
 
             session.lastFollowMoveTarget = null;
-            sitDown(session, bot);
+            posture(session, bot, true);
             recordRoleDecision(session, bot, 'rest_with_leader', 'leader_sitting');
             return true;
         }
 
         if (!partyThreat && !leaderTargetId && bot.state.fetchSeated() && !leaderSeated && !botRecovering) {
-            standUp(session, bot);
+            posture(session, bot, false);
             recordRoleDecision(session, bot, 'follow_leader', 'leader_stood_ready');
             return true;
         }
@@ -1338,7 +1324,7 @@ const FollowingState = {
             delete session.explicitRestOrder;
             session.currentTargetId = undefined;
             bot.unselect();
-            sitDown(session, bot);
+            posture(session, bot, true);
             recordRoleDecision(session, bot, botVitals.hpRatio < 0.30 ? 'recover_hp' : 'save_mp', 'resting');
             BotPartyChat.announce(session, {
                 priority: 'coordination',

@@ -1,4 +1,5 @@
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const Restrictions = invoke('GameServer/Effects/EffectRestrictions');
 const Tactics = invoke('GameServer/Bot/AI/BotPvpTactics');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
@@ -97,17 +98,11 @@ function raidMinionPickup(owner, members, raidPlan, mainTank, now, playerLeader,
 }
 
 function castRaidSkill(session, bot, target, skill, Generics) {
-    standForAction(session, bot);
+    posture(session, bot, false);
     Tactics.stop(session, bot);
     session.currentTargetId = target.fetchId();
     bot.select({ id: target.fetchId() });
     Generics.skillExec(session, bot, { id: target.fetchId(), selfId: skill.fetchSelfId(), ctrl: true });
-}
-
-function standForAction(session, bot) {
-    if (!bot.state.fetchSeated()) return;
-    bot.state.setSeated(false);
-    session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
 }
 
 function combatRaidBuffs(session, owner, members, Generics, now) {
@@ -132,7 +127,7 @@ function combatRaidBuffs(session, owner, members, Generics, now) {
     // outlying recipient. Other members keep their native attack cycles.
     if (!invoke('GameServer/Bot/AI/BotSkillIntent').inRange(session.actor, action.target, action.skill)) return false;
     Tactics.stop(session, session.actor);
-    standForAction(session, session.actor);
+    posture(session, session.actor, false);
     Support.queueSupportCast(session, action);
     Generics.skillExec(session, session.actor, { id: action.target.fetchId(), selfId: action.skill.fetchSelfId(), ctrl: false });
     session.lastDecision = { action: 'raid_rebuff', skillId: action.skill.fetchSelfId(), targetId: action.target.fetchId(), at: now };
@@ -180,7 +175,7 @@ function rechargeParty(session, bot, Generics, { owner, members, anchor, partyId
     if (inRange) {
         const targetId = inRange.actor.fetchId();
         Tactics.stop(session, bot);
-        standForAction(session, bot);
+        posture(session, bot, false);
         // Cover the asynchronous target lookup until the native cast becomes active.
         rememberRaidAction(owner, inRange.actor, skill, now, 1000);
         Generics.skillExec(session, bot, { id: targetId, selfId: skillId, ctrl: false });
@@ -212,7 +207,7 @@ function rechargeParty(session, bot, Generics, { owner, members, anchor, partyId
                 && route.every(waypoint => distance(waypoint, center) <= limit);
         };
         Tactics.stop(session, bot);
-        standForAction(session, bot);
+        posture(session, bot, false);
         bot.moveTo({ from, to, routeGuard });
         session.lastRaidRechargeApproachAt = now;
         session.lastDecision = { action: 'raid_recharge_approach', targetId: actor.fetchId(), skillId, partyId, at: now };
@@ -349,7 +344,7 @@ function tick(session, bot, Generics, AI, context, now = Date.now()) {
             && ratio(supportAnchor.actor.fetchHp(), supportAnchor.actor.fetchMaxHp()) < PartyHeal.HEAL_BELOW;
         const holdRange = woundedAnchor ? raidHealingRange(bot) : RAID_HEALER_HOLD_RANGE;
         if (supportAnchor && Threats.distance(bot, supportAnchor.actor) > holdRange && Restrictions.canMove(bot)) {
-            standForAction(session, bot);
+            posture(session, bot, false);
             if (!bot.state.fetchTowards?.()) {
                 Tactics.stop(session, bot);
                 bot.moveTo({ from: point(bot), to: point(supportAnchor.actor) });
@@ -364,18 +359,17 @@ function tick(session, bot, Generics, AI, context, now = Date.now()) {
             && ratio(bot.fetchMp(), bot.fetchMaxMp()) < (bot.state.fetchSeated() ? 0.98 : 0.9)) {
             if (!bot.state.fetchSeated()) {
                 Tactics.stop(session, bot);
-                bot.state.setSeated(true);
-                session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
+                posture(session, bot, true);
             }
             bot.automation.replenishVitals(bot);
             session.lastDecision = { action: 'raid_healer_recovery', partyId, at: now };
         } else {
-            standForAction(session, bot);
+            posture(session, bot, false);
             session.lastDecision = { action: 'raid_healer_ready', partyId, at: now };
         }
         return true;
     }
-    standForAction(session, bot);
+    posture(session, bot, false);
     if (session.currentTargetId !== combatTarget.fetchId()) {
         Tactics.stop(session, bot);
         session.currentTargetId = combatTarget.fetchId();
@@ -401,4 +395,4 @@ function tick(session, bot, Generics, AI, context, now = Date.now()) {
     return true;
 }
 
-module.exports = { mainRaidTank, standForAction, combatRaidBuffs, preserveControlledAdds, rechargeParty, tick };
+module.exports = { mainRaidTank, combatRaidBuffs, preserveControlledAdds, rechargeParty, tick };

@@ -3,6 +3,7 @@
 // A command party owns its ordinary nine-person support/loot scope. Only
 // offensive decisions and movement orders are shared with the commander.
 const publish = require('../../World/PartyMembershipPublication');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const { randomUUID } = require('node:crypto');
 const groupFor = session => session?.clanCommandParty?.active ? session.clanCommandParty : null;
 const commanderFor = session => groupFor(session)?.commander || session;
@@ -265,8 +266,7 @@ function prepareRaid(group, session, Generics, bossId, { combat = false } = {}) 
         const bot = session.actor;
         invoke('GameServer/Bot/AI/BotPvpTactics').stop(session, bot);
         if (bot.state?.fetchSeated?.()) {
-            bot.state.setSeated(false);
-            session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
+            posture(session, bot, false);
         }
         Support.queueSupportCast(session, action);
         Generics.skillExec(session, bot, { id: action.target.fetchId(), selfId: action.skill.fetchSelfId(), ctrl: false });

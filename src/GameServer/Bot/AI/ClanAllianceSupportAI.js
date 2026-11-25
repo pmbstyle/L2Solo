@@ -1,4 +1,5 @@
 const Service = invoke('GameServer/Clan/ClanAllianceService');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Capabilities = invoke('GameServer/Bot/AI/BotSkillCapabilities');
 const Navigation = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
@@ -13,12 +14,6 @@ function leaderFor(session) {
     const member = state.members.find(m => m.id === Service.idOf(session));
     if (member && (!member.delivered || member.blood && !member.bloodDelivered)) return null;
     return leader;
-}
-
-function seated(session, bot, value) {
-    if (bot.state.fetchSeated?.() === value) return;
-    bot.state.setSeated(value);
-    session.dataSendToOthers?.(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
 }
 
 function tick(session, bot, Generics) {
@@ -64,7 +59,7 @@ function tick(session, bot, Generics) {
     if (hp < 0.85 && skill && !impairments.silenced && distance <= Number(skill.fetchDistance())) {
         if (Date.now() < Number(session.clanAllianceSupportRetryAt || 0)) return true;
         bot.automation?.abortAll?.(bot);
-        seated(session, bot, false);
+        posture(session, bot, false);
         session.currentTargetId = leader.fetchId();
         bot.select?.({ id: leader.fetchId() });
         session.clanAllianceSupportRetryAt = Date.now() + 1000;
@@ -74,7 +69,7 @@ function tick(session, bot, Generics) {
     }
     const approachRadius = skill ? Math.min(200, Math.max(32, Number(skill.fetchDistance()) - 32)) : 200;
     if (distance > Math.max(250, approachRadius) || hp < 0.85 && skill && distance > Number(skill.fetchDistance())) {
-        seated(session, bot, false);
+        posture(session, bot, false);
         Navigation.move(session, bot, Service.loc(leader), 'poisoned_leader', { targetActor: leader, arrivalRadius: approachRadius });
         decision('follow_leader', 'poisoned_leader');
         return true;
@@ -82,7 +77,7 @@ function tick(session, bot, Generics) {
     bot.automation?.abortAll?.(bot);
     session.currentTargetId = undefined;
     const recoverMp = bot.fetchMp() < bot.fetchMaxMp() * 0.8;
-    seated(session, bot, recoverMp);
+    posture(session, bot, recoverMp);
     decision(recoverMp ? 'save_mp' : 'hold_position', 'poisoned_leader');
     return true;
 }
