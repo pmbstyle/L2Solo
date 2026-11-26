@@ -83,7 +83,7 @@ async function workerPrices() {
     assert.deepEqual(mirrored.forbidden, [], 'the price reader loads no live world or database in the worker');
 
     Table.best = (role, level, shots) => ({ exp: shots === 2 ? 300 : shots ? 150 : 100,
-        shots: 100, adena: 100000, loot: 0 });
+        shots: 100, adena: 90000, loot: 0 });
     const emptyCaster = { level: 40, stats: { classId: 27 }, inventory: {
         [weapon.selfId]: { selfId: weapon.selfId, amount: 1, equipped: true, slot: weapon.etc.slot } } };
     board.put({ ...record, revision: 2, lines: record.lines.map(line => ({ ...line,

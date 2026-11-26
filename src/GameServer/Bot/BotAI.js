@@ -341,7 +341,7 @@ const BotAI = {
             };
         }
 
-        const leader = session.followPlayerSession?.actor;
+        const leader = invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session)?.actor;
         if (wasCompanion && leader?.fetchIsOnline?.()) {
             return session.botStay && session.stayLocation ? {
                 locX: session.stayLocation.locX,

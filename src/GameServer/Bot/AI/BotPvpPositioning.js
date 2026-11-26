@@ -12,7 +12,7 @@ function reposition(session, bot, context, now = Date.now()) {
         .sort((a,b)=>distance(bot,a)-distance(bot,b))[0];
     if (!pressure) return false;
     session.lastPvpRangeAt=now;
-    const anchor = session.partyCompanion ? session.followPlayerSession?.actor
+    const anchor = session.partyCompanion ? invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session)?.actor
         : context.members.length>1 ? context.owner?.actor : null;
     const previewRoute = (from,to) => {
         if (anchor && anchor!==bot && Math.hypot(to.locX-anchor.fetchLocX(),to.locY-anchor.fetchLocY())>900) {

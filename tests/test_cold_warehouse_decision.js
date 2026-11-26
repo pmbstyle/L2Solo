@@ -72,7 +72,8 @@ const id = 730180;
         if (stock.survivalMissing > 0) {
             assert(Number.isFinite(stock.survivalMissing) && Number.isInteger(stock.survivalMissing));
             assert.strictEqual(stock.itemId, invoke('GameServer/Inventory/ShotStock').planForState(state).selfId);
-            assert.strictEqual(stock.ownedUsePerHour, stock.usePerHour);
+            // The kit's use is the owned use at the precision the kit rates keep.
+            assert.strictEqual(stock.usePerHour, invoke('GameServer/Bot/Economy/StatsPacket').roundRates({ shotUse: stock.ownedUsePerHour }).shotUse);
             const current = Number(state.inventory[stock.itemId]?.amount || 0);
             assert.strictEqual(stock.current, current);
             const template = Data.items.find(row => Number(row.selfId) === stock.itemId);

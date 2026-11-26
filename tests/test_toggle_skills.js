@@ -150,18 +150,23 @@ function wait(ms) {
     assert.strictEqual(EffectStats.add(summoner, 'pDefAdd'), 653.1, 'Soul Guard should apply sourced P.Def at level 13');
 
     const restingSummoner = actor(100);
+    Object.assign(restingSummoner, { fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0 });
     restingSummoner.state = {
         seated: false,
         fetchSeated() { return this.seated; },
-        setSeated(value) { this.seated = value; }
+        setSeated(value) { this.seated = value; },
+        fetchAnimated: () => false,
+        setAnimated() {},
+        fetchCasts: () => false,
+        fetchHits: () => false
     };
     const chameleonRest = toggleSkill(296, 'Rest of Chameleon', 1);
-    ToggleSkills.handleRequest(session(restingSummoner), restingSummoner, chameleonRest);
+    ToggleSkills.handleRequest({ ...session(restingSummoner), dataSendToMeAndOthers() {} }, restingSummoner, chameleonRest);
     assert.strictEqual(restingSummoner.state.fetchSeated(), true, 'Rest of Chameleon should sit the caster down');
     assert.strictEqual(restingSummoner.silentMoving, true, 'Rest of Chameleon should enable silent moving while resting');
     assert.strictEqual(restingSummoner.fetchMp(), 91, 'Rest of Chameleon should consume sourced 9 initial MP');
     assert.strictEqual(EffectStore.list(restingSummoner)[0].manaDot.damage, 6, 'Rest of Chameleon should consume sourced 6 MP per tick');
-    ToggleSkills.handleRequest(session(restingSummoner), restingSummoner, chameleonRest);
+    ToggleSkills.handleRequest({ ...session(restingSummoner), dataSendToMeAndOthers() {} }, restingSummoner, chameleonRest);
     assert.strictEqual(restingSummoner.silentMoving, false, 'Stopping Rest of Chameleon should clear silent moving');
 
     const tiredOrc = actor(1);

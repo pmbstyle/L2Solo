@@ -99,6 +99,8 @@ const mocks = {
     'GameServer/Bot/DecisionTrace': { on: () => false, record() {} },
     'GameServer/Pets/PetTravel': { begin: () => [], finish() {} },
     'GameServer/Actor/Generics': { updatePosition(s, a, p) { a.x = p.locX; a.y = p.locY; a.z = p.locZ; } },
+    // Posture's lock and broadcast are pinned by test_posture_lock; the quest AI's choice is pinned here.
+    'GameServer/Actor/Generics/Posture': (session, actor, seated) => { if (actor.state.fetchSeated() === seated) return false; actor.state.setSeated(seated); return true; },
     'GameServer/Network/Response': {
         die: id => ({ type: 'die', id }), revive: id => ({ type: 'revive', id }),
         socialAction: id => ({ type: 'stand', id }), teleportToLocation: (id, coords) => ({ type: 'teleport', id, coords })

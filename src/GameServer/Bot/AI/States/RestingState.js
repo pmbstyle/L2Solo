@@ -1,5 +1,5 @@
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
-const ServerResponse = invoke('GameServer/Network/Response');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy');
@@ -35,13 +35,6 @@ function distanceToPartyFormation(session, bot, player) {
     return Math.sqrt((dx * dx) + (dy * dy));
 }
 
-function standUp(session, bot) {
-    if (!bot.state.fetchSeated()) return false;
-    bot.state.setSeated(false);
-    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-    return true;
-}
-
 function recordWakeDecision(session, bot, action, reason, extra = {}) {
     session.roleDecision = {
         role: BotRoles.inferRole(bot),
@@ -50,13 +43,6 @@ function recordWakeDecision(session, bot, action, reason, extra = {}) {
         at: Date.now(),
         ...extra
     };
-}
-
-function sitDown(session, bot) {
-    if (bot.state.fetchSeated()) return false;
-    bot.state.setSeated(true);
-    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-    return true;
 }
 
 // The rest's posture (RestPolicy.sitsToRest): seated unless
@@ -101,7 +87,7 @@ function maybeCastManaRegeneration(session, bot, Generics) {
     if (!skill || EffectStore.remainingMs(bot, 'mana_regeneration') > 0) return false;
     if (Number(bot.fetchMp()) < Number(skill.fetchConsumedMp?.() || 0) || bot.state.fetchCasts?.()) return false;
 
-    standUp(session, bot);
+    posture(session, bot, false);
     session.nextManaRegenAt = Date.now() + MANA_REGEN_CAST_RETRY_MS;
     Generics.skillExec(session, bot, { id: bot.fetchId(), selfId: skill.fetchSelfId(), ctrl: false });
     recordWakeDecision(session, bot, 'cast_mana_regeneration', 'recover_mp', { skillId: skill.fetchSelfId() });
@@ -116,7 +102,7 @@ function needsRecovery(session, bot) {
 }
 
 function retreatFromThreat(session, bot, threat) {
-    standUp(session, bot);
+    posture(session, bot, false);
     session.plan = 'fleeing';
     session.recoveryLocked = true;
     session.fleeStart = Date.now();
@@ -148,14 +134,15 @@ module.exports = {
                 return;
             }
 
-            const distance = point(bot).distance(point(player));
+            const leader = invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session).actor;
+            const distance = point(bot).distance(point(leader));
             if (invoke('GameServer/Bot/AI/PlayerPartyRaid').tick(session, bot, Generics, BotAI)) return;
             const partyRaid = BotRaidSafety.syncPlayerPartyRaid(playerSession);
             if (partyRaid?.phase === 'opening') {
                 delete session.explicitRestOrder;
                 session.plan = 'following';
                 session.currentTargetId = undefined;
-                standUp(session, bot);
+                posture(session, bot, false);
                 recordWakeDecision(session, bot, 'prepare_raid', 'player_designated_raid_target', {
                     targetId: partyRaid.bossId,
                     openerId: partyRaid.openerId || null
@@ -181,7 +168,7 @@ module.exports = {
             const combatTargetId = !threatIsHeldPull && threat?.actor?.fetchId?.()
                 ? threat.actor.fetchId()
                 : (!leaderTargetIsHeldPull ? leaderTargetId : undefined);
-            const leaderSeated = player.state?.fetchSeated?.() === true;
+            const leaderSeated = leader.state?.fetchSeated?.() === true;
             const recovered = rested(session, bot);
 
             // When the whole party rests, regroup first. FollowingState checks
@@ -191,7 +178,7 @@ module.exports = {
             const shouldRegroupForPartyRest = !session.explicitRestOrder &&
                 leaderSeated &&
                 distance > 250 &&
-                distanceToPartyFormation(session, bot, player) > PARTY_REST_FORMATION_TOLERANCE;
+                distanceToPartyFormation(session, bot, leader) > PARTY_REST_FORMATION_TOLERANCE;
             const shouldFollowLeader = shouldRegroupForPartyRest || (recovered && (
                 distance > REST_FOLLOW_WAKE_DISTANCE || !leaderSeated
             ));
@@ -200,7 +187,7 @@ module.exports = {
                 session.plan = 'following';
                 session.currentTargetId = combatTargetId || undefined;
                 session.townGossip = false;
-                standUp(session, bot);
+                posture(session, bot, false);
                 recordWakeDecision(
                     session,
                     bot,
@@ -238,7 +225,7 @@ module.exports = {
                 session.plan = 'hunting';
                 session.currentTargetId = threat.fetchId();
                 session.townGossip = false;
-                standUp(session, bot);
+                posture(session, bot, false);
                 bot.select({ id: threat.fetchId() });
                 recordWakeDecision(session, bot, 'defend_self', 'incoming_threat', {
                     targetId: threat.fetchId()
@@ -262,13 +249,12 @@ module.exports = {
         }
 
         const restingWithLeader = session.partyCompanion === true
-            && session.followPlayerSession?.actor?.state?.fetchSeated?.() === true;
+            && invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session)?.actor?.state?.fetchSeated?.() === true;
         if (rested(session, bot) && !restingWithLeader) {
             session.recoveryLocked = false;
             session.restWhole = false;
             delete session.explicitRestOrder;
-            bot.state.setSeated(false);
-            session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+            posture(session, bot, false);
             // The rest's end is the body's stop: what waited for it wakes (Situations).
             invoke('GameServer/Bot/AI/DecisionEvents').stop(session);
             if (session.followPlayerSession && session.partyCompanion === true) {
@@ -286,8 +272,8 @@ module.exports = {
             if (BotClassPolicy.modeFor(bot, { session }) === 'solo_pve'
                 && RestPotion.tryBetweenFights(session, bot, () => SummonerTactics.petRestView(bot))) return;
             if (maybeCastManaRegeneration(session, bot, Generics)) return;
-            if (restsSeated(session, bot)) sitDown(session, bot);
-            else standUp(session, bot);
+            if (restsSeated(session, bot)) posture(session, bot, true);
+            else posture(session, bot, false);
             // 3% chance per tick to attempt conversation when resting near other bots
             if (Math.random() < 0.03) {
                 try {

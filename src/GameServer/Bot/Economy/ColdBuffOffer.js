@@ -3,6 +3,7 @@ const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Loadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 const Policy = invoke('GameServer/Bot/Economy/BuffServicePolicy');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 const MAX_OFFER_BYTES = 512, MAX_PROVIDERS = 16;
 
 function available(state) {
@@ -55,9 +56,16 @@ function choose(provider, recipient, timestamp, skills) {
         .filter(skill => Loadout.useful(recipient, skill))
         .forEach(skill => {
             const semantic = skill.fetchSemantic();
-            const family = Loadout.family(semantic.effect);
-            if (active.some(effect => Loadout.family(effect.key) === family
-                && Number(effect.level || 0) >= skill.fetchLevel())) return;
+            const family = Loadout.family(semantic.effect, semantic.stackFamily);
+            // A buff of a C4 stack type is held when the store would refuse it or an equal
+            // one is there (the sale lands by the same rule); other buffs by family and level.
+            const held = semantic.stackFamily
+                ? EffectStore.displacedBy(active, effectsFor([skill], timestamp)[0]) === null
+                    || active.some(effect => effect.stackFamily === semantic.stackFamily
+                        && Number(effect.stackOrder ?? effect.level ?? 0) >= Number(semantic.stackOrder ?? skill.fetchLevel()))
+                : active.some(effect => Loadout.family(effect.key, effect.stackFamily) === family
+                    && Number(effect.level || 0) >= skill.fetchLevel());
+            if (held) return;
             const previous = byFamily.get(family);
             if (!previous || previous.fetchLevel() < skill.fetchLevel()) byFamily.set(family, skill);
         });
@@ -81,7 +89,7 @@ function effectsFor(selected, timestamp) {
         const key = Loadout.normalize(semantic.effect);
         return { key, id: skill.fetchSelfId(), level: skill.fetchLevel(), name: semantic.effect,
             type: 'buff', durationMs, expiresAt: timestamp + durationMs,
-            stackFamily: semantic.stackFamily || Loadout.family(key),
+            stackFamily: semantic.stackFamily || null,
             stackOrder: semantic.stackOrder ?? null, stats: { ...(semantic.stats || {}) } };
     });
 }

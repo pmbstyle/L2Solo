@@ -28,7 +28,7 @@ try {
         loc: { locX: 0, locY: 0, locZ: 0 }, timing: {} };
     Table.value = (id, role, level, shots) => ({ exp: shots ? 1000 : 999, shots: 100, potions: 0, deaths: 0 });
     Table.best = (role, level, shots) => Table.value('beginner-policy',role,level,shots);
-    Hunt.huntIncome = () => ({ perHour: 1000, expPerHour: 1000, source: 'own', spotId: 'beginner-policy' });
+    Hunt.huntIncome = () => ({ perHour: 1000, moneyPerHour: 1000, expPerHour: 1000, source: 'own', spotId: 'beginner-policy' });
     Belief.prior = () => ({ mu: Math.log(100), K: 1 });
     const policy = Shots.usePolicy(state);
     assert.equal(policy.usePerHour,100); assert.equal(policy.paidUsePerHour,0);
@@ -74,7 +74,8 @@ try {
             assert.equal(projected.inventory[1835].amount,100);
         }
     }
-    Table.value = (id, role, level, shots) => ({ exp: shots ? 1000 : 1, shots: 100, potions: 0, deaths: 0 });
+    // A hunt that earns its paid shots (1000 Adena an hour) fires them once the free ones run out.
+    Table.value = (id, role, level, shots) => ({ exp: shots ? 1000 : 1, shots: 100, adena: 1000, potions: 0, deaths: 0 });
     for (const party of [false,true]) {
         const s=make(); s.inventory[5789].amount=2;
         const outcome=party ? Cold.resolvePartyFight({members:[s],spot,timestamp:1800000000000,rng:()=>.5})

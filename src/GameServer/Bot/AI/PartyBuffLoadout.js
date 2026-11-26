@@ -6,8 +6,9 @@ const aliases = {
     chant_of_battle:'might', power_of_paagrio:'might', soul_shield:'shield', chant_of_shielding:'shield',
     chant_of_flame:'acumen', chant_of_fire:'magic_barrier', chant_of_fury:'haste',
     chant_of_rage:'death_whisper', chant_of_eagle:'guidance', chant_of_vampire:'vampiric_rage',
-    chant_of_predator:'focus', chant_of_evasion:'agility', soul_of_paagrio:'blessed_soul',
-    wisdom_of_paagrio:'acumen', eye_of_paagrio:'guidance',
+    chant_of_predator:'focus', chant_of_evasion:'agility', soul_of_paagrio:'empower',
+    wisdom_of_paagrio:'acumen', eye_of_paagrio:'death_whisper', vision_of_paagrio:'guidance',
+    protection_of_paagrio:'bless_shield',
     blessing_of_paagrio:'shield', glory_of_paagrio:'magic_barrier', tact_of_paagrio:'agility',
     rage_of_paagrio:'berserker_spirit', body_of_avatar:'blessed_body',
     prophecy_of_water:'prophecy', prophecy_of_fire:'prophecy', prophecy_of_wind:'prophecy',
@@ -19,7 +20,9 @@ const aliases = {
 const stackFamilies = {
     pAtk:'might', pDef:'shield', SpeedUp:'wind_walk', pAtkSpeedUp:'haste',
     mAtkSpeedUp:'acumen', mAtk:'empower', MagicDefUp:'magic_barrier',
-    MaxHPUp:'blessed_body', CoV:'prophecy'
+    MaxHPUp:'blessed_body', CoV:'prophecy', accuracyUp:'guidance', cAtk:'death_whisper',
+    rCrit:'focus', vampRage:'vampiric_rage', rEvas:'agility', berserk:'berserker_spirit',
+    shieldProbUp:'bless_shield', max_mp_up:'blessed_soul'
 };
 const priorities = {
     wind_walk:100, shield:95, magic_barrier:90, blessed_body:90,
@@ -83,8 +86,7 @@ function build(members, providers, context, api) {
             aura:api.recipients(members,provider,skill)})));
     const skillFamily=skill=>family(skill.fetchSemantic().effect,skill.fetchSemantic().stackFamily);
     const effectFamily=effect=>family(effect.key,effect.stackFamily);
-    const managed=new Set(skills.map(({skill})=>skillFamily(skill)));
-    const used=new Map(), limits=new Map(), selected=new Map(), selectedFamilies=new Map(), managedByActor=new Map();
+    const used=new Map(), limits=new Map(), selected=new Map(), selectedFamilies=new Map();
     const init=actor=>{
         if(used.has(actor))return;
         // Party summons share the aura loadout, but keep ownership of their
@@ -93,7 +95,6 @@ function build(members, providers, context, api) {
         const actorManaged=new Set(partyActors.has(actor) ? skills
             .filter(({skill,aura})=>api.isAura(skill) ? aura.includes(actor) : actors.includes(actor))
             .map(({skill})=>skillFamily(skill)) : []);
-        managedByActor.set(actor,actorManaged);
         const effects=api.effects(actor);
         const protectedEffects=effects.filter(e=>Effects.includedInBuffCount(e)
             && (!actorManaged.has(effectFamily(e)) || e.dispellable===false || e.type!=='buff'));
@@ -138,7 +139,7 @@ function build(members, providers, context, api) {
         chosen.push(c);
         for(const a of c.recipients){used.set(a,used.get(a)+1);selected.get(a).add(c.key);selectedFamilies.get(a).add(c.group);}
     }
-    return {chosen,selected,managed,managedByActor};
+    return {chosen,selected};
 }
 
 module.exports={build,useful,family,normalize,raidRecoveryFamilies};

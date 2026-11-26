@@ -126,40 +126,45 @@ function prune(actor) {
     return store;
 }
 
+// The C4 stack rule for one new effect over a plain effect list: the effects
+// next displaces, or null when it does not land. Hot apply and the cold buff
+// landings (party casts, bought buffs) call it, so both hold one slot the same way.
+function displacedBy(effects, next) {
+    const list = effects || [];
+    if (next.stackFamily) {
+        const order = resolveStackOrder(next);
+        const stacked = list.filter((entry) => entry?.stackFamily === next.stackFamily);
+        if (stacked.some((entry) => resolveStackOrder(entry) > order)) return null;
+        if (next.type === 'debuff' && stacked.some((entry) => (
+            entry.type === 'debuff' && resolveStackOrder(entry) === order
+        ))) return null;
+        // Lisvus runs with CancelLesserEffect enabled: once a stronger or equal
+        // member wins the stack, the displaced effect is removed rather than kept
+        // as an inactive stat/icon source.
+        return stacked;
+    }
+    const existing = list.find((entry) => entry?.key === next.key);
+    if (!existing) return [];
+    const existingLevel = Number(existing.level || 0);
+    const level = Number(next.level || DEFAULT_EFFECT_LEVEL);
+    // Lisvus does not restart an equal offensive effect. Repeated NPC casts
+    // therefore keep the original expiry instead of extending a debuff forever.
+    if (next.type === 'debuff' && existingLevel >= level) return null;
+    if (next.type !== 'debuff' && existingLevel > level) return null;
+    return [existing];
+}
+
 function apply(actor, effect) {
     if (!actor) return null;
     const normalized = normalize(effect);
     if (!normalized.key || !normalized.id) return null;
     const store = prune(actor);
-    const existing = store[normalized.key];
+    const displaced = displacedBy(Object.values(store), normalized);
+    if (!displaced) return null;
     const removedEffects = [];
-
-    if (normalized.stackFamily) {
-        const stacked = Object.values(store).filter((entry) => (
-            entry.stackFamily === normalized.stackFamily
-        ));
-        const stronger = stacked.find((entry) => Number(entry.stackOrder || 0) > normalized.stackOrder);
-        if (stronger) return null;
-
-        const equalDebuff = normalized.type === 'debuff' && stacked.find((entry) => (
-            entry.type === 'debuff' && Number(entry.stackOrder || 0) === normalized.stackOrder
-        ));
-        if (equalDebuff) return null;
-
-        // Lisvus runs with CancelLesserEffect enabled: once a stronger or equal
-        // member wins the stack, the displaced effect is removed rather than kept
-        // as an inactive stat/icon source.
-        stacked.forEach((entry) => {
-            if (removeStored(actor, entry.key)) removedEffects.push(entry);
-        });
-    } else if (existing) {
-        const existingLevel = Number(existing.level || 0);
-        // Lisvus does not restart an equal offensive effect. Repeated NPC casts
-        // therefore keep the original expiry instead of extending a debuff forever.
-        if (normalized.type === 'debuff' && existingLevel >= normalized.level) return null;
-        if (normalized.type !== 'debuff' && existingLevel > normalized.level) return null;
-        if (removeStored(actor, existing.key)) removedEffects.push(existing);
-    }
+    displaced.forEach((entry) => {
+        if (removeStored(actor, entry.key)) removedEffects.push(entry);
+    });
 
     store[normalized.key] = normalized;
     removedEffects.push(...enforceSlotLimits(actor));
@@ -329,6 +334,7 @@ module.exports = {
     SELF_PACKET_LIMIT,
     PARTY_PACKET_LIMIT,
     apply,
+    displacedBy,
     remove,
     removeByCategory,
     removeBySkillId,

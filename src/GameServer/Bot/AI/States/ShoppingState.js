@@ -1374,7 +1374,7 @@ module.exports = {
 
             let returnTarget = null;
             if (returningToCompanion) {
-                const leader = companionResume.followPlayerSession.actor;
+                const leader = invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session, companionResume.followPlayerSession).actor;
                 returnTarget = {
                     locX: leader.fetchLocX(),
                     locY: leader.fetchLocY(),

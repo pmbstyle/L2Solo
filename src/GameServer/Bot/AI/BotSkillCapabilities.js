@@ -36,7 +36,7 @@ function selectHealSkill(actor, { emergency = false, group = false, target = nul
     const usable = healSkills(actor).filter((skill) => {
         if (!target) return true;
         const semantic = skill.fetchSemantic?.() || {};
-        if (semantic.hot && invoke('GameServer/Bot/AI/BotSkillIntent').equivalentActive(target, skill)) return false;
+        if (semantic.hot && invoke('GameServer/Bot/AI/BotSkillIntent').equivalentActive(target, skill, { emergency })) return false;
         if (skill.fetchTargetKind?.() !== 'ally' || target === actor) return true;
         // Paagrio healing reaches clan/alliance members, rather than every
         // party member. Match the native ally fanout before choosing it.
@@ -50,12 +50,18 @@ function selectHealSkill(actor, { emergency = false, group = false, target = nul
     const area = usable.filter((skill) => ['party', 'ally'].includes(skill.fetchTargetKind?.()));
     const pool = group ? area : single.length ? single : fallbackGroup ? area : [];
     if (pool.length === 0) return null;
+    // A heal over time ranks by its heal per tick, as PartyHealPolicy.score
+    // reads it (its power column is 1).
+    const power = (skill) => {
+        const semantic = skill.fetchSemantic?.() || {};
+        return semantic.skillType === C4SkillRules.HOT ? Number(semantic.hot?.heal || 0) : Number(skill.fetchPower?.() || 0);
+    };
     return pool.sort((a, b) => {
         const aBattle = /battle heal/.test(healName(a)) ? 1 : 0;
         const bBattle = /battle heal/.test(healName(b)) ? 1 : 0;
         const urgency = emergency ? bBattle - aBattle : aBattle - bBattle;
         return urgency ||
-            Number(b.fetchPower?.() || 0) - Number(a.fetchPower?.() || 0) ||
+            power(b) - power(a) ||
             Number(a.fetchConsumedMp?.() || 0) - Number(b.fetchConsumedMp?.() || 0);
     })[0] || null;
 }

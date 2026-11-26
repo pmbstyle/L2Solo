@@ -3,6 +3,7 @@
 // A command party owns its ordinary nine-person support/loot scope. Only
 // offensive decisions and movement orders are shared with the commander.
 const publish = require('../../World/PartyMembershipPublication');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const { randomUUID } = require('node:crypto');
 const groupFor = session => session?.clanCommandParty?.active ? session.clanCommandParty : null;
 const commanderFor = session => groupFor(session)?.commander || session;
@@ -223,6 +224,16 @@ function formationTarget(session) {
         locY: Math.round(commander.fetchLocY() + x * Math.sin(angle) + y * Math.cos(angle)), locZ: commander.fetchLocZ() };
 }
 
+// The body a companion follows, rests with and returns to. A command party's bot
+// leader leads its own party but walks beside the commander and sits when the
+// commander sits, as a main-party companion does; under a Hold order it keeps its
+// own post. Members follow their bot leader. partySession is the party leader the
+// caller holds (a town visit holds it in its return snapshot).
+function followBody(session, partySession = session.followPlayerSession) {
+    const group = groupFor(session);
+    return group && session === group.owner && !session.botStay && current(group) ? group.commander : partySession;
+}
+
 function followLeader(session, bot) {
     const group = groupFor(session);
     if (!group || session !== group.owner || session.currentTargetId || bot.state?.fetchCasts?.() || bot.state?.fetchHits?.()) return false;
@@ -255,8 +266,7 @@ function prepareRaid(group, session, Generics, bossId, { combat = false } = {}) 
         const bot = session.actor;
         invoke('GameServer/Bot/AI/BotPvpTactics').stop(session, bot);
         if (bot.state?.fetchSeated?.()) {
-            bot.state.setSeated(false);
-            session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
+            posture(session, bot, false);
         }
         Support.queueSupportCast(session, action);
         Generics.skillExec(session, bot, { id: action.target.fetchId(), selfId: action.skill.fetchSelfId(), ctrl: false });
@@ -362,4 +372,4 @@ function handleCommand(player, text, isCurrent) {
 }
 
 module.exports = { groupFor, commanderFor, authorized, current, roster, combatSessions, memberAttached, memberDetached,
-    dismiss, dismissAll, recruit, movement, applyMemberOrder, formationTarget, followLeader, syncLoot, prepareRaid, handleMovement, canAttack, canTaunt, handleCommand };
+    dismiss, dismissAll, recruit, movement, applyMemberOrder, formationTarget, followBody, followLeader, syncLoot, prepareRaid, handleMovement, canAttack, canTaunt, handleCommand };

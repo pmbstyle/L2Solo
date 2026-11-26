@@ -1,4 +1,5 @@
 const Safety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const Combat = invoke('GameServer/Bot/AI/PartyRaidCombat');
 const State = invoke('GameServer/Bot/AI/PartyCombatState');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
@@ -128,10 +129,12 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     if (Roles.inferRole(bot) === 'healer' && !Awareness.underDirectNpcAttack(session) && Restrictions.canMove(bot)) {
         const wounded = [...near].sort((a, b) => ratio(a.actor) - ratio(b.actor))
             .find(member => ratio(member.actor) < 0.7);
+        const emergency = wounded && invoke('GameServer/Bot/AI/PartyHealPolicy')
+            .emergency(wounded.actor.fetchMaxHp() - wounded.actor.fetchHp(), wounded.actor.fetchMaxHp());
         const heal = wounded && invoke('GameServer/Bot/AI/BotSkillCapabilities').healSkills(bot)
             .filter(skill => Tactics.usable(bot, skill))
             .filter(skill => skill.fetchTargetKind() !== 'ally' || Tactics.alliedForHeal(bot, wounded.actor))
-            .filter(skill => !skill.fetchSemantic?.()?.hot || !invoke('GameServer/Bot/AI/BotSkillIntent').equivalentActive(wounded.actor, skill))
+            .filter(skill => !skill.fetchSemantic?.()?.hot || !invoke('GameServer/Bot/AI/BotSkillIntent').equivalentActive(wounded.actor, skill, { emergency }))
             .sort((a, b) => Number(b.fetchPower?.() || 0) - Number(a.fetchPower?.() || 0))[0];
         const healRange = heal && (heal.fetchTargetKind() === 'friendly' ? Number(heal.fetchDistance())
             : Number(heal.fetchSemantic?.()?.radius || heal.fetchDistance() || 900));
@@ -139,7 +142,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
             if (bot.state.fetchTowards?.() && session.lastDecision?.action === 'raid_heal_approach'
                 && session.lastDecision.targetId === wounded.actor.fetchId()) return true;
             Tactics.stop(session, bot);
-            Combat.standForAction(session, bot);
+            posture(session, bot, false);
             bot.moveTo({ from: location(bot), to: location(wounded.actor) });
             decision(session, 'raid_heal_approach', wounded.actor, now);
             return true;
@@ -173,7 +176,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
             return hold(session, bot, 'raid_wait_player_opening', boss, now);
         }
         if (session === assignedTank && bot.state.fetchSeated?.()) {
-            Combat.standForAction(session, bot);
+            posture(session, bot, false);
             return hold(session, bot, 'raid_stand_before_opening', boss, now);
         }
         const origin = raid.pullOrigin;
@@ -182,7 +185,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
             if (Math.hypot(bot.fetchLocX() - origin.locX, bot.fetchLocY() - origin.locY) > Safety.RAID_PULL_RADIUS
                 && !bot.state.fetchTowards?.() && Restrictions.canMove(bot)) {
                 Tactics.stop(session, bot);
-                Combat.standForAction(session, bot);
+                posture(session, bot, false);
                 bot.moveTo({ from: location(bot), to: origin });
                 decision(session, 'raid_prepare_regroup', boss, now);
                 return true;

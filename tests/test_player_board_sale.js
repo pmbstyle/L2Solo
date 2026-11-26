@@ -44,6 +44,8 @@ const waitFor = async (predicate, label) => {
             await Database.setItem(buyer, { selfId: Number(item.selfId), name: template.template.name,
                 amount: 1, equipped: true, slot: Number(item.slot), enchant: 0 });
         }
+        // It holds its shot stock, so its one gear gap is what it buys.
+        await Database.setItem(buyer, { selfId: 1463, name: 'Soulshot: D-grade', amount: 10000, stackable: true, slot: 0 });
         await Database.execute(['UPDATE characters SET exp=?,locX=?,locY=?,locZ=?,hp=1000,maxHp=1000,mp=1000,maxMp=1000 WHERE id=?',
             [Number(Data.experience[29]), point.locX, point.locY, point.locZ, buyer]]);
         await Life.init();

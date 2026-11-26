@@ -591,8 +591,8 @@ function kitBag(state, known = {}) {
 }
 // The rates for the bot's items now. A build judged its shot verdict for the
 // shot it read: after a weapon change the same spot's shots per hour are judged
-// again at the new shot's price (ShotStock.usePolicy over the rates' use and the
-// bot's hour, no build). A new potion (a level crossing) keeps the survival
+// again at the new shot's price (ShotStock.usePolicy over the rates' use, no
+// build). A new potion (a level crossing) keeps the survival
 // drinks per hour and drops the rest bottles judged for the old one until the
 // next build. Unchanged items keep the rates object (its scroll memo).
 function ratesNow(rates, state, bag) {
@@ -600,7 +600,7 @@ function ratesNow(rates, state, bag) {
     let now = rates;
     if (bag.shotId !== rates.shotId) {
         const policy = invoke('GameServer/Inventory/ShotStock').usePolicy(state, { plan: bag.plan,
-            bestTable: { shots: rates.shotUse }, hourAdena: bag.hour });
+            bestTable: { shots: rates.shotUse } });
         now = { ...now, shotId: bag.shotId, shotsPay: policy.usePerHour > 0, shotsCanRestock: policy.purchaseUsePerHour > 0,
             shotBenefit: policy.rawUse > 0 ? policy.benefit / policy.rawUse : 0, policy: undefined };
     }
@@ -722,7 +722,8 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
         const row = incomeRoute.row;
         hunt = { perHour: incomeRoute.earning * Hunt.onSpotShare(state), perKill: row.kills > 0 ? row.income / row.kills : 0,
             expPerHour: row.exp * Hunt.onSpotShare(state), source: 'route', spotId: incomeRoute.spot.id,
-            progressSpotId: incomeRoute.spot.id, solo: true, useShots: row.useShots };
+            progressSpotId: incomeRoute.spot.id, solo: true, useShots: row.useShots,
+            moneyPerHour: (Number(row.adena) || 0) + (Number(row.loot) || 0) };
     } else {
         hunt = { ...Hunt.huntIncome(state, timestamp, deps.mode, leafFit(state, deps, timestamp)), solo };
         // A leveling bot hunts its earning answer too: its hour stays its own, the spot and charge policy the
@@ -746,8 +747,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const shotItemId = shotPlan.selfId;
     const potion = HealingPotionStock.purchasePotionFor(state), potionItemId = potion.selfId;
     const hourAdena = Hunt.huntHour(hunt, state);
-    const shotPolicy = ShotStock.usePolicy(state, { plan: shotPlan, bestTable,
-        hourAdena });
+    const shotPolicy = ShotStock.usePolicy(state, { plan: shotPlan, bestTable, hunt });
     const shotBenefit = shotPolicy.benefit;
     const beginnerCurrent = ShotStock.beginnerAmount(state, shotPlan);
     const shotUse = positive(state.inventory?.[shotItemId]?.amount) + beginnerCurrent > 0

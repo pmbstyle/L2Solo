@@ -1,7 +1,7 @@
 'use strict';
 // T106: summoners and orc chanters read table roles of their own; the earning
 // decision chooses Blessed Spiritshot for a spiritshot class when the blessed
-// rows' extra farm pays their extra cost (decidedKind); a bot fires what it
+// rows add exp over the spiritshot rows and earn their Blessed shots (decidedKind); a bot fires what it
 // holds, Blessed first, holding neither the kind its held answer chose.
 const assert = require('node:assert/strict');
 require('../src/Global');
@@ -16,14 +16,19 @@ for (const [classId, role] of [[14, 'summoner'], [41, 'summoner'], [96, 'summone
 }
 
 const best = Table.best;
-const blessedExp = new Map([[50, 200], [51, 151]]);
-Table.best = (role, level, shots) => shots === 2 ? { exp: blessedExp.get(level), shots: 100, adena: 90000, loot: 10000 }
+// 49: little more exp, a hunt that earns its shots; 50: more exp; 51: more exp
+// from a hunt whose money (1000) does not cover 100 Blessed shots.
+const blessedRow = new Map([[49, { exp: 151, adena: 90000, loot: 10000 }], [50, { exp: 200, adena: 90000, loot: 10000 }],
+    [51, { exp: 200, adena: 1000, loot: 0 }]]);
+Table.best = (role, level, shots) => shots === 2 ? { ...blessedRow.get(level), shots: 100 }
     : shots ? { exp: 150, shots: 100, adena: 90000, loot: 10000 } : { exp: 100, shots: 0, adena: 90000, loot: 10000 };
 try {
     const sorcerer = (level, inventory = {}) => ({ level, stats: { classId: 12 }, inventory });
-    // 50: blessed adds 1/2 - 1/3 of the farm for 100 x (45 - 18) a 100000 hour.
+    // 49: blessed adds 0.4% of the exp for 2.7% more of the hour's money (100 x
+    // (45 - 18) of 100000): the hunt still earns its Blessed shots, so it pays.
+    assert.equal(Shots.decidedKind(sorcerer(49)), 'blessedSpiritshot', 'blessed shots that add exp and are earned pay');
     assert.equal(Shots.decidedKind(sorcerer(50)), 'blessedSpiritshot', 'the blessed farm pays its cost');
-    assert.equal(Shots.decidedKind(sorcerer(51)), 'spiritshot', 'a blessed farm that does not pay: spiritshot');
+    assert.equal(Shots.decidedKind(sorcerer(51)), 'spiritshot', 'a blessed hunt that does not earn its shots: spiritshot');
     assert.equal(Shots.decidedKind({ level: 50, stats: { classId: 2 } }), 'soulshot', 'a fighter class: soulshots');
     const answered = (level, shotKind) => ({ level, stats: { classId: 12, earning: { shotKind } }, inventory: {} });
     assert.equal(Shots.planForState(answered(51, 'blessedSpiritshot')).selfId, 3947, 'holding neither: the held answer\'s kind, not re-judged');

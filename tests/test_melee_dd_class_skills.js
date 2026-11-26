@@ -38,6 +38,7 @@ function actor(overrides = {}) {
         seated: overrides.seated === true,
         fetchSeated() { return this.seated; },
         setSeated(value) { this.seated = value; },
+        fetchAnimated: () => false, setAnimated() {}, fetchCasts: () => false,
         fetchDead: () => false,
         inMotion: () => false,
         fetchWalkin: () => false,

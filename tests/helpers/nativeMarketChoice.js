@@ -56,9 +56,14 @@ async function capture(state, options = {}, label = '') {
         else if (!(query.free && Packet.firstUnfundedPrice(packet) !== 0)) {
             const ratio = query.free ? -Infinity : query.r;
             if (query.free || ratio >= Packet.moneyPrice(packet)) {
+                // The money held for the rows the queue ranks ahead of the spend (a
+                // survival stock row stands first whatever its ratio): the rows before the
+                // first row at the spend's ratio, every funded row when none is at it, none
+                // for a side spend (Infinity).
                 let higher = 0;
-                for (let row = 0; row < Packet.fundedRows(packet); row++) {
-                    if (Packet.fundedRatio(packet, row) > ratio) higher = Packet.fundedCumulative(packet, row);
+                for (let row = 0; ratio !== Infinity && row < Packet.fundedRows(packet); row++) {
+                    if (Packet.fundedRatio(packet, row) === ratio) break;
+                    higher = Packet.fundedCumulative(packet, row);
                 }
                 expected = Math.max(0, wallet - Packet.refillReserve(packet) - higher);
             }

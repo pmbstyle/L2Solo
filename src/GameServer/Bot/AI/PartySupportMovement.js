@@ -10,7 +10,7 @@ const CAST_RANGE_MARGIN = 32;
 const GEODATA_CELL_SIZE = 16;
 
 function anchorFor(session) {
-    const owner = session.followPlayerSession?.actor;
+    const owner = invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session)?.actor;
     return session.clanCommandParty?.active
         ? invoke('GameServer/Bot/AI/ClanCommandParty').formationTarget(session.clanCommandParty.owner) || owner : owner;
 }

@@ -1,6 +1,5 @@
 const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Effects = invoke('GameServer/Effects/EffectStore');
-const Restrictions = invoke('GameServer/Effects/EffectRestrictions');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Attack = invoke('GameServer/Skills/WeaponMask');
 
@@ -9,7 +8,7 @@ function alive(actor) {
 }
 
 function usable(actor, skill, reserve = 0) {
-    if (!skill || skill.fetchPassive?.() || !alive(actor) || !Restrictions.canCast(actor) || actor.canUseSkill?.(skill) === false) return false;
+    if (!skill || skill.fetchPassive?.() || !alive(actor) || !invoke('GameServer/Effects/EffectRestrictions').canCast(actor) || actor.canUseSkill?.(skill) === false) return false;
     const semantic = skill.fetchSemantic?.() || {};
     if (semantic.notUsedInC4) return false;
     const mp = Number(actor.fetchMp?.() || 0), maxMp = Math.max(1, Number(actor.fetchMaxMp?.() || mp || 1));
@@ -29,15 +28,28 @@ function inRange(actor, target, skill) {
     return Math.hypot(actor.fetchLocX()-target.fetchLocX(),actor.fetchLocY()-target.fetchLocY()) <= range;
 }
 
-function equivalentActive(target, skill) {
-    const semantic = skill.fetchSemantic?.() || {};
-    return Effects.list(target).some(effect => {
-        if (effect.id === skill.fetchSelfId?.() || (semantic.effect && effect.key === semantic.effect)) {
-            return Number(effect.level || 1) >= Number(skill.fetchLevel?.() || 1);
+// Is a cast pointless given the effects running on its target (plain records:
+// id, key, level, stackFamily, stackOrder)? A buff is pointless under an equal
+// or stronger copy of itself or of its C4 stack family. A heal over time is
+// worth its remaining ticks: a cast over a running member of its skill or
+// stack family removes it (Lisvus CancelLesserEffect, EffectStore) and throws
+// those ticks away, so the bot lets it run; an emergency heal takes a stronger
+// member over it (our choice: C4 lets a player overwrite). One answer hot and
+// cold: equivalentActive (hot) and BackgroundResolver.chooseHeal (cold, the
+// worker loads this module: no packet or geodata import at the top).
+function equivalentIn(effects, semantic, selfId, level, emergency = false) {
+    const keep = !!semantic.hot && !emergency;
+    return effects.some(effect => {
+        if (Number(effect.id) === Number(selfId) || (semantic.effect && effect.key === semantic.effect)) {
+            return keep || Number(effect.level || 1) >= Number(level || 1);
         }
-        return semantic.stackFamily && effect.stackFamily === semantic.stackFamily
-            && Number(effect.stackOrder ?? 0) >= Number(semantic.stackOrder ?? 0);
+        return !!semantic.stackFamily && effect.stackFamily === semantic.stackFamily
+            && (keep || Number(effect.stackOrder ?? 0) >= Number(semantic.stackOrder ?? 0));
     });
+}
+
+function equivalentActive(target, skill, { emergency = false } = {}) {
+    return equivalentIn(Effects.list(target), skill.fetchSemantic?.() || {}, skill.fetchSelfId?.(), skill.fetchLevel?.(), emergency);
 }
 
 function debuffUseful(actor, target, skill, { primary = false, fleeing = false } = {}) {
@@ -64,4 +76,4 @@ function debuffUseful(actor, target, skill, { primary = false, fleeing = false }
     return true;
 }
 
-module.exports = { alive, usable, inRange, equivalentActive, debuffUseful };
+module.exports = { alive, usable, inRange, equivalentIn, equivalentActive, debuffUseful };

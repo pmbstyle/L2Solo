@@ -7,6 +7,11 @@ const Automation     = invoke('GameServer/Automation');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const ClanReviewEvents = require('../Clan/ClanReviewEvents');
 
+// The ms until the skill's reuse ends, 0 when it is ready.
+function skillReadyInMs(actor, skill, now) {
+    return Math.max(0, (actor.skillReuseUntil.get(skill.fetchSelfId()) || 0) - now);
+}
+
 class Actor extends ActorModel {
     constructor(session, data) {
         // Parent inheritance
@@ -111,8 +116,12 @@ class Actor extends ActorModel {
         );
     }
 
+    skillReadyInMs(skill, now = Date.now()) {
+        return skillReadyInMs(this, skill, now);
+    }
+
     canUseSkill(skill, now = Date.now()) {
-        return (this.skillReuseUntil.get(skill.fetchSelfId()) || 0) <= now;
+        return skillReadyInMs(this, skill, now) <= 0;
     }
 
     markSkillReuse(skill, now = Date.now()) {

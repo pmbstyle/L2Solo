@@ -32,7 +32,7 @@ const resolve = (members, more = {}) => Party.resolve({ party, members, spot, el
     timestamp: at, episodeId: 'help-episode', assessRelationship: memory.assess.bind(memory), ...more });
 const input = JSON.stringify([injured, healer]);
 const selfCaster = { state: healer, vitals: { hp: 100, maxHp: 100 }, profile: { skills: [{ selfId: 45, level: 1, power: 100, mp: 1 }] } };
-const selfTarget = { state: injured, vitals: { hp: 20, maxHp: 100 } };
+const selfTarget = { state: injured, vitals: { hp: 20, maxHp: 100 }, profile: { effects: [] } };
 assert.strictEqual(Resolver.combat.chooseHeal(selfCaster.profile, [selfTarget, selfCaster], 100, {}, at, selfCaster), null,
     'healthy casters cannot treat an injured ally as the recipient of a self-only heal');
 selfCaster.vitals.hp = 30;
@@ -62,11 +62,14 @@ const soloProfile = Profile.profileFor(soloHealer, at);
 Object.assign(soloHealer.vitals, { maxHp: soloProfile.maxHp, mp: soloProfile.maxMp, maxMp: soloProfile.maxMp });
 // 2 s: the solo self-heal lands on the fight's second turn.
 const soloResolve = state => Resolver.resolveSolo({ state, spot, elapsedMs: 2000, timestamp: at, rng: () => 0.5 });
-const resting = soloResolve(soloHealer);
-assert.strictEqual(resting.patch.activity, 'resting', 'an injured idle solo bot must recover before starting a fight');
-assert.strictEqual(resting.patch.stats.lastReason, 'solo_recovery_needed');
-assert.strictEqual(resting.debug.heals, 0, 'pre-fight rest must not invent a combat heal');
-assert.strictEqual(resting.patch.vitals.mp, soloHealer.vitals.mp);
+// Below its rest line before a fight, its heal (100 HP per cast and reuse)
+// beats sitting (about 3 HP/s): it heals on its feet instead of resting.
+const recovered = soloResolve(soloHealer);
+assert.notStrictEqual(recovered.patch.activity, 'resting', 'an injured idle solo bot heals instead of sitting when the heal beats the rest');
+assert.strictEqual(recovered.patch.stats.lastReason, 'solo_recovery_needed');
+assert(recovered.debug.heals > 0 && recovered.debug.heals === recovered.debug.gapHeals, 'its heals before a fight are between-fight heals');
+assert(recovered.patch.vitals.hp > soloHealer.vitals.hp, 'the heals restore HP');
+assert(recovered.patch.vitals.mp < soloHealer.vitals.mp, 'the heals pay MP');
 
 // Healing belongs to the ongoing fight, which must bypass admission for a new one.
 // T107: a solo bot heals in a fight only when it would not outlive the mob, so

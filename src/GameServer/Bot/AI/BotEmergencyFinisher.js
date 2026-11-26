@@ -1,4 +1,5 @@
 const World = invoke('GameServer/World/World');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const Formulas = invoke('GameServer/Formulas');
 const Attack = invoke('GameServer/Actor/Attack');
 const AttackRange = invoke('GameServer/Actor/AttackRange');
@@ -111,10 +112,7 @@ function tryFinish(session, bot, target, Generics, BotAI) {
     if (!decision) return false;
     session.currentTargetId = target.fetchId();
     bot.select({ id: target.fetchId() });
-    if (bot.state.fetchSeated()) {
-        bot.state.setSeated(false);
-        session.dataSendToOthers(invoke('GameServer/Network/Response').sitAndStand(bot), bot);
-    }
+    posture(session, bot, false);
     if (bot.state.fetchHits() || bot.state.fetchCasts()) return true;
     return BotAI.executeCombat(session, bot, target, Generics, { emergencyFinisher: decision }) !== false;
 }

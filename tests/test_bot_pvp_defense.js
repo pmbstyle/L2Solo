@@ -47,7 +47,7 @@ function actor(id, options = {}) {
         state: { fetchDead: () => value.dead, fetchSeated: () => value.seated, setSeated: n => { value.seated = n; },
             fetchHits: () => value.hits, setHits: n => { value.hits = n; }, fetchCasts: () => value.casts,
             setCasts: n => { value.casts = n; }, fetchTowards: () => value.moving,
-            fetchCombats: () => true },
+            fetchCombats: () => true, fetchAnimated: () => value.animated, setAnimated: n => { value.animated = n; } },
         automation: { abortAll() { value.moving = false; }, replenishVitals() {} },
         skillset: { fetchSkills: () => value.skills, get skills() { return value.skills; }, fetchSkill: id => value.skills.find(skill => skill.fetchSelfId() === id) },
         backpack: { fetchItems: () => [{ fetchSelfId: () => 999999, fetchPrice: () => value.gear, fetchEquipped: () => true,
@@ -60,7 +60,8 @@ function session(actor, options = {}) {
     const session = { actor, accountId: `bot_${actor.id}`, aiActive: true, plan: 'hunting', packets: [],
         persona: { traits: { caution: 0.3, assertiveness: 0.8, empathy: 0.4, resilience: 0.8 } }, ...options,
         fetchAccountId() { return this.accountId; },
-        dataSendToOthers(packet) { this.packets.push(packet); } };
+        dataSendToOthers(packet) { this.packets.push(packet); },
+        dataSendToMeAndOthers(packet) { this.packets.push(packet); } };
     if (session.accountId === 'player') session.accountId = `player_${actor.id}`;
     actor.session = session;
     return session;

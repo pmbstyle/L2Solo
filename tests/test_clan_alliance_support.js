@@ -21,7 +21,9 @@ const mocks = {
     'GameServer/Bot/AI/BotSkillCapabilities': { healSkills: () => [heal], selectHealSkill: () => heal },
     'GameServer/Bot/AI/CompanionNavigationRecovery': { move(s, b, to) { assert.strictEqual(to.locX, 0); moves++; } },
     'GameServer/Bot/AI/BotSupportPlanner': { cancelSupportCast() {} },
-    'GameServer/Effects/EffectStore': { impairments: () => ({}) }
+    'GameServer/Effects/EffectStore': { impairments: () => ({}) },
+    // Posture's lock and broadcast are pinned by test_posture_lock; the quest AI's choice is pinned here.
+    'GameServer/Actor/Generics/Posture': (session, actor, seated) => { if (actor.state.fetchSeated() === seated) return false; actor.state.setSeated(seated); return true; }
 };
 const moduleObject = { exports: {} };
 vm.runInNewContext(fs.readFileSync('src/GameServer/Bot/AI/ClanAllianceSupportAI.js', 'utf8'), {

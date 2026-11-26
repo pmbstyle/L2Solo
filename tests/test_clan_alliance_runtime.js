@@ -52,6 +52,8 @@ const mocks = {
     'GameServer/Effects/EffectRestrictions': { stopMovement() {} },
     'GameServer/Actor/Generics/Die': (session, actor) => { actor.dead = true; },
     'GameServer/Network/Response': { itemsList() {}, sitAndStand() {} },
+    // Posture's lock and broadcast are pinned by test_posture_lock; the quest AI's choice is pinned here.
+    'GameServer/Actor/Generics/Posture': (session, actor, seated) => { if (actor.state.fetchSeated() === seated) return false; actor.state.setSeated(seated); return true; },
     'GameServer/Bot/AI/HotActorLodPolicy': { promote() {} },
     'GameServer/Bot/AI/BotRoles': invoke('GameServer/Bot/AI/BotRoles'),
     'GameServer/Quest/QuestService': { questRates: () => ({ questSp: 1 }) },

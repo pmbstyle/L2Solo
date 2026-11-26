@@ -18,7 +18,7 @@ function returnLocation(session) {
             return resume.stayLocation;
         }
 
-        const leader = resume.followPlayerSession.actor;
+        const leader = invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session, resume.followPlayerSession).actor;
         return {
             locX: leader.fetchLocX() + utils.oneFromSpan(-60, 60),
             locY: leader.fetchLocY() + utils.oneFromSpan(-60, 60),

@@ -24,7 +24,7 @@ async function run() {
             : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, child]) => [key, shift(child)])) : value;
     const state = shift(fixture.state), boardRows = structuredClone(fixture.boardRows);
     // T43 table: shots now pay for this level-53 archer; it holds its shot stock, so the gear source decides.
-    state.inventory[1463] = { selfId: 1463, name: 'Soulshot: D-grade', amount: 1000, stackable: true };
+    state.inventory[1463] = { selfId: 1463, name: 'Soulshot: D-grade', amount: 10000, stackable: true };
     // An exchange is funded only within its item's worth (the bot's price belief of
     // the piece). The crystal supply (two Demon Fangs at the x1 NPC price, 3.35M)
     // costs less than the piece believed at a 12M bid, more than the piece believed

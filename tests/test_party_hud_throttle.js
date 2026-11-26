@@ -33,6 +33,7 @@ function actor(id, name) {
             seated: false,
             fetchSeated() { return this.seated; },
             setSeated(value) { this.seated = value; },
+            fetchAnimated: () => false, setAnimated() {},
             fetchDead: () => false,
             fetchTowards: () => false,
             fetchHits: () => false,

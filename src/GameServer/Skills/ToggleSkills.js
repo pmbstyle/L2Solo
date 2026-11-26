@@ -1,4 +1,5 @@
 const ConsoleText = invoke('GameServer/ConsoleText');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -45,6 +46,11 @@ function activate(session, actor, skill, key) {
         session.dataSendToMe?.(ServerResponse.actionFailed());
         return false;
     }
+    // A relaxing skill sits the body: refused, as in C4, while a stand-up plays or a cast is in flight.
+    if (semantic.stats?.relaxing && !actor.state?.fetchSeated?.() && !posture.canSit(actor)) {
+        session.dataSendToMe?.(ServerResponse.actionFailed());
+        return false;
+    }
     const initialMp = Math.max(0, Number(semantic.mpInitialConsume) || 0);
 
     if (initialMp > 0 && (Number(actor.fetchMp?.()) || 0) < initialMp) {
@@ -61,8 +67,7 @@ function activate(session, actor, skill, key) {
     const toggleHpConsume = Math.max(0, Number(semantic.toggleHpConsume) || 0);
     if (semantic.stats?.relaxing) {
         if (!actor.state?.fetchSeated?.()) {
-            actor.state?.setSeated?.(true);
-            session?.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
+            posture(session, actor, true);
         }
     }
     if (semantic.stats?.silentMoving) actor.silentMoving = true;

@@ -1,4 +1,5 @@
 const FailureLog = require('../../../FailureLog');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ServerResponse = invoke('GameServer/Network/Response');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
@@ -613,8 +614,7 @@ function startQueuedGroundPickup(pickerSession) {
     // while attacking). The drop is its next action; the swing's end runs it.
     if (picker.state?.fetchHits?.()) return true;
     if (picker.state?.fetchSeated?.()) {
-        picker.state.setSeated(false);
-        pickerSession.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(picker), picker);
+        posture(pickerSession, picker, false);
     }
     const Generics = invoke(path.actor);
     Generics.stopAutomation(pickerSession, picker);
@@ -916,8 +916,7 @@ function restoreJoiningCompanion(session, bot) {
     }
 
     if (bot.state?.fetchSeated?.() === true) {
-        bot.state.setSeated(false);
-        session?.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(bot), bot);
+        posture(session, bot, false);
     }
 }
 
@@ -1232,8 +1231,7 @@ const PartyCompanionService = {
             cancelCompanionAction(companionSession);
             bot.automation?.stopReplenish?.();
             if (bot.state?.fetchSeated?.() === true) {
-                bot.state.setSeated(false);
-                companionSession.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(bot), bot);
+                posture(companionSession, bot, false);
             }
             companionSession.hotBackgroundPartyId = null;
             companionSession.coldLifeState = statesById.get(Number(bot.fetchId?.())) || companionSession.coldLifeState;

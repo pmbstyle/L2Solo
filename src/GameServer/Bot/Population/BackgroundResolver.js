@@ -16,6 +16,7 @@ const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 const PetTankRule = invoke('GameServer/Bot/AI/PetTankRule');
 const DangerRule = invoke('GameServer/Bot/AI/DangerRule');
 const PartyHealPolicy = invoke('GameServer/Bot/AI/PartyHealPolicy');
+const BotSkillIntent = invoke('GameServer/Bot/AI/BotSkillIntent');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
@@ -29,6 +30,7 @@ const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
 const EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
 const PartyBuffLoadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
 const Karma = invoke('GameServer/Karma');
 const NpcHate = invoke('GameServer/Npc/NpcHate');
 const HitRules = invoke('GameServer/Combat/HitRules');
@@ -416,7 +418,9 @@ function castColdPetHeal(profile, summon, vitals, cooldowns, skill, at, shooter 
 // (PetHealRule), then its own where they beat sitting (solo only,
 // SoloSelfHeal.betweenFights): vitals and cooldowns change in place.
 // options.shooter: the shots (castColdPetHeal); options.solo false: the pet
-// only. Returns { casts, petCasts, ms }: casts its own heals.
+// only; options.wait (at a rest): one of its own heals on its reuse is waited
+// for, on its feet, and ends the pass. Returns { casts, petCasts, ms }: casts its own heals, ms
+// with the waits. Each pass casts at most the HP it misses.
 function coldHealBetweenFights(profile, vitals, cooldowns, at, summon = null, options = {}) {
     let casts = 0, petCasts = 0, ms = 0;
     // The pet first, with the heals ready now: one on its reuse waits for
@@ -430,13 +434,18 @@ function coldHealBetweenFights(profile, vitals, cooldowns, at, summon = null, op
     if (options.solo === false) return { casts, petCasts, ms };
     for (;;) {
         const actor = ColdClassPolicy.actorFor(profile, { hp: vitals.hp, mp: vitals.mp, cooldowns, time: at + ms });
-        const skill = SoloSelfHeal.betweenFights(actor);
-        if (!skill) return { casts, petCasts, ms };
+        const pick = SoloSelfHeal.betweenFights(actor, { wait: options.wait === true });
+        if (!pick) return { casts, petCasts, ms };
+        ms += pick.waitMs;
+        const skill = pick.skill;
         vitals.hp = Math.min(profile.maxHp, vitals.hp + SoloSelfHeal.healAmount(actor, skill, skill.fetchSemantic?.() || {}, true));
         vitals.mp = Math.max(0, vitals.mp - skill.fetchConsumedMp());
         cooldowns[skill.fetchSelfId()] = at + ms + Math.max(0, Number(skill.fetchReuseTime?.()) || 0);
         ms += actionDelayMs(profile, skill.coldRecord);
         casts += 1;
+        // A heal waited for ends the pass, as the hot bot casts it once back
+        // and its rest door reads HP and MP again.
+        if (pick.waitMs > 0) return { casts, petCasts, ms };
     }
 }
 
@@ -752,21 +761,21 @@ function coldBuffEffect(skill, timestamp) {
         type: 'buff',
         durationMs,
         expiresAt: timestamp + durationMs,
-        stackFamily: semantic.stackFamily || PartyBuffLoadout.family(key),
+        stackFamily: semantic.stackFamily || null,
         stackOrder: semantic.stackOrder ?? null,
         stats: { ...(semantic.stats || {}) }
     };
 }
 
-function replaceColdBuff(effects, nextEffect) {
-    const family = PartyBuffLoadout.family(nextEffect.key);
-    return [
-        ...(effects || []).filter((effect) => (
-            PartyBuffLoadout.family(effect?.key) !== family
-            && (!nextEffect.stackFamily || effect?.stackFamily !== nextEffect.stackFamily)
-        )),
-        nextEffect
-    ];
+// Lands a cast buff or heal over time on a cold effect list by the store's
+// stack rule: a stronger member of the stack type in force at the landing time
+// `at` keeps the slot, an equal or weaker one is replaced (cold lists keep
+// expired rows, which hold nothing).
+function replaceColdBuff(effects, nextEffect, at) {
+    const displaced = EffectStore.displacedBy((effects || []).filter((effect) => !effect?.expiresAt
+        || Number(effect.expiresAt) > at), nextEffect);
+    if (!displaced) return effects;
+    return [...(effects || []).filter((effect) => !displaced.includes(effect) && effect?.key !== nextEffect.key), nextEffect];
 }
 
 function raidPreparationFighters(members, timestamp) {
@@ -851,19 +860,25 @@ function coldBuffPlan(fighters, timestamp, { self = false } = {}) {
     return chosen.filter((action) => action.beneficiaries.some((actor) => !buffHeld(actor.fighter.profile.effects, action.skill, timestamp)));
 }
 
-// Does effects hold the buff of skill (an adapter) at this level or above,
-// with more than its recast share left?
+// Does effects hold the buff of skill (an adapter) at its strength or above,
+// with more than its recast share left? A buff of the skill's stack type holds
+// it at an equal order with its recast share left, and at a higher order always
+// (the landing refuses a weaker one).
 function buffHeld(effects, skill, timestamp) {
     const semantic = skill.fetchSemantic();
-    const family = PartyBuffLoadout.family(PartyBuffLoadout.normalize(semantic.effect));
+    const family = PartyBuffLoadout.family(PartyBuffLoadout.normalize(semantic.effect), semantic.stackFamily);
     const level = Number(skill.fetchLevel() || 1);
+    const order = Number(semantic.stackOrder ?? level);
     const durationMs = Math.max(60000, Number(semantic.durationMs ?? skill.fetchBuffTime()) || 1200000);
     const threshold = Math.min(BUFF_RECAST_MAX_MS, Math.floor(durationMs * BUFF_RECAST_SHARE));
+    const longLeft = (effect) => !effect?.expiresAt || Number(effect.expiresAt) - timestamp > threshold;
     return (effects || []).some((effect) => (
-        (Number(effect?.id || 0) === Number(skill.fetchSelfId())
-            || PartyBuffLoadout.family(effect?.key) === family)
-        && Number(effect?.level || 0) >= level
-        && (!effect?.expiresAt || Number(effect.expiresAt) - timestamp > threshold)
+        semantic.stackFamily && effect?.stackFamily === semantic.stackFamily
+            ? Number(effect.stackOrder ?? effect.level ?? 0) > order
+                || (Number(effect.stackOrder ?? effect.level ?? 0) >= order && longLeft(effect))
+            : (Number(effect?.id || 0) === Number(skill.fetchSelfId())
+                || PartyBuffLoadout.family(effect?.key, effect?.stackFamily) === family)
+                && Number(effect?.level || 0) >= level && longLeft(effect)
     ));
 }
 
@@ -895,7 +910,7 @@ function castPartyBuffs(fighters, timestamp, options = {}) {
         const effect = coldBuffEffect(action.skill, timestamp + durationMs);
         action.recipients.forEach((actor) => {
             const target = actor.fighter;
-            refreshFighterProfile(target, replaceColdBuff(target.profile.effects, effect), timestamp + durationMs);
+            refreshFighterProfile(target, replaceColdBuff(target.profile.effects, effect, timestamp + durationMs), timestamp + durationMs);
         });
         provider.vitals.mp = Math.max(0, provider.vitals.mp - cost);
         provider.cooldowns[action.skill.fetchSelfId()] = timestamp + durationMs
@@ -2044,6 +2059,8 @@ function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
     const injured = allies.filter((ally) => ally.vitals.hp > 0 && ally.vitals.hp / Math.max(1, ally.vitals.maxHp) < PartyHealPolicy.HEAL_BELOW)
         .sort((a, b) => (a.vitals.hp / a.vitals.maxHp) - (b.vitals.hp / b.vitals.maxHp))[0];
     if (!injured) return null;
+    const emergency = PartyHealPolicy.emergency(injured.vitals.maxHp - injured.vitals.hp, injured.vitals.maxHp);
+    const running = (injured.profile.effects || []).filter((effect) => Number(effect.expiresAt) > time);
     const skill = (profile.skills || []).filter((candidate) => {
         if (candidate.passive || Number(candidate.mp || 0) > mp || Number(cooldowns[candidate.selfId] || 0) > time) return false;
         const semantic = C4SkillRules.resolveCached(candidate);
@@ -2051,7 +2068,7 @@ function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
             && ['self', 'party', 'ally', 'friendly'].includes(semantic.target)
             && (semantic.target !== 'ally' || caster === injured || Number(caster?.state.clanId) > 0
                 && Number(caster.state.clanId) === Number(injured.state.clanId))
-            && (!semantic.hot || !(injured.profile.effects || []).some(e => e.key === semantic.effect && Number(e.expiresAt) > time))
+            && (!semantic.hot || !BotSkillIntent.equivalentIn(running, semantic, candidate.selfId, candidate.level, emergency))
             && (semantic.target !== 'self' || caster?.vitals.hp > 0 && caster.vitals.hp < caster.vitals.maxHp * 0.7);
     }).sort((a, b) => {
         const score = skill => {
@@ -2081,12 +2098,15 @@ function applyAllyHeal(caster, allies, heal, shot = null) {
     const helped = [];
     for (const ally of targets.filter(f => f.vitals.hp > 0)) {
         if (semantic.hot) {
+            // A heal over time lands by the store's stack rule, as hot: a
+            // stronger running member of its family refuses it, the rest give way.
             const at = Number(caster.now || Date.now());
             const effect = { id: heal.skill.selfId, level: heal.skill.level, key: semantic.effect,
                 type: 'buff', casterId: caster.state.characterId, createdAt: at,
                 expiresAt: at + semantic.hot.count * semantic.hot.intervalMs,
+                stackFamily: semantic.stackFamily || null, stackOrder: semantic.stackOrder ?? null,
                 hot: { ...semantic.hot, nextAt: at + semantic.hot.intervalMs } };
-            ally.profile.effects = replaceMusicEffect(ally.profile.effects, effect);
+            ally.profile.effects = replaceColdBuff(ally.profile.effects, effect, at);
             continue;
         }
         const before = ally.vitals.hp;
@@ -2416,12 +2436,12 @@ function getReady(state, patch, profile, timestamp) {
             return { ...out, acted: true, summonUses: fighter.summonUses, ms: Number(fighter.readyAt) || 0 };
         }
         // The soonest summon: each waits for its MP (a rest to whole MP) and its reuse.
-        const cooldowns = combat?.cooldowns || {};
         const mp = Number(patch.vitals.mp) || 0;
+        const actor = ColdClassPolicy.actorFor(profile, { hp: patch.vitals.hp, mp, cooldowns: combat?.cooldowns || {}, time: timestamp });
         let mpRest = null;
         out.restMs = Math.min(...skills.map(skill => Math.max(
             Number(skill.mp || 0) > mp ? (mpRest ??= estimateRestMs(state, patch.vitals, { requireMana: true })) : 0,
-            Math.max(0, Number(cooldowns[skill.selfId] || 0) - timestamp))));
+            actor.skillReadyInMs(actor.skillset.fetchSkill(skill.selfId)))));
         return out;
     }
     if (!living) return out;
@@ -2435,9 +2455,9 @@ function getReady(state, patch, profile, timestamp) {
     if (!RestPolicy.petRested(petView)) out.restMs = petRestMs(profile, summon, patch.vitals, timestamp);
     else if (petView?.healable && PetHealRule.wantsHeal(summon.hp, summon.maxHp)) {
         // A heal it owns on its reuse: it sits until the reuse ends.
-        const heal = PetHealRule.choose(ColdClassPolicy.actorFor(profile, { hp: patch.vitals.hp, mp: patch.vitals.mp, cooldowns, time: timestamp }),
-            { anyReuse: true })?.coldRecord;
-        out.restMs = heal ? Math.max(0, Number(cooldowns[heal.selfId] || 0) - timestamp) : 0;
+        const actor = ColdClassPolicy.actorFor(profile, { hp: patch.vitals.hp, mp: patch.vitals.mp, cooldowns, time: timestamp });
+        const heal = PetHealRule.choose(actor, { anyReuse: true });
+        out.restMs = heal ? actor.skillReadyInMs(heal) : 0;
     }
     return out;
 }
@@ -2854,7 +2874,8 @@ const BackgroundResolver = {
         let shotActions = 0;
         let skillUses = 0;
         let heals = 0;
-        // Of the heals, those cast between fights (SoloSelfHeal.betweenFights).
+        // Of the heals, those cast between fights (SoloSelfHeal.betweenFights),
+        // those cast instead of a rest included.
         let gapHeals = 0;
         // The pet's heals (PetHealRule), in fights and between them: apart from the bot's own.
         let petHeals = 0;
@@ -2987,6 +3008,19 @@ const BackgroundResolver = {
                 patch.stats.lastReason = result.reason;
                 noPrey = result.reason === NO_PREY;
                 if (result.needsRest) {
+                    // A heal, ready or on its reuse, that beats the rest is
+                    // cast instead, on its feet; readiness is then read again.
+                    const cooldowns = { ...(patch.stats.coldCombat?.cooldowns || {}) };
+                    const healed = coldHealBetweenFights(roundProfile, patch.vitals, cooldowns, clock.at, null, { wait: true });
+                    if (healed.casts) {
+                        patch.stats.coldCombat = { ...(patch.stats.coldCombat
+                            || ColdCombatProfile.seedSnapshot(fightState, clock.at)), cooldowns };
+                        wear(ColdClock.advance(clock, body(), healed.ms, 'standing', roundRates));
+                        heals += healed.casts;
+                        gapHeals += healed.casts;
+                        skillUses += healed.casts;
+                        continue;
+                    }
                     const drinkMs = drinkToRest(roundProfile, true, coldPetView(roundProfile, patch.stats.coldCombat?.summon, patch.vitals,
                         patch.stats.coldCombat?.cooldowns, clock.at));
                     events.push({ type: 'rest', weight: 2,
@@ -3112,7 +3146,20 @@ const BackgroundResolver = {
             // a flight (coldDangerMoment: it rests after it, as a hot flight's
             // recovery lock) or the slice bound below ends it. The rest is decided
             // at the HP the fight left: a bottle's heal runs on while the hot bot sits down.
-            const resting = result.fled || (!patch.stats.pveEncounter && needsRest(fightState, patch.vitals, { pet: petView }));
+            let resting = result.fled || (!patch.stats.pveEncounter && needsRest(fightState, patch.vitals, { pet: petView }));
+            // A heal, ready or on its reuse, that beats the rest is cast
+            // instead, on its feet; MP still low, it sits (a flight's rest stays).
+            if (resting && !result.fled && fightProfile) {
+                const healed = coldHealBetweenFights(fightProfile, patch.vitals, patch.stats.coldCombat.cooldowns,
+                    clock.at, null, { wait: true });
+                if (healed.casts) {
+                    wear(ColdClock.advance(clock, body(), healed.ms, 'standing', roundRates));
+                    heals += healed.casts;
+                    gapHeals += healed.casts;
+                    skillUses += healed.casts;
+                    resting = needsRest(fightState, patch.vitals, { pet: petView });
+                }
+            }
             const drinkMs = result.won || resting ? drinkToRest(fightProfile || roundProfile, resting, petView) : 0;
             if (resting) {
                 // cold_fight:pet:rest: a rest its pet sent it to (the live read).

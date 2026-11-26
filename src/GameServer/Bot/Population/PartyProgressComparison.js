@@ -194,9 +194,9 @@ function soloRoute(state, spots, timestamp, peers = [], choice = heldSoloRoute(s
 
 function withEffects(state, effects) {
     const Loadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
-    const families = new Set(effects.map(effect => Loadout.family(effect.key)));
+    const families = new Set(effects.map(effect => Loadout.family(effect.key, effect.stackFamily)));
     return { ...state, stats: { ...state.stats, coldCombat: { ...state.stats?.coldCombat,
-        effects: [...(state.stats?.coldCombat?.effects || []).filter(effect => !families.has(Loadout.family(effect.key))), ...effects] } } };
+        effects: [...(state.stats?.coldCombat?.effects || []).filter(effect => !families.has(Loadout.family(effect.key, effect.stackFamily))), ...effects] } } };
 }
 
 // A party's kills per hour from its members' kills (prepare's cycles: fight, rest,

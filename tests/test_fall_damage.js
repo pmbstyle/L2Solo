@@ -43,6 +43,48 @@ try {
     EffectStore.apply(danceProtected, { key: 'dance_of_protection', id: 311, type: 'buff', stats: { fallMul: 0.7 }, durationMs: 60000 });
     validatePosition.isFalling(danceProtected, { locZ: 500 }, 1000);
     assert.strictEqual(danceProtected.fetchHp(), 650, 'Dance of Protection must reduce fall damage by its sourced 30%');
+
+    // Fall-through: inside the window a report far under the geodata floor is answered with ValidateLocation.
+    const originalGetHeight = GeodataEngine.getHeight;
+    try {
+        const sent = [];
+        const e = actor();
+        e.fetchId = () => 77;
+        e.updatePosition = () => {};
+        e.session = { dataSendToMe: (b) => sent.push(b) };
+        const session = { actor: e, dataSendToMe: (b) => sent.push(b) };
+        const report = (z) => {
+            const packet = Buffer.alloc(21);
+            [e.x, e.y, z, 0, 0].forEach((v, i) => packet.writeInt32LE(v, 1 + i * 4));
+            return validatePosition(session, packet);
+        };
+        GeodataEngine.getHeight = () => 400;
+        report(500);
+        const fall = sent.filter((b) => b[0] === 0x64);
+        assert.strictEqual(fall.length, 1, 'Fall damage must send one system message');
+        assert.strictEqual(fall[0].readInt32LE(1), 296, 'Fall damage message must be 296');
+        assert.strictEqual(fall[0].readInt32LE(9), 1, 'Fall damage argument must be a number');
+        assert.strictEqual(fall[0].readInt32LE(13), 500, 'Fall damage message must carry the damage');
+        const low = actor();
+        low.hp = 100.5;
+        const lowSent = [];
+        low.session = { dataSendToMe: (b) => lowSent.push(b) };
+        validatePosition.isFalling(low, { locZ: 500 }, 1000);
+        assert.strictEqual(lowSent.length, 1, 'Fall damage over the HP must still send the message');
+        assert.strictEqual(lowSent[0].readInt32LE(9), 1, 'Argument must be a number, not text');
+        assert.strictEqual(lowSent[0].readInt32LE(13), 500, 'Message number must equal the computed damage');
+        sent.length = 0;
+        e.z = 500;
+        e.fallingUntil = Date.now() + 10000;
+        assert.strictEqual(report(380), false);
+        assert.strictEqual(sent.length, 0, 'A report 20 under the floor must get no correction');
+        assert.strictEqual(report(-1000), false);
+        const corr = sent.filter((b) => b[0] === 0x61);
+        assert.strictEqual(corr.length, 1, 'A report more than 100 under the floor must get one ValidateLocation');
+        assert.strictEqual(corr[0].readInt32LE(13), 400, 'ValidateLocation must carry the geodata floor z');
+    } finally {
+        GeodataEngine.getHeight = originalGetHeight;
+    }
 } finally {
     GeodataEngine.hasGeo = originalHasGeo;
 }

@@ -2,7 +2,7 @@ const FailureLog = require('../../../../FailureLog');
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
-const ServerResponse = invoke('GameServer/Network/Response');
+const posture = invoke('GameServer/Actor/Generics/Posture');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
@@ -331,20 +331,6 @@ function stopSupportMelee(bot) {
     bot.automation?.abortAll?.(bot);
 }
 
-function standUp(session, bot) {
-    if (!bot.state.fetchSeated()) return false;
-    bot.state.setSeated(false);
-    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-    return true;
-}
-
-function sitDown(session, bot) {
-    if (bot.state.fetchSeated()) return false;
-    bot.state.setSeated(true);
-    session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
-    return true;
-}
-
 function roleDecisionSignature(decision) {
     return [
         decision?.role,
@@ -539,7 +525,8 @@ function pendingSupportShouldYield(session, bot, leaderSession, pullerActor, par
     if (pendingHeal && !canHealParty(bot, leaderSession)) return true;
     if (pendingHeal && targetHpRatio >= 0.70) return true;
     if (pendingHeal && !BotSkillCapabilities.selectHealSkill(bot, {
-        target, group: pending.kind === 'group_heal', fallbackGroup
+        target, group: pending.kind === 'group_heal', fallbackGroup,
+        emergency: pending.kind === 'emergency_heal' || pending.kind === 'self_preservation'
     })) return true;
     if (pending.kind === 'restore_mp' && targetMpRatio >= 0.55) return true;
     if (partyThreat && pending.kind === 'restore_mp') return true;
@@ -985,11 +972,12 @@ const FollowingState = {
 
     // Role, distance, party settings, pull state and the threat this companion answers; protected raid retreat.
     tickPartyContext(ctx) {
-        const { session, bot, playerSession, player } = ctx;
+        const { session, bot, playerSession } = ctx;
         const role = BotRoles.inferRole(bot);
-        const distance = point(bot).distance(point(player));
-        const leaderSeated = player.state?.fetchSeated?.() === true;
-        const restFormationTarget = leaderSeated ? followTargetFor(session, player) : null;
+        const leader = invoke('GameServer/Bot/AI/ClanCommandParty').followBody(session).actor;
+        const distance = point(bot).distance(point(leader));
+        const leaderSeated = leader.state?.fetchSeated?.() === true;
+        const restFormationTarget = leaderSeated ? followTargetFor(session, leader) : null;
         const restFormationDistance = restFormationTarget
             ? distance2d(loc(bot), restFormationTarget)
             : distance;
@@ -1077,7 +1065,7 @@ const FollowingState = {
         const leaderTargetId = partyRaid?.phase === 'combat'
             ? Number(partyRaid.targetId || partyRaid.bossId)
             : (pulling.enabled ? undefined : configuredLeaderTargetId);
-        Object.assign(ctx, { role, distance, leaderSeated, restFormationDistance, partySettings, partyRaid, pulling, personalSupportThreat, rawThreatOnlyTargetsTravellingPuller, partyThreat, currentPartyAggroMonsters, leaderTargetId });
+        Object.assign(ctx, { role, leader, distance, leaderSeated, restFormationDistance, partySettings, partyRaid, pulling, personalSupportThreat, rawThreatOnlyTargetsTravellingPuller, partyThreat, currentPartyAggroMonsters, leaderTargetId });
         return false;
     },
 
@@ -1152,7 +1140,7 @@ const FollowingState = {
         if (bot.state.fetchSeated() && (partyThreat || leaderTargetId || seatedTooFar)) {
             session.plan = 'following';
             session.currentTargetId = partyThreat?.actor?.fetchId?.() || leaderTargetId || undefined;
-            standUp(session, bot);
+            posture(session, bot, false);
             recordRoleDecision(
                 session,
                 bot,
@@ -1257,7 +1245,7 @@ const FollowingState = {
         if (playerLeader && (PartyCompanionService.regroupActive(playerLeader) || travel.inCombat(session, bot))) return false;
         const errand = InventoryCleanup.errand(session, bot, BotAI);
         if (!errand || !InventoryCleanup.canContinue(session, bot, errand.kind, errand.target)) return false;
-        if (bot.state.fetchSeated?.()) standUp(session, bot);
+        if (bot.state.fetchSeated?.()) posture(session, bot, false);
         beginCompanionTownErrand(session, bot, playerSession, errand);
         // A player's companion is already in town and can go straight to the NPC.
         if (!playerLeader) travel.request(session, bot, BotAI, 'Unloading inventory.', {
@@ -1270,7 +1258,7 @@ const FollowingState = {
 
     // Vitals, return after support, resting with the leader, low HP/MP recovery.
     tickRest(ctx) {
-        const { session, bot, BotAI, playerSession, player, distance, leaderSeated, restFormationDistance, pulling, partyThreat, leaderTargetId, personalSupportThreat } = ctx;
+        const { session, bot, BotAI, playerSession, player, leader, distance, leaderSeated, restFormationDistance, pulling, partyThreat, leaderTargetId, personalSupportThreat } = ctx;
         const botVitals = {
             hpRatio: ratio(bot.fetchHp(), bot.fetchMaxHp()),
             mpRatio: ratio(bot.fetchMp(), bot.fetchMaxMp())
@@ -1291,7 +1279,7 @@ const FollowingState = {
             session.currentTargetId = undefined;
             bot.unselect();
             if (distance > FOLLOW_RUN_DISTANCE) {
-                moveToFollowTarget(session, bot, player);
+                moveToFollowTarget(session, bot, leader);
                 recordRoleDecision(session, bot, 'follow_leader', 'return_after_support');
                 return true;
             }
@@ -1302,22 +1290,22 @@ const FollowingState = {
             bot.unselect();
 
             if (distance > FOLLOW_RUN_DISTANCE && restFormationDistance > FOLLOW_FORMATION_TOLERANCE) {
-                standUp(session, bot);
+                posture(session, bot, false);
                 recordRoleDecision(session, bot, 'rest_with_leader', 'move_near_sitting_leader');
-                if (!shouldKeepCurrentFollowMove(session, bot, player, distance)) {
-                    moveToFollowTarget(session, bot, player);
+                if (!shouldKeepCurrentFollowMove(session, bot, leader, distance)) {
+                    moveToFollowTarget(session, bot, leader);
                 }
                 return true;
             }
 
             session.lastFollowMoveTarget = null;
-            sitDown(session, bot);
+            posture(session, bot, true);
             recordRoleDecision(session, bot, 'rest_with_leader', 'leader_sitting');
             return true;
         }
 
         if (!partyThreat && !leaderTargetId && bot.state.fetchSeated() && !leaderSeated && !botRecovering) {
-            standUp(session, bot);
+            posture(session, bot, false);
             recordRoleDecision(session, bot, 'follow_leader', 'leader_stood_ready');
             return true;
         }
@@ -1337,7 +1325,7 @@ const FollowingState = {
             delete session.explicitRestOrder;
             session.currentTargetId = undefined;
             bot.unselect();
-            sitDown(session, bot);
+            posture(session, bot, true);
             recordRoleDecision(session, bot, botVitals.hpRatio < 0.30 ? 'recover_hp' : 'save_mp', 'resting');
             BotPartyChat.announce(session, {
                 priority: 'coordination',
@@ -1350,9 +1338,9 @@ const FollowingState = {
         return false;
     },
 
-    // Newbie buff refresh, town errands, town-visit rebuff, support loadout.
+    // Newbie buff refresh, town errands, town-visit rebuff.
     tickBuffsAndErrands(ctx) {
-        const { session, bot, BotAI, playerSession, player, role, pulling, partyThreat, currentPartyAggroMonsters, leaderTargetId, hotTownRebuffVisit } = ctx;
+        const { session, bot, BotAI, playerSession, player, role, partyThreat, currentPartyAggroMonsters, leaderTargetId, hotTownRebuffVisit } = ctx;
         let acted = false;
         let keepRoleDecision = false;
 
@@ -1435,10 +1423,6 @@ const FollowingState = {
             return true;
         }
 
-        if (!partyThreat && !leaderTargetId && !isBusy(bot)) {
-            BotSupportPlanner.reconcileLoadout(partySupportMembers(playerSession,pulling.puller),
-                PartyPulling.supportProviders(playerSession));
-        }
         Object.assign(ctx, { acted, keepRoleDecision });
         return false;
     },
