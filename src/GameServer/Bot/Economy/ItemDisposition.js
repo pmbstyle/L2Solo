@@ -341,11 +341,11 @@ function buyersOf(board, ids, characterId) {
 // not walk back to try X because he picked up Y; he sells Y, and X only when someone new
 // shouts WTB X. Before the worker's board is ready only the kinds are compared.
 // The kinds are read with the whole kit kept (its potions, its Scroll of
-// Escape; shots are the bot's own), not the kit targets: restocking the kit
-// in town is no new goods to sell.
+// Escape, its shots: a bot's own, or a service crafter's kit, past which they
+// are goods), not the potion target: restocking the kit in town is no new goods to sell.
 function retryKinds(state) {
     const keptAmounts = { ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: Infinity }),
-        736: Number(state.inventory?.[736]?.amount || 0) };
+        ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state), 736: Number(state.inventory?.[736]?.amount || 0) };
     return [...new Set(saleCandidates(state, { unlimited: true, keptAmounts })
         .map(item => Number(item.selfId)))].sort((a, b) => a - b);
 }
