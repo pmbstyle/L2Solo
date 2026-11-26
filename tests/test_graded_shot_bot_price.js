@@ -40,7 +40,7 @@ const ceiling = CrafterStock.shotCeiling(D_SOULSHOT);
 const crafterLine = price => board.put({ id: 1, ownerId: 990232, storeType: 1, kind: 'sell_ad', town: 'Gludio', revision: price,
     lines: [{ lineId: 1, selfId: D_SOULSHOT, count: 20000, enchant: 0, price }] });
 // Shots double the hour's exp; 2,000 an hour at a 3M hour: a shot is worth ~0.5 h per 1000.
-const row = shots => ({ exp: shots ? 2000000 : 1000000, shots: 2000, potions: 0, deaths: 0, stacks: 20 });
+const row = shots => ({ exp: shots ? 2000000 : 1000000, shots: 2000, adena: 3000000, potions: 0, deaths: 0, stacks: 20 });
 Table.value = (_id, _role, _level, shots) => row(shots);
 Table.best = (_role, _level, shots) => row(shots);
 Hunt.huntIncome = () => ({ perHour: 3000000, expPerHour: 2000000, spotId: 'dshots' });

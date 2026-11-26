@@ -39,7 +39,7 @@ board.put({ id: 1, ownerId: 990242, storeType: 1, kind: 'sell_ad', town: 'Gludio
 board.put({ id: 2, ownerId: 990243, storeType: 1, kind: 'sell_ad', town: 'Gludio',
     lines: [{ lineId: 2, selfId: POLEAXE, count: 1, enchant: 0, price: POLEAXE_ASK }] });
 const saved = { value: Table.value, best: Table.best, hunt: Hunt.huntIncome };
-const row = shots => ({ exp: shots ? 2000000 : 1000000, shots: 2000, potions: 0, deaths: 0, stacks: 20 });
+const row = shots => ({ exp: shots ? 2000000 : 1000000, shots: 2000, adena: 3000000, potions: 0, deaths: 0, stacks: 20 });
 Table.value = (_id, _role, _level, shots) => row(shots);
 Table.best = (_role, _level, shots) => row(shots);
 Hunt.huntIncome = () => ({ perHour: 3000000, expPerHour: 2000000, spotId: 'dshots' });

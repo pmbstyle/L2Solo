@@ -35,7 +35,7 @@ board.put({ id: 2, ownerId: 990128, storeType: 1, kind: 'shop', town: 'Giran',
 // visit buys leave of the solo bot's 40-slot half bag (it turns back there) in
 // 1.45 h, held to a tenth below: 1.4 h. The shot stock is that bag's use plus
 // the reserve, ceil(100 x 1.4 x 1.1) = 154.
-const row = shots => ({ exp: shots ? 1000000 : 500000, shots: 100, potions: 0, deaths: 0, stacks: 20 });
+const row = shots => ({ exp: shots ? 1000000 : 500000, shots: 100, adena: 1000000, potions: 0, deaths: 0, stacks: 20 });
 Table.value = (_id, _role, _level, shots) => row(shots);
 // The shot benefit compares the best rows with and without shots (ShotStock.usePolicy).
 Table.best = (_role, _level, shots) => row(shots);

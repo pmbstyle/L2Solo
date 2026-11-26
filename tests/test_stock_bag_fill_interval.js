@@ -15,7 +15,7 @@ const fixture = { characterId: 91819, level: 30, phase: 'hot', activity: 'huntin
     inventory: { 1: kept(39),
         1061: { selfId: 1061, amount: 1, stackable: true } } };
 Hunt.huntIncome = () => ({ spotId: spotPresent ? 'stack-fixture' : null, perHour: income, expPerHour: 1000000 });
-const row = withShots => ({ exp: withShots ? 1e6 : 5e5, shots: 1000, potions, deaths: .1, stacks, load });
+const row = withShots => ({ exp: withShots ? 1e6 : 5e5, shots: 1000, adena: income, potions, deaths: .1, stacks, load });
 Table.value = (id, role, level, withShots) => rowPresent ? row(withShots) : null;
 // ShotStock.usePolicy weighs the best row with shots against the best without.
 Table.best = (role, level, withShots) => row(withShots);
