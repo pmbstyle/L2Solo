@@ -102,9 +102,7 @@ function verify() {
             () => [true, 0, 0]) });
     assert(ctx.projection.roots.includes(`power:${ear.selfId}:2`), 'same-template second earring is an acquisition root');
     assert(!ctx.projection.roots.some(key => key.startsWith('level:')), 'XP goal waits for the working kit');
-    // Its shot stock full: the kit piece is weighed against profit goals, not the shots it would earn for.
-    const clanMember = { ...paired, inventory: { ...paired.inventory, 1835: { selfId: 1835, amount: 10000 } },
-        stats: { ...paired.stats, clanId: 1 } };
+    const clanMember = { ...paired, stats: { ...paired.stats, clanId: 1 } };
     // Its own first build (far, a look reads the held one).
     Economy.forget(paired.characterId);
     const clanCtx = Economy.forState(clanMember, { spots: [], board, timestamp, npcOffersFor: () => [],
