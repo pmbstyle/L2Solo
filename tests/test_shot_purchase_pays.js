@@ -31,6 +31,20 @@ assert.ok(stock.target > 0, `an empty kit asks for B shots (target ${stock.targe
 const restock = Shots.restockPlan(state, { context });
 assert.ok(restock.amount > 0, `the restock buys B shots (amount ${restock.amount})`);
 
+// A Warlord after hours of hunting bare at its best spot: its own samples measure
+// the bare hunt's money (16814 an hour, they do not record shots) against 90464
+// with shots, and it still buys its shots.
+const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+const warlordRole = Table.roleFor({ level, stats: { classId: 3 } }), warlordBest = Table.best(warlordRole, level, true);
+const bare = Table.value(warlordBest.spotId, warlordRole, level, false);
+const warlord = { ...state, characterId: 78, spotId: warlordBest.spotId, stats: { classId: 3, role: warlordRole } };
+const bareHunter = { ...warlord, stats: { ...warlord.stats, huntEfficiency: [{ spotId: warlordBest.spotId,
+    signature: Hunt.signature(warlord), at: deps.timestamp - 60000, samples: 8, exp: bare.exp, cycleMs: 3600000,
+    adena: Number(bare.adena) || 0, loot: Number(bare.loot) || 0, kills: Number(bare.kills) || 100, costs: 0 }] } };
+assert.equal(Hunt.huntIncome(bareHunter, deps.timestamp).source, 'own', 'fixture: the bot reads its own bare samples');
+const bareStock = Economy.basics(bareHunter, deps).stock('shots');
+assert.ok(bareStock.target > 0, `a bot that hunted bare still asks for B shots (target ${bareStock.target})`);
+
 // Every table role at L52 with its B-grade shots, holding none: most buy them.
 let roles = 0, buy = 0;
 for (const tableRole of Table.roles()) {
