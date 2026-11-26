@@ -661,6 +661,7 @@ const tests = [
     'tests/test_ready_trade_execution.js',
     'tests/test_bot_quest_item_eligibility.js',
     'tests/test_owned_stock_quotes.js',
+    'tests/test_shot_purchase_pays.js',
     'tests/test_shot_use_policy.js',
     'tests/test_group_f_player_pricing.js',
     'tests/test_group_f_bot_routing.js',
