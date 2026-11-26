@@ -219,26 +219,32 @@ function paidShotId(plan) {
     return byRank[normalizeRank(plan.rank)];
 }
 
+// Do these shots pay (our rule; C4 leaves firing shots to the player): they add
+// exp over the hunt without them (withRow against withoutRow, often another
+// spot), and the hunt with them still earns its shots: its money per hour
+// (Adena and loot) covers the shots it fires at the price judged. Faster kills
+// also bring more Adena, so a hunt that pays its shots is never refused for
+// costing a larger share of its money than the share of exp it adds; a hunt
+// that loses money on them is. Rows are SpotValueTable rows (plain data).
+function shotsPay(withRow, withoutRow, price) {
+    if (!withRow) return false;
+    const money = (Number(withRow.adena) || 0) + (Number(withRow.loot) || 0);
+    return (Number(withRow.exp) || 0) > (Number(withoutRow?.exp) || 0)
+        && money >= Math.max(0, Number(withRow.shots) || 0) * Number(price);
+}
+
 // Blessed Spiritshot over Spiritshot for a role, level and grade (our
-// choice, C4 leaves it to the player): the farm it adds over the spiritshot (the
-// best spots' exp, as usePolicy's benefit) pays its extra cost per hour at
-// the bot's replacement price (public stock, paid trades, else native craft
-// value) against the hour's money before shots. Cache by table and both prices.
+// choice, C4 leaves it to the player): the shots pay (shotsPay) with the best
+// spiritshot hunt as the hunt without them, the Blessed shots priced at the
+// bot's replacement price (public stock, paid trades, else native craft value).
+// Cache by table, role, level, grade and the Blessed price.
 const blessedChoices = new Map();
 function blessedPays(role, level, rank) {
-    const spiritPrice = botShotPrice(SPIRITSHOT_BY_RANK[rank]);
     const blessedPrice = botShotPrice(BLESSED_SPIRITSHOT_BY_RANK[rank]);
-    const key = `${SpotValueTable.revision()}|${role}|${level}|${rank}|${spiritPrice}|${blessedPrice}`;
+    const key = `${SpotValueTable.revision()}|${role}|${level}|${rank}|${blessedPrice}`;
     if (blessedChoices.has(key)) return blessedChoices.get(key);
-    const none = SpotValueTable.best(role, level, false), spirit = SpotValueTable.best(role, level, true), blessed = SpotValueTable.best(role, level, 2);
-    let pays = false;
-    if (none && spirit && blessed) {
-        const gain = row => 1 - Math.max(0, Number(none.exp) || 0) / Math.max(1, Number(row.exp) || 0);
-        const cost = (row, price) => Math.max(0, Number(row.shots) || 0) * price;
-        const hour = Math.max(1, (Number(blessed.adena) || 0) + (Number(blessed.loot) || 0));
-        pays = gain(blessed) - gain(spirit)
-            >= (cost(blessed, blessedPrice) - cost(spirit, spiritPrice)) / hour;
-    }
+    const spirit = SpotValueTable.best(role, level, true), blessed = SpotValueTable.best(role, level, 2);
+    const pays = !!(spirit && blessed) && shotsPay(blessed, spirit, blessedPrice);
     if (blessedChoices.size > 4096) blessedChoices.clear();
     blessedChoices.set(key, pays);
     return pays;
@@ -290,13 +296,12 @@ function usePolicy(state, prepared = {}) {
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const tableRole = Table.roleFor(state);
-    let best = prepared.bestTable, hour = prepared.hourAdena;
+    let best = prepared.bestTable;
     if (!Object.hasOwn(prepared, 'bestTable')) {
         const hunt = Hunt.huntIncome(state, prepared.timestamp || Date.now(), prepared.mode);
         const spot = hunt.spotId || state.spotId;
         const shots = shotRows(plan, hunt.useShots);
         best = (spot && Table.value(spot, tableRole, state.level, shots)) || Table.best(tableRole, state.level, shots);
-        hour = Hunt.huntHour(hunt, state);
     }
     const rawUse = plan.perAction > 0 ? Math.max(0, Number(best?.shots) || 0) : 0;
     // The farm the shots give (0..1): the share of the hour's exp they add, the
@@ -306,23 +311,21 @@ function usePolicy(state, prepared = {}) {
     const benefit = Math.max(0, 1 - Math.max(0, Number(withoutBest?.exp) || 0) / Math.max(1, Number(withBest?.exp) || 0));
     const buyback = BeginnerShots.isRestricted(plan.selfId) ? 0
         : invoke('GameServer/Items/NpcSellRules').npcBuyPrice(itemPrice(plan.selfId));
-    // huntHour is net of the shots at the bot's buy price (BotHuntEfficiency
-    // netIncome over consumablePrices): the shots are priced against the hour
-    // before them, not twice. The plan's paid shot is planForState's (a
-    // beginner plan keeps its kind and grade).
-    // The purchase is judged at the same price the hour was netted at: the
-    // cheapest store or board ask a bot buys from (botBuyPrice), not its price
-    // belief, which board deals in a town without a seller pull far above it.
+    // The bot fires its own spot's shots (rawUse) when they pay (shotsPay over
+    // the same two best rows): a held shot at what selling it back would bring
+    // (the NPC buy-back), a beginner shot at nothing, a purchase at the cheapest
+    // store or board ask a bot buys from (botBuyPrice), not its price belief,
+    // which board deals in a town without a seller pull far above it. The
+    // plan's paid shot is planForState's (a beginner plan keeps its kind and grade).
     const shotPrice = botShotPrice(paidShotId(plan));
-    const gross = Number(hour) > 0 ? Number(hour) + rawUse * shotPrice : 0;
-    const affordableUse = cost => rawUse > 0 && gross > 0 && benefit >= rawUse * cost / gross ? rawUse : 0;
-    const paidUsePerHour = affordableUse(buyback);
-    const beginnerUsePerHour = affordableUse(0);
+    const pays = cost => rawUse > 0 && shotsPay(withBest, withoutBest, cost) ? rawUse : 0;
+    const paidUsePerHour = pays(buyback);
+    const beginnerUsePerHour = pays(0);
     const usePerHour = beginnerAmount(state, plan) >= plan.perAction && plan.perAction > 0
         ? beginnerUsePerHour : paidUsePerHour;
     return { itemId: plan.selfId, rawUse, benefit, usePerHour, beginnerUsePerHour, paidUsePerHour,
         purchaseUsePerHour: !BeginnerShots.isRestricted(plan.selfId) && paidUsePerHour > 0
-            ? affordableUse(shotPrice) : 0 };
+            ? pays(shotPrice) : 0 };
 }
 
 // Personal ammunition stays usable when a hunt forecast or bag interval

@@ -15,8 +15,12 @@ const state = { characterId: 77, name: 'Shot policy', phase: 'cold', activity: '
     adena: 100000, inventory: { 2369: { selfId: 2369, amount: 1, equipped: true, slot: 7 },
         1835: { selfId: 1835, amount: 1000 }, 736: { selfId: 736, amount: 1 } }, stats: { classId: 31, role: 'dps' },
     loc: { locX: 0, locY: 0, locZ: 0 }, timing: {} };
-let benefit = .05;
-Table.value = (id, role, level, shots) => ({ exp: shots ? 1000 : 1000 * (1-benefit), shots: shots ? 100 : 0, potions: 0, deaths: 0 });
+// benefit: the share of exp the shots add (0: they add none, nothing fires);
+// money: the charged hunt's Adena per hour, which must cover its 100 shots at
+// the price judged (a held shot at the NPC buy-back 3, a purchase at 14).
+let benefit = .05, money = 1000;
+Table.value = (id, role, level, shots) => ({ exp: shots ? 1000 : 1000 * (1-benefit), shots: shots ? 100 : 0,
+    adena: money, loot: 0, potions: 0, deaths: 0 });
 Table.best = (role, level, shots) => Table.value('policy', role, level, shots);
 Hunt.huntIncome = () => ({ perHour: 10000, expPerHour: 1000, source: 'own', spotId: 'policy' });
 // The shot a bot buys costs 14 (its cheapest store or ask); the bot's belief reads
@@ -27,7 +31,7 @@ const deps = { board: { first: () => null }, spots: [], workshops: null, knownRe
     npcOffersFor: () => [], timestamp: 1800000000000, persona: { traits: {}, understanding: 1 } };
 try {
     let stock = Economy.basics(state, deps).stock('shots');
-    assert.equal(Shots.usePolicy(state).usePerHour, 100, 'own use loses only NPC buyback3, not retail14');
+    assert.equal(Shots.usePolicy(state).usePerHour, 100, 'held shots are judged at the NPC buy-back 3 (300 of 1000), not retail 14');
     assert.equal(stock.usePerHour, 100);
     // The row has no bag forecast: one hour of use plus the reserve, ceil(100 x 1 h x 1.1).
     assert.equal(stock.target, 110);
@@ -36,7 +40,7 @@ try {
     assert.equal(offers.find(row => row.selfId === 1835), undefined,
         'a smaller forecast cannot turn personal ammunition into sale stock');
     assert.equal(stock.survivalMissing, 0);
-    assert.equal(stock.missing, 0, 'expensive replacement cannot become a new wish');
+    assert.equal(stock.missing, 0, 'a replacement the hunt does not earn at 14 (1400 of 1000) cannot become a new wish');
     const small = { ...state, inventory: { ...state.inventory, 1835: { selfId: 1835, amount: 20 } } };
     stock = Economy.basics(small, deps).stock('shots');
     assert.equal(stock.target, 20, 'keep the useful remainder without demanding an expensive refill');
@@ -67,7 +71,7 @@ try {
         for (let tick = 0; tick < 1000; tick++) Backpack.prototype.fetchAutoShot.call(actor.backpack, actor, 'soulshot');
         assert.equal(snapshots, 0, '1,000 unchanged hot charge checks build no actor snapshots or policy');
         actorLevel++;
-        benefit = .01;
+        benefit = 0;
         assert.equal(Backpack.prototype.fetchAutoShot.call(actor.backpack, actor, 'soulshot'), null);
         assert.equal(snapshots, 1, 'a level change refreshes once even for a party follower without a held wish review');
         Backpack.prototype.fetchAutoShot.call(actor.backpack, actor, 'soulshot');
@@ -81,7 +85,8 @@ try {
         actor.backpack = pack;
         const huntIncome = Hunt.huntIncome;
         const initialSignature = Hunt.signature(state);
-        Hunt.huntIncome = s => ({ perHour: Hunt.signature(s) === initialSignature ? 10000 : 1000 });
+        // The re-read own hunt with the new armor hunts uncharged.
+        Hunt.huntIncome = s => Hunt.signature(s) === initialSignature ? { perHour: 10000 } : { perHour: 1000, useShots: false };
         Economy.stateForActor = () => {
             snapshots++;
             const inventory = { ...state.inventory };
@@ -97,7 +102,7 @@ try {
             pack.equipPaperdoll(10, 900, 23); gear.setEquipped(true);
             Backpack.prototype.fetchAutoShot.call(pack, actor, 'soulshot');
             assert.equal(snapshots, 1, 'armor equip refreshes a follower once');
-            assert.equal(actor.autoSoulshots.size, 0, 'invalidated own income no longer funds shot use');
+            assert.equal(actor.autoSoulshots.size, 0, 'the re-read own hunt, uncharged, no longer fires shots');
             gear.setEnchantLevel(1);
             Backpack.prototype.fetchAutoShot.call(pack, actor, 'soulshot');
             assert.equal(snapshots, 2, 'equipped enchant refreshes once');
@@ -109,7 +114,7 @@ try {
             assert.equal(snapshots, 3, 'armor removal refreshes once');
             assert.ok(actor.autoSoulshots.has(1835), 'original equipment restores the usable own sample');
         } finally { Hunt.huntIncome = huntIncome; }
-        benefit = .01;
+        benefit = 0;
         const Events = invoke('GameServer/Bot/AI/DecisionEvents');
         actor.autoSoulshots.add(1835);
         actor.session.actor = actor;
@@ -117,26 +122,25 @@ try {
         Events.receive(actor.session, null, { statsPacket: {}, nearSeq: 1, shots: Economy.basics(state, deps).stock('shots') });
         assert.equal(actor.autoSoulshots.size, 0, 'a received decision applies the current shot use choice');
     } finally { Economy.stateForActor = actorState; }
-    benefit = .01;
+    benefit = 0;
     stock = Economy.basics(state, deps).stock('shots');
     assert.equal(stock.target, 0);
     assert.equal(Shots.usePolicy(state).usePerHour, 0);
     assert.equal(Shots.keptAmounts(state, { stock: () => stock })[1835], 1000,
         'temporarily disabling shot use keeps compatible stock for a future hunt');
-    const cheap = Shots.usePolicy(state, { plan: Shots.planForState(state), bestTable: Table.value('policy', 'dps', 7, true),
-        hourAdena: 10000 });
+    money = 1400;
+    const cheap = Shots.usePolicy(state, { plan: Shots.planForState(state), bestTable: Table.value('policy', 'dps', 7, true) });
     assert.equal(cheap.purchaseUsePerHour, 0, 'a consumption wish cannot buy shots it would immediately reject for use');
-    // The hour is net of the shots at the shop price (14 x 100): priced once,
-    // 1400 against 10000 + 1400 (0.1228), not against 10000 (0.14). The
-    // purchase is judged at that shop price, whatever the bot believes it is worth.
-    benefit = .13;
-    const once = Shots.usePolicy(state, { plan: Shots.planForState(state), bestTable: Table.value('policy', 'dps', 7, true),
-        hourAdena: 10000 });
-    assert.equal(once.purchaseUsePerHour, 100, 'the shot cost is not subtracted twice and the purchase pays at the shop price');
-    benefit = .12;
-    assert.equal(Shots.usePolicy(state, { plan: Shots.planForState(state), bestTable: Table.value('policy', 'dps', 7, true),
-        hourAdena: 10000 }).purchaseUsePerHour, 0, 'shots whose farm does not pay their shop price are not bought');
+    // The purchase is judged at the shop price (14 x 100 = 1400), whatever the
+    // bot believes the shot is worth: a hunt whose money covers it buys them.
     benefit = .01;
+    const once = Shots.usePolicy(state, { plan: Shots.planForState(state), bestTable: Table.value('policy', 'dps', 7, true) });
+    assert.equal(once.purchaseUsePerHour, 100, 'a hunt that earns its shots at the shop price buys them');
+    money = 1399;
+    assert.equal(Shots.usePolicy(state, { plan: Shots.planForState(state), bestTable: Table.value('policy', 'dps', 7, true) })
+        .purchaseUsePerHour, 0, 'shots the hunt does not earn at their shop price are not bought');
+    money = 1000;
+    benefit = 0;
     Shots.enableAutoShot(actor, { stock });
     assert.equal(actor.autoSoulshots.size, 0, 'a denied use clears a previously enabled compatible shot');
     // Actual solo/party charge sites: a real fixed monster and native weapon.
@@ -148,7 +152,7 @@ try {
     const make = () => { const s = structuredClone(state); const profile = Profiles.profileFor(s, deps.timestamp);
         s.vitals = { hp: profile.maxHp, maxHp: profile.maxHp, mp: profile.maxMp, maxMp: profile.maxMp }; return s; };
     for (const allowed of [false, true]) {
-        benefit = allowed ? .05 : .01;
+        benefit = allowed ? .05 : 0;
         const solo = Cold.resolveSolo({ state: make(), spot, timestamp: deps.timestamp, elapsedMs: 12000, rng: () => .5 });
         const party = Cold.resolvePartyFight({ members: [make()], spot, timestamp: deps.timestamp, rng: () => .5 });
         assert.equal(solo.debug.shotActions > 0, allowed, 'solo combat obeys the common retained-use choice');
@@ -173,7 +177,7 @@ try {
         coldLifeState: caster, dataSendToMe() {}, dataSendToMeAndOthers() {} };
     const capture = Economy.stateForActor, attack = new Attack();
     try {
-        benefit = .5;
+        benefit = .5; money = 10000;
         let captures = 0;
         Economy.stateForActor = () => {
             captures++;
