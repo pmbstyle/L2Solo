@@ -203,14 +203,14 @@ async function run() {
     assert.equal(Economy.basics(stocked, kitDeps).refillReserve, reserve, 'the refill stays reserved');
     const criminal = Economy.basics({ ...warrior, stats: { ...warrior.stats, karma: 100 } }, kitDeps);
     assert.equal(criminal.kitCost(736), 0);
-    // The Gladiator buys shots, and on the spot it earns at they add more of its
-    // hour's exp than their price takes of its hour's adena (one spot's rows:
-    // the exp-best spot is often another one with other shot use).
+    // The Gladiator buys shots: they add exp (its role's best hunt with them
+    // against the best without, often another spot) and that hunt with them
+    // earns its shots at the price the bot buys them for.
     assert(warriorStock.usePerHour > 0, 'a C-grade Gladiator at 46 buys shots');
-    const without = Table.value(warriorContext.bestSpotId, 'dps', warrior.level, false);
-    const withShots = Table.value(warriorContext.bestSpotId, 'dps', warrior.level, true);
-    const benefit = 1 - without.exp / withShots.exp;
-    assert(benefit >= withShots.shots * warriorStock.unitPrice / warriorContext.hourAdena);
+    const warriorRole = Table.roleFor(warrior);
+    const without = Table.best(warriorRole, warrior.level, false), withShots = Table.best(warriorRole, warrior.level, true);
+    assert(withShots.exp > without.exp, 'its shots add exp');
+    assert(withShots.adena + withShots.loot >= withShots.shots * warriorStock.unitPrice, 'its hunt with shots earns them');
     const Craft = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
     const originalOpportunities = Craft.opportunities;
     try {
@@ -985,11 +985,13 @@ async function run() {
         };
         try {
             check(crafter, steps);
-            // A bot at 30 weighs its C pieces for the kit it prepares (level 40):
-            // its wallet keeps them, a C piece in its bag (worn in the
-            // preparation) weighs them again.
+            // A bot at 30 weighs its C pieces for the kit it prepares (level 40).
+            // Its 100000 Adena sit under its kit's refill reserve (the shots it
+            // buys come first): no piece is in reach and a wallet change that
+            // leaves it so keeps them; money that brings pieces into reach, or a
+            // C piece in its bag (worn in the preparation), weighs them again.
             // Its D kit worn (paired jewellery on both sides), so no gap is required.
-            const preparing = { ...equippedFixture(990042, 1, 30, 300000), inventory: {} };
+            const preparing = { ...equippedFixture(990042, 1, 30, 100000), inventory: {} };
             for (const entry of invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 1, level: 20 }).items) {
                 const row = preparing.inventory[entry.selfId] ||= { selfId: Number(entry.selfId), amount: 0, equipped: true, equippedCount: 0,
                     equippedSlots: [], slot: Number(entry.slot), enchant: 0 };
@@ -1002,7 +1004,8 @@ async function run() {
                 && !preparing.inventory[item.selfId] && Progression.preparation({ ...preparing,
                     inventory: { ...preparing.inventory, [item.selfId]: { selfId: Number(item.selfId), amount: 1 } } })?.inventory[item.selfId]?.equippedCount > 0);
             assert(piece, 'fixture: a C piece the preparation would wear');
-            check(preparing, [['same', {}, false], ['wallet', { adena: 1 }, false], ['C piece in bag', { bag: Number(piece.selfId) }, true],
+            check(preparing, [['same', {}, false], ['wallet', { adena: 1 }, false], ['gear in reach', { adena: 100000 }, true],
+                ['C piece in bag', { bag: Number(piece.selfId) }, true],
                 ['C piece back', {}, true]]);
             // Whether its buyer takes an ad of a C piece it asks the market for (Demon's Boots)
             // reads the seller's state beside the item's lines (OfferQuery.admits): a seller that
