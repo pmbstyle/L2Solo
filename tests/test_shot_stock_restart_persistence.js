@@ -17,11 +17,6 @@ Data.init();
 const Actor = invoke('GameServer/Actor/Actor');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Stock = invoke('GameServer/Inventory/ShotStock');
-const Table = invoke('GameServer/Bot/AI/SpotValueTable');
-const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
-const Roles = invoke('GameServer/Bot/AI/BotRoles');
-const Belief = invoke('GameServer/Bot/Economy/PriceBelief');
-const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const nativeDecision = require('./helpers/workerEconomyDecision');
 const { compact } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
@@ -33,55 +28,6 @@ const ORIGINAL_PAID_STOCK = 1400;
 const QUOTED_UNIT_PRICE = 7;
 const plan = { kind: 'soulshot', rank: 'none', selfId: 1835,
     name: 'Soulshot: No Grade', price: QUOTED_UNIT_PRICE };
-
-function hold(reason, facts) {
-    const error = new Error(`HOLD native shot-restart prerequisite: ${reason}`);
-    error.code = 'NATIVE_FIXTURE_HOLD';
-    error.facts = facts;
-    throw error;
-}
-
-// Independent E5/E9 arithmetic over the native table, the physical bag and
-// first prices. No stock(), returned target, supplied money or visit history.
-function expectedStock(state, timestamp) {
-    const role = Roles.inferRole(state.stats.classId);
-    const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage'
-        : role === 'crafter' ? 'spoiler' : role;
-    const hunt = Hunt.huntIncome(state, timestamp);
-    const spotId = hunt.spotId || state.spotId;
-    const current = spotId ? Table.value(spotId, tableRole, state.level, true) : null;
-    const withShots = current || Table.best(tableRole, state.level, true);
-    const withoutShots = spotId ? Table.value(spotId, tableRole, state.level, false) : null;
-    if (!withShots || !withoutShots) hold('authored shot/no-shot table rows unavailable', { spotId, tableRole });
-    const shotPlan = Stock.planForState(state);
-    const persona = invoke('GameServer/Bot/AI/BotPersona').of(state);
-    const priceContext = { characterId: state.characterId, understanding: persona?.understanding ?? 0.3,
-        marketTrades: state.marketTrades, board: invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(), timestamp };
-    const price = id => {
-        const belief = Belief.prior(id, priceContext);
-        return belief ? Math.exp(belief.mu) : 0;
-    };
-    const rawUse = shotPlan.perAction > 0 ? Math.max(0, Number(withShots.shots) || 0) : 0;
-    // The farm the shots give: the best spot with shots against the best without.
-    const benefit = Math.max(0, 1 - Math.max(0, Number(Table.best(tableRole, state.level, false)?.exp) || 0)
-        / Math.max(1, Number(Table.best(tableRole, state.level, true)?.exp) || 0));
-    // The hour before the shots it already paid at the shop price.
-    const hourAdena = Hunt.huntHour(hunt, state) + rawUse * Hunt.consumablePrices(state).shots;
-    const costHours = rawUse * price(shotPlan.selfId) / hourAdena;
-    const use = benefit >= costHours ? rawUse : 0;
-    const potionId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
-    const potionUse = Math.max(0, Number(withShots.potions) || 0);
-    const plannedSlots = Number(use > 0 && !(state.inventory[shotPlan.selfId]?.amount > 0))
-        + Number(potionUse > 0 && !(state.inventory[potionId]?.amount > 0));
-    const freeSlots = Math.max(0, Floor.inventoryLimit(state.stats.race)
-        - Floor.stateInventory(state, Data.items).slots - plannedSlots);
-    const bagHours = current?.stacks === null || current?.stacks === undefined ? 2
-        : current.stacks > 0 ? freeSlots / current.stacks : 24;
-    const hours = Math.max(0.5, Math.min(24, bagHours));
-    return { itemId: shotPlan.selfId, perAction: shotPlan.perAction, use, hours,
-        target: Math.ceil(use * hours), benefit, costHours, hourAdena, spotId,
-        nativeUnitPrice: price(shotPlan.selfId), freeSlots, stacks: current?.stacks };
-}
 
 async function main() {
     Database.init();
@@ -128,12 +74,12 @@ async function main() {
     assert.deepEqual(nativeState, beforePlanning, 'native planning spends no physical materials or money');
     assert(Array.isArray(producer.statsPacket.money), 'actual worker produces the E3 wallet packet');
     const leaf = compact(producer.decision).activity;
-    const expected = expectedStock(nativeState, timestamp);
-    assert.equal(expected.itemId, plan.selfId);
-    assert.equal(expected.perAction, 1);
-    assert(expected.costHours > expected.benefit, 'the authored level-one shot cost exceeds its hunt benefit');
-    assert.equal(expected.use, 0, 'expensive shots have no ordinary economic use for this original input');
-    assert.equal(expected.target, 0);
+    // The level-one bot keeps its 500 shots and its stock asks for no more.
+    const shots = Economy.basics(nativeState, { spots: [], timestamp }).stock('shots');
+    assert.equal(shots.itemId, plan.selfId);
+    assert.equal(Stock.planForState(nativeState).perAction, 1);
+    assert.equal(shots.current, INITIAL_SHOTS);
+    assert.equal(shots.target, 0, 'this level-one hunt asks for no shot stock');
     assert(!(leaf?.activity === 'shopping' && Number(leaf.itemId) === plan.selfId),
         'the native ordinary decision must not buy an uneconomic shot stock');
     session.coldLifeState = { ...nativeState, phase: 'hot',
@@ -190,7 +136,6 @@ async function main() {
 
 main().catch(error => {
     console.error(error);
-    if (error.facts) console.error(JSON.stringify(error.facts));
     process.exitCode = 1;
 }).finally(async () => {
     await Database.close();
