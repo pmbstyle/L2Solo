@@ -62,8 +62,9 @@ assert.strictEqual(broke?.weaponBridge, true);
 assert(Number(broke.market.price) <= Number(poorBridge.market.price) && Number(broke.market.price) < dPrice,
     'with no money the bridge saves for the cheapest usable weapon');
 
-// An affordable armour piece does not come before the weapon any more.
-const armour = archer(50000);
+// An affordable armour piece does not come before the weapon any more: 150000
+// Adena, above its ordinary reserve (the hour of shots it fires) by a piece's price.
+const armour = archer(150000);
 const armourKit = Gear.staticNpcUpgradePlan(armour);
 assert(!WEAPON_SLOTS.has(Number(armourKit?.target?.slot)) && Number(armourKit.market.price) <= spendable(armour),
     'fixture: the kit would buy an affordable armour piece first');
@@ -77,7 +78,7 @@ assert(Number(armourBridge.market.price) <= armour.adena, 'the weapon it buys fi
 // consumables cushion for a bot that earns, and an unarmed bot earns nothing
 // (live test 2026-10-03: 104 bots at 30+ saving for a 1,766 weapon with ~1,000
 // adena and no income). With 1,500 adena the cheapest usable weapon is funded.
-// T43 table: no shot reserve at 30 (shots do not pay there); at 51 the ordinary reserve holds a shot hour.
+// The ordinary reserve holds the hour of shots a bot fires (at 30 and at 51).
 const nearlyBroke = archer(1500, 51);
 assert(Gear.operationalAdenaReserve(nearlyBroke) > nearlyBroke.adena, 'fixture: the ordinary reserve (2,503 at level 51) exceeds the wallet');
 const cheapBridge = Gear.npcWeaponBridgePlan(nearlyBroke);
