@@ -28,7 +28,7 @@ try {
         loc: { locX: 0, locY: 0, locZ: 0 }, timing: {} };
     Table.value = (id, role, level, shots) => ({ exp: shots ? 1000 : 999, shots: 100, potions: 0, deaths: 0 });
     Table.best = (role, level, shots) => Table.value('beginner-policy',role,level,shots);
-    Hunt.huntIncome = () => ({ perHour: 1000, expPerHour: 1000, source: 'own', spotId: 'beginner-policy' });
+    Hunt.huntIncome = () => ({ perHour: 1000, moneyPerHour: 1000, expPerHour: 1000, source: 'own', spotId: 'beginner-policy' });
     Belief.prior = () => ({ mu: Math.log(100), K: 1 });
     const policy = Shots.usePolicy(state);
     assert.equal(policy.usePerHour,100); assert.equal(policy.paidUsePerHour,0);

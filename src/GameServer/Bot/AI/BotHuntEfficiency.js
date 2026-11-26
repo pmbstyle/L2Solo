@@ -200,7 +200,8 @@ function scores(state, timestamp = Date.now(), mode) {
 }
 // The best measured income among at most MAX_SPOTS rows: adena plus loot at
 // the NPC buy price, per hour of the hunt cycle and per kill, and the exp per
-// hour of that same row.
+// hour of that same row; moneyPerHour: its adena plus loot before what the
+// hunt spent, per hour on the spot.
 // `share` is the bot's time on the spot against all its time: the hour of
 // a bot counts its trips, its town visits and its waits.
 function bestIncome(rows, share = 1) {
@@ -210,7 +211,8 @@ function bestIncome(rows, share = 1) {
         const income = row.adena + row.loot - Math.max(0, Number(row.costs) || 0);
         const perHour = income / row.cycleMs * HOUR_MS * share;
         if (best && perHour <= best.perHour) continue;
-        best = { spotId: row.spotId, perHour, perKill: row.kills > 0 ? income / row.kills : 0, expPerHour: row.exp / row.cycleMs * HOUR_MS * share };
+        best = { spotId: row.spotId, perHour, perKill: row.kills > 0 ? income / row.kills : 0, expPerHour: row.exp / row.cycleMs * HOUR_MS * share,
+            moneyPerHour: (row.adena + row.loot) / row.cycleMs * HOUR_MS };
     }
     return best;
 }
@@ -267,9 +269,10 @@ function huntIncome(state, timestamp = Date.now(), mode, fits = null) {
         if (progressUnfit) progress = leveling;
         Diagnostics.count('hunt', 'fit', 'swap');
     } else if (fits) Diagnostics.count('hunt', 'fit', currentFits ? 'kept' : 'swap');
-    if (!row) return { perHour: 0, perKill: 0, expPerHour: 0, source: 'unavailable' };
+    if (!row) return { perHour: 0, perKill: 0, expPerHour: 0, moneyPerHour: 0, source: 'unavailable' };
     const income = netIncome(row, costs);
     return { perHour: income * onSpotShare(state), perKill: row.kills > 0 ? income / row.kills : 0,
+        moneyPerHour: Number(row.adena || 0) + Number(row.loot || 0),
         expPerHour: (progress?.exp || 0) * onSpotShare(state), source: 'table',
         spotId: row.spotId || state.spotId, progressSpotId: progress?.spotId || state.spotId,
         useShots: row.useShots === false ? false : shots };

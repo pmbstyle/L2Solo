@@ -42,7 +42,7 @@ const saved = { value: Table.value, best: Table.best, hunt: Hunt.huntIncome };
 const row = shots => ({ exp: shots ? 2000000 : 1000000, shots: 2000, adena: 3000000, potions: 0, deaths: 0, stacks: 20 });
 Table.value = (_id, _role, _level, shots) => row(shots);
 Table.best = (_role, _level, shots) => row(shots);
-Hunt.huntIncome = () => ({ perHour: 3000000, expPerHour: 2000000, spotId: 'dshots' });
+Hunt.huntIncome = () => ({ perHour: 3000000, moneyPerHour: 3000000, expPerHour: 2000000, spotId: 'dshots' });
 Pricing.useBoard(() => board);
 const deps = () => ({ timestamp, spots: [], board, npcOffersFor: () => [], caller: 'step',
     routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) });

@@ -228,9 +228,13 @@ function paidShotId(plan) {
 // that loses money on them is. Rows are SpotValueTable rows (plain data).
 function shotsPay(withRow, withoutRow, price) {
     if (!withRow) return false;
-    const money = (Number(withRow.adena) || 0) + (Number(withRow.loot) || 0);
     return (Number(withRow.exp) || 0) > (Number(withoutRow?.exp) || 0)
-        && money >= Math.max(0, Number(withRow.shots) || 0) * Number(price);
+        && earnsShots((Number(withRow.adena) || 0) + (Number(withRow.loot) || 0), withRow.shots, price);
+}
+// A hunt earns its shots when its money per hour (Adena and loot, before what
+// it spends) covers the shots it fires per hour at the price judged.
+function earnsShots(money, shots, price) {
+    return (Number(money) || 0) >= Math.max(0, Number(shots) || 0) * Number(price);
 }
 
 // Blessed Spiritshot over Spiritshot for a role, level and grade (our
@@ -296,9 +300,9 @@ function usePolicy(state, prepared = {}) {
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const tableRole = Table.roleFor(state);
+    const hunt = prepared.hunt || Hunt.huntIncome(state, prepared.timestamp || Date.now(), prepared.mode);
     let best = prepared.bestTable;
     if (!Object.hasOwn(prepared, 'bestTable')) {
-        const hunt = Hunt.huntIncome(state, prepared.timestamp || Date.now(), prepared.mode);
         const spot = hunt.spotId || state.spotId;
         const shots = shotRows(plan, hunt.useShots);
         best = (spot && Table.value(spot, tableRole, state.level, shots)) || Table.best(tableRole, state.level, shots);
@@ -312,13 +316,14 @@ function usePolicy(state, prepared = {}) {
     const buyback = BeginnerShots.isRestricted(plan.selfId) ? 0
         : invoke('GameServer/Items/NpcSellRules').npcBuyPrice(itemPrice(plan.selfId));
     // The bot fires its own spot's shots (rawUse) when they pay (shotsPay over
-    // the same two best rows): a held shot at what selling it back would bring
+    // the same two best rows) and its own hunt (huntIncome: its measured hour,
+    // else the table row it earns on) earns them: a held shot at what selling it back would bring
     // (the NPC buy-back), a beginner shot at nothing, a purchase at the cheapest
     // store or board ask a bot buys from (botBuyPrice), not its price belief,
     // which board deals in a town without a seller pull far above it. The
     // plan's paid shot is planForState's (a beginner plan keeps its kind and grade).
     const shotPrice = botShotPrice(paidShotId(plan));
-    const pays = cost => rawUse > 0 && shotsPay(withBest, withoutBest, cost) ? rawUse : 0;
+    const pays = cost => rawUse > 0 && shotsPay(withBest, withoutBest, cost) && earnsShots(hunt.moneyPerHour, rawUse, cost) ? rawUse : 0;
     const paidUsePerHour = pays(buyback);
     const beginnerUsePerHour = pays(0);
     const usePerHour = beginnerAmount(state, plan) >= plan.perAction && plan.perAction > 0

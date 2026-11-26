@@ -22,7 +22,7 @@ let benefit = .05, money = 1000;
 Table.value = (id, role, level, shots) => ({ exp: shots ? 1000 : 1000 * (1-benefit), shots: shots ? 100 : 0,
     adena: money, loot: 0, potions: 0, deaths: 0 });
 Table.best = (role, level, shots) => Table.value('policy', role, level, shots);
-Hunt.huntIncome = () => ({ perHour: 10000, expPerHour: 1000, source: 'own', spotId: 'policy' });
+Hunt.huntIncome = () => ({ perHour: 10000, moneyPerHour: money, expPerHour: 1000, source: 'own', spotId: 'policy' });
 // The shot a bot buys costs 14 (its cheapest store or ask); the bot's belief reads
 // it cheap, so a purchase judged at the belief would buy what does not pay.
 Pricing.botBuyPrice = id => Number(id) === 1835 ? 14 : saved.buy(id);
@@ -86,7 +86,7 @@ try {
         const huntIncome = Hunt.huntIncome;
         const initialSignature = Hunt.signature(state);
         // The re-read own hunt with the new armor hunts uncharged.
-        Hunt.huntIncome = s => Hunt.signature(s) === initialSignature ? { perHour: 10000 } : { perHour: 1000, useShots: false };
+        Hunt.huntIncome = s => Hunt.signature(s) === initialSignature ? { perHour: 10000, moneyPerHour: money } : { perHour: 1000, moneyPerHour: money, useShots: false };
         Economy.stateForActor = () => {
             snapshots++;
             const inventory = { ...state.inventory };

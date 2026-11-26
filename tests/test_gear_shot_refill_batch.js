@@ -39,7 +39,7 @@ const row = shots => ({ exp: shots ? 1000000 : 500000, shots: 100, adena: 100000
 Table.value = (_id, _role, _level, shots) => row(shots);
 // The shot benefit compares the best rows with and without shots (ShotStock.usePolicy).
 Table.best = (_role, _level, shots) => row(shots);
-Hunt.huntIncome = () => ({ perHour: 1000000, expPerHour: 1000000, spotId: 'refill' });
+Hunt.huntIncome = () => ({ perHour: 1000000, moneyPerHour: 1000000, expPerHour: 1000000, spotId: 'refill' });
 const deps = { timestamp, spots: [], board, npcOffersFor: () => [],
     routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) };
 try {
