@@ -943,9 +943,10 @@ class WishNetwork {
         if (unfunded) for (const path of moneyPaths.slice(0, 3)) {
             const shortfall = Math.max(0, unfunded.price - available);
             // A missing seller is not a cash deficit. With its price already
-            // covered, earning more cannot advance this acquisition, nor a wish
-            // no seller supplies (unfundable: stock nobody sells).
-            if (!shortfall && (byKey.get(unfunded.key)?.personalAcquisition || !fundable(unfunded))) continue;
+            // covered, earning more cannot advance this acquisition, nor stock
+            // nobody supplies (unsupplied: no visit closes it). A kit piece no
+            // seller has keeps its hunt: the bot earns and levels while it waits.
+            if (!shortfall && (byKey.get(unfunded.key)?.personalAcquisition || unsupplied(unfunded))) continue;
             const key = `money:${unfunded.key}:${path.activity}:${path.object || ''}`;
             // A bag can pay part of this gap once. It does not establish an
             // hourly income or promise the entire purchase after more time.
